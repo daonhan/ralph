@@ -21,3 +21,14 @@ this baseline based on Conventional Commits landed since.
 ### Continuous Integration
 
 - Drop arm64 and npm provenance; bump the sandbox image .NET SDK to 10.
+
+## ralph 0.1.0 (baseline)
+
+Seed entry for the version already published to npm as `@daonhan/ralph@0.1.0`
+before release-please was adopted. The CLI is versioned independently of
+`ralph-core`; its entries always appear under their own `ralph` heading.
+
+### Features
+
+- CLI exposing the `ralph-afk` (plan/PRD loop) and `ralph-ghafk`
+  (GitHub-issue loop) bin entries, depending on `@daonhan/ralph-core`.

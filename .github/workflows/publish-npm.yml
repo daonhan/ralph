@@ -7,14 +7,16 @@ name: Publish to npm
 #
 # Tag schema (see RELEASING.md):
 #   ralph-core-vX.Y.Z  -> publishes packages/core (@daonhan/ralph-core)
+#   ralph-vX.Y.Z       -> publishes apps/cli      (@daonhan/ralph)
 on:
   push:
     tags:
       - "ralph-core-v*"
+      - "ralph-v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing release tag to publish from (e.g. ralph-core-v0.1.2)"
+        description: "Existing release tag to publish from (e.g. ralph-core-v0.1.2 or ralph-v0.1.1)"
         required: true
 
 concurrency:
@@ -29,4 +31,78 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm -r run build
+
+      # Route the publish to the right package based on the tag prefix. The
+      # `ralph-core-v*` check must come first because `ralph-v*` is its prefix.
+      - name: Resolve package from tag
+        id: route
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          case "$TAG" in
+            ralph-core-v*)
+              echo "dir=packages/core"        >> "$GITHUB_OUTPUT"
+              echo "name=@daonhan/ralph-core" >> "$GITHUB_OUTPUT"
+              echo "is_cli=false"             >> "$GITHUB_OUTPUT"
+              ;;
+            ralph-v*)
+              echo "dir=apps/cli"             >> "$GITHUB_OUTPUT"
+              echo "name=@daonhan/ralph"      >> "$GITHUB_OUTPUT"
+              echo "is_cli=true"              >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Unrecognized release tag '$TAG' (expected ralph-core-v* or ralph-v*)"
+              exit 1
+              ;;
+          esac
+
+      # apps/cli depends on @daonhan/ralph-core via `workspace:^`. This repo uses
+      # pnpm workspaces (not npm workspaces), so `npm publish` would ship the literal
+      # "workspace:^" spec and break installs. Rewrite it to the concrete core version
+      # before publishing the CLI. ralph-core has no workspace deps, so the step is
+      # skipped for it.
+      - name: Resolve workspace dependency for the CLI
+        if: steps.route.outputs.is_cli == 'true'
+        run: |
+          node -e '
+            const fs = require("fs");
+            const core = JSON.parse(fs.readFileSync("packages/core/package.json", "utf8")).version;
+            const p = "apps/cli/package.json";
+            const j = JSON.parse(fs.readFileSync(p, "utf8"));
+            let changed = false;
+            for (const k of ["dependencies", "optionalDependencies", "peerDependencies"]) {
+              if (!j[k]) continue;
+              for (const dep of Object.keys(j[k])) {
+                const v = String(j[k][dep]);
+                if (!v.startsWith("workspace:")) continue;
+                const spec = v.slice("workspace:".length);
+                j[k][dep] = spec === "*" || spec === "" ? core
+                  : spec === "^" ? "^" + core
+                  : spec === "~" ? "~" + core
+                  : spec;
+                changed = true;
+                console.log("rewrote " + dep + ": " + v + " -> " + j[k][dep]);
+              }
+            }
+            if (!changed) console.log("no workspace: deps to rewrite");
+            fs.writeFileSync(p, JSON.stringify(j, null, 2) + "\n");
+          '
+
+      - name: Publish ${{ steps.route.outputs.name }}
+        uses: JS-DevTools/npm-publish@v3
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+          package: ${{ steps.route.outputs.dir }}
+          access: public

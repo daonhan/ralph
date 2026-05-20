@@ -21,6 +21,9 @@
   "packages": {
     "packages/core": {
       "component": "ralph-core"
+    },
+    "apps/cli": {
+      "component": "ralph"
     }
   }
 }
