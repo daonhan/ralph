@@ -1,12 +1,21 @@
 name: Publish to npm
 
+# release-please owns the "when to release" decision. This workflow fires only
+# when release-please (or a maintainer) pushes a component release tag. The old
+# path-based "push to main touching packages/core/**" trigger has been removed so
+# there is exactly one source of truth for when a publish happens.
+#
+# Tag schema (see RELEASING.md):
+#   ralph-core-vX.Y.Z  -> publishes packages/core (@daonhan/ralph-core)
 on:
   push:
-    branches: [main]
-    paths:
-      - "packages/core/**"
-      - ".github/workflows/publish-npm.yml"
+    tags:
+      - "ralph-core-v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to publish from (e.g. ralph-core-v0.1.2)"
+        required: true
 
 concurrency:
   group: publish-npm-${{ github.ref }}
@@ -17,25 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # for npm provenance
     steps:
       - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          registry-url: "https://registry.npmjs.org"
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm -r run build
-
-      - name: Publish if version changed
-        uses: JS-DevTools/npm-publish@v3
-        with:
-          token: ${{ secrets.NPM_TOKEN }}
-          package: packages/core
-          access: public
+          ref: ${{ github.event.inputs.tag || github.ref

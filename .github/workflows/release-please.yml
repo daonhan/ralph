@@ -1,0 +1,42 @@
+name: release-please
+
+# Drives the release process for every component in the monorepo.
+# On each push to main, release-please reads the conventional-commit history,
+# opens (or updates) one Release PR per component, and on merge of that PR
+# creates the component's Git tag + GitHub Release. The per-component publish
+# workflows (publish-npm.yml, publish-image.yml) hang off those tags.
+#
+# Config lives at the repo root:
+#   - release-please-config.json     (component declarations)
+#   - .release-please-manifest.json  (last-released versions; source of truth)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# A single group so concurrent pushes to main do not open competing Release PRs.
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          # IMPORTANT: a tag created with the default GITHUB_TOKEN does NOT raise
+          # a `push: tags` event in other workflows (GitHub's "a workflow cannot
+          # trigger another workflow" rule). Our publish-npm.yml / publish-image.yml
+          # trigger on tag pushes, so release-please MUST create those tags with a
+          # Personal Access Token (repo scope), stored as the RELEASE_PLEASE_TOKEN
+          # secret. Falls back to GITHUB_TOKEN for opening PRs in forks / dry setups,
+          # in which case publishing must be kicked off manually (see RELEASING.md).
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
