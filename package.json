@@ -8,6 +8,7 @@
     "build": "pnpm -r run build",
     "clean": "pnpm -r run clean",
     "typecheck": "pnpm -r run typecheck",
+    "test": "node --test",
     "publish-all": "pnpm -r publish --access public --no-git-checks",
     "prepare": "husky"
   },

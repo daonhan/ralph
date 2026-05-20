@@ -28,7 +28,8 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v4
+      - id: release
+        uses: googleapis/release-please-action@v4
         with:
           # IMPORTANT: a tag created with the default GITHUB_TOKEN does NOT raise
           # a `push: tags` event in other workflows (GitHub's "a workflow cannot
@@ -40,3 +41,48 @@ jobs:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # The steps below only do work when release-please opened/updated a PR.
+      - uses: actions/checkout@v4
+        if: steps.release.outputs.prs_created == 'true'
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        if: steps.release.outputs.prs_created == 'true'
+        with:
+          node-version: 20
+
+      # Refresh the RELEASING.md status table inside each open Release PR so the
+      # maintainer reviews the proposed versions as part of the PR diff. This is the
+      # "extra-files hook" equivalent: release-please core only updates version
+      # strings, so the table (which also carries dates + tag links) is regenerated
+      # here against the PR branch's proposed manifest and pushed back to that branch.
+      # The same script (scripts/update-status-table.mjs) is runnable locally for a
+      # manual refresh.
+      - name: Refresh status table in open Release PRs
+        if: steps.release.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          PRS: ${{ steps.release.outputs.prs }}
+        run: |
+          set -euo pipefail
+          echo "$PRS" | jq -c '.[]' | while read -r pr; do
+            BRANCH="$(echo "$pr" | jq -r '.headBranchName')"
+            echo "::group::Refreshing status table on $BRANCH"
+            git fetch origin "$BRANCH"
+            git checkout "$BRANCH"
+            node scripts/update-status-table.mjs
+            if git diff --quiet -- RELEASING.md; then
+              echo "no status-table change"
+            else
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git add RELEASING.md
+              git commit -m "chore: refresh release status table"
+              git push origin "$BRANCH"
+            fi
+            git checkout -
+            echo "::endgroup::"
+          done
