@@ -113,16 +113,39 @@ Consequences:
 
 ## First-run setup
 
-### 1. Build the image (one-off, ~5–10 min)
+### 1. Get the image
+
+The orchestrator resolves the image in three steps on each run:
+
+1. `docker image inspect $RALPH_IMAGE` — short-circuits if the image is already on the host.
+2. Otherwise `docker pull $RALPH_IMAGE` — defaults to `docker.io/daonhan/ralph-sandbox:latest`.
+3. If pull fails AND `$RALPH_DOCKER_CONTEXT/Dockerfile` exists, falls back to `docker build -t $RALPH_IMAGE $RALPH_DOCKER_CONTEXT`.
+
+For most users step 2 is enough — no local Dockerfile needed. To prime the cache:
+
+```bash
+docker pull docker.io/daonhan/ralph-sandbox:latest
+```
+
+Build locally (offline, custom changes):
 
 ```bash
 cd ralph
-docker build -t ralph-sandbox .
+docker build -t docker.io/daonhan/ralph-sandbox:latest .
 ```
 
 The image bundles: Node 22, .NET SDK 9, `gh`, `jq`, `git`, the Claude Code CLI.
 
-The orchestrator also auto-builds on first run if the image is missing (build context = `$RALPH_DOCKER_CONTEXT`, which the shims set to the directory containing this `Dockerfile`).
+#### Publishing a new image (maintainers)
+
+The repo ships a GitHub Actions workflow at [`.github/workflows/publish-image.yml`](./.github/workflows/publish-image.yml) that builds + pushes multi-arch (`linux/amd64`, `linux/arm64`) images to Docker Hub.
+
+Triggers:
+
+- **`workflow_dispatch`** — manual run from the Actions tab; pick the tag and whether to also push `:latest`.
+- **Git tag `image-v*`** — pushing a tag like `image-v0.1.3` publishes `:0.1.3` plus `:latest`.
+
+Required repo secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (a Docker Hub access token with `Read & Write` scope on the `daonhan/ralph-sandbox` repository).
 
 ### 2. Log in to the image (one-off)
 
@@ -136,7 +159,7 @@ docker run -it --rm \
   -v "$HOME/.claude:/home/agent/.claude" \
   -v "$HOME/.claude.json:/home/agent/.claude.json" \
   -v "$HOME/.config/gh:/home/agent/.config/gh" \
-  ralph-sandbox bash
+  docker.io/daonhan/ralph-sandbox:latest bash
 ```
 
 Inside the container:
@@ -251,8 +274,9 @@ npx -y @daonhan/ralph ralph-afk "<plan-and-prd>" 5
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `RALPH_WORKSPACE` | `process.cwd()` | Host path bind-mounted at `/home/agent/workspace`. Also where `.ralph-tmp/` is written. |
-| `RALPH_DOCKER_CONTEXT` | `$RALPH_WORKSPACE` | Build context for the `docker build` fallback. Must contain `Dockerfile`. |
-| `RALPH_IMAGE_TAG` | `ralph-sandbox` | Image name used by `docker image inspect` / `docker build -t` / `docker run`. |
+| `RALPH_DOCKER_CONTEXT` | `$RALPH_WORKSPACE` | Build context for the `docker build` fallback. Only consulted if `docker pull` fails. Must contain `Dockerfile`. |
+| `RALPH_IMAGE` | `docker.io/daonhan/ralph-sandbox:latest` | Full image reference. `ensureImage` does `inspect` → `pull` → `build` (fallback). |
+| `RALPH_IMAGE_TAG` | _(legacy)_ | Deprecated alias for `RALPH_IMAGE`. Honored if `RALPH_IMAGE` unset. |
 
 ---
 
@@ -336,9 +360,9 @@ Renderer is in `packages/core/src/render.ts`. Tags supported today:
 
 Failures in `` !`…` `` throw and abort the iteration. Use shell-level `|| echo "<fallback>"` in the template if a command is allowed to fail.
 
-### Override the image tag
+### Override the image
 
-Set `RALPH_IMAGE_TAG=my-image` before invoking the shim, or edit the default in `packages/core/src/runner.ts`.
+Set `RALPH_IMAGE=registry.example.com/my-image:tag` before invoking the shim, or edit the default in `packages/core/src/runner.ts`. The runner does `inspect` → `pull` → `build` against whatever ref is set; legacy `RALPH_IMAGE_TAG` still works for backward compatibility.
 
 ### Change feedback loops or task priority
 
@@ -368,12 +392,13 @@ Edit `prompt.md` (and `ghprompt.md`) — the playbooks injected via `` !`cat ral
     /p:BaseIntermediateOutputPath=/tmp/ralph-obj/<name>/ \
     /p:BaseOutputPath=/tmp/ralph-bin/<name>/
   ```
-- **`docker run` exit 1 with no claude output** — image missing or stale. Force rebuild:
+- **`docker run` exit 1 with no claude output** — image stale. Force refresh:
   ```bash
-  docker rmi ralph-sandbox
-  docker build -t ralph-sandbox ralph/
+  docker rmi docker.io/daonhan/ralph-sandbox:latest
+  docker pull docker.io/daonhan/ralph-sandbox:latest
   ```
-- **`docker build failed … open Dockerfile: no such file or directory`** — `RALPH_DOCKER_CONTEXT` points at the wrong dir. The shims set it to `$SCRIPT_DIR` (where the shim itself lives); make sure `Dockerfile` is in that directory.
+- **`docker pull failed … and no Dockerfile at …`** — the default image ref isn't reachable (offline, registry down, or you set a custom `$RALPH_IMAGE` that doesn't exist) AND no Dockerfile is at `$RALPH_DOCKER_CONTEXT`. Fix one of: connectivity, `RALPH_IMAGE`, or place a Dockerfile at `$RALPH_DOCKER_CONTEXT`.
+- **`pull access denied … repository does not exist`** — `$RALPH_IMAGE` points at a private repo or a typo. Either `docker login`, switch to a public image, or unset `RALPH_IMAGE` to use the default.
 
 ---
 
@@ -395,7 +420,8 @@ Edit `prompt.md` (and `ghprompt.md`) — the playbooks injected via `` !`cat ral
 | [`packages/core/src/gh-main.ts`](./packages/core/src/gh-main.ts) | Exports `runGhAfk(argv)`. |
 | [`packages/core/src/loop.ts`](./packages/core/src/loop.ts) | Iteration driver. Runs stage chain; first stage is the gate. |
 | [`packages/core/src/render.ts`](./packages/core/src/render.ts) | Template renderer (`` !`cmd` `` + `{{ INPUTS }}`). |
-| [`packages/core/src/runner.ts`](./packages/core/src/runner.ts) | `docker run` wrapper + NDJSON stream + credential mounts. Reads `RALPH_IMAGE_TAG`. |
+| [`packages/core/src/runner.ts`](./packages/core/src/runner.ts) | `docker run` wrapper + NDJSON stream + credential mounts. Image lookup: inspect → pull → build. Reads `RALPH_IMAGE`. |
+| [`.github/workflows/publish-image.yml`](./.github/workflows/publish-image.yml) | CI: build + push multi-arch `ralph-sandbox` to Docker Hub on `workflow_dispatch` or `image-v*` tag. |
 | [`packages/core/src/stages.ts`](./packages/core/src/stages.ts) | Stage registry — `implementer`, `ghafkImplementer`, `reviewer`. |
 | [`packages/core/src/index.ts`](./packages/core/src/index.ts) | Barrel re-export — `runAfk`, `runGhAfk`, `runLoop`, `STAGES`, `renderTemplate`, … |
 | [`packages/core/templates/afk.md`](./packages/core/templates/afk.md) | `afk.sh` prompt template. |
