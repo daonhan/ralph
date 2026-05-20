@@ -79,26 +79,33 @@ At runtime, the host workspace gets a `.ralph-tmp/` directory containing the per
 
 ## Prerequisites
 
-- **WSL / Bash** on Windows. PowerShell cannot run the shims; call them through `wsl bash …`.
-- **Docker** (Docker Desktop with WSL2 backend, or Docker Engine in WSL). The orchestrator shells out to `docker build` / `docker run`.
-- **Node.js 20+** on the host (Linux side under WSL).
-- **pnpm 9+** (for monorepo development). End users consuming the published package can use `npm`, `pnpm`, or `yarn`.
-- **`gh`** authenticated on the host (only `ralph-ghafk`): `gh auth login` once.
+- **Docker** — Docker Desktop (Windows/macOS) or Docker Engine (Linux). The orchestrator shells out to `docker build` / `docker run`.
+- **Node.js 20+** + **npm 9+** (or `pnpm`/`yarn`). For Windows: native nvm-for-windows, nvm-windows, or directly from nodejs.org; for macOS/Linux: nvm, asdf, or distro package.
+- **`gh`** authenticated (only required for `ralph-ghafk`): `gh auth login` once.
 - **Claude Code** authentication. See "First-run setup" below.
+- **(Windows only, optional but recommended)** `bash.exe` on PATH — comes free with [Git for Windows](https://git-scm.com/download/win). The renderer prefers it over `cmd.exe` because POSIX redirects + utilities (`git log`, `gh issue list`) are smoother. If absent, the renderer falls back to `cmd.exe` and uses the built-in try-shell tag (`!?\`cmd|||fallback\``) so commands that fail return their fallback string cleanly — no broken render.
 
-### Windows + WSL: which `~` does Ralph use?
+### Supported shells / OS combinations
 
-The shims execute under WSL, so `runner.ts` resolves `$HOME` to the **WSL Linux home** (`/home/<linuxname>`), not the Windows profile (`C:\Users\<name>`).
-
-| Where you typed it | `~` resolves to | Used by |
+| Where you invoke `ralph-afk` | Status | Notes |
 | --- | --- | --- |
-| PowerShell | `C:\Users\<name>` | `claude.exe` host installer — **ignored by Ralph** |
-| WSL bash | `/home/<linuxname>` | **Ralph (ralph-afk / ralph-ghafk) — canonical credential store** |
+| Linux native (Ubuntu, etc.) | ✓ | `/bin/bash` used for shell tags. Confirmed via WSL Ubuntu. |
+| macOS native | ✓ | `/bin/bash` used. Identical to Linux path. |
+| Windows PowerShell / cmd | ✓ | Renderer probes `bash.exe`; falls back to `cmd.exe`. Use `npm i -g @daonhan/ralph` against native Node. |
+| Windows + WSL bash | ✓ | Install inside WSL with a user-local prefix (`npm config set prefix ~/.npm-global`) to avoid sudo. |
+| Windows + Git Bash | ✓ | Resolves shell to its own `bash.exe`. |
 
-Consequences:
+### Windows + WSL: credentials
 
-- All `claude /login` and `gh auth login` for Ralph must happen under WSL (directly, or inside a WSL-launched container as in the next section).
-- If you already logged in on the Windows side (`C:\Users\<you>\.claude\`), migrate the credentials into WSL once:
+Credentials live on the **host** at `~/.claude` and `~/.config/gh` and get bind-mounted into the container. The path resolves per the shell that launches `ralph-afk`:
+
+| Launch from | `$HOME` is | Mounted into container |
+| --- | --- | --- |
+| Windows PowerShell / cmd | `C:\Users\<name>` | Yes, if `claude /login` was run inside a WSL/native shell on Windows or via the bootstrap container below |
+| WSL bash | `/home/<linuxname>` | Yes — canonical WSL credential store |
+| Linux / macOS | `/home/<name>` or `/Users/<name>` | Yes |
+
+If you already logged in via PowerShell `claude.exe` and want WSL to use those creds too:
   ```bash
   # WSL bash — replace <WINUSER>
   mkdir -p ~/.claude
@@ -107,9 +114,13 @@ Consequences:
   mkdir -p ~/.config/gh
   cp -r "/mnt/c/Users/<WINUSER>/AppData/Roaming/GitHub CLI/." ~/.config/gh/ 2>/dev/null || true
   ```
-- To launch from PowerShell, always go through `wsl bash`:
+- Launching from PowerShell after a global install — just call the bin directly:
   ```powershell
-  wsl bash -c 'ralph-afk "<plan-and-prd>" 3'
+  ralph-afk "<plan-and-prd>" 3
+  ```
+- Or from inside WSL bash:
+  ```bash
+  ralph-afk "<plan-and-prd>" 3
   ```
 
 ---
@@ -154,6 +165,10 @@ Required repo secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (a Docker Hub acc
 
 The image is stateless. Credentials live on the **host** at `~/.claude` and `~/.config/gh`. The orchestrator bind-mounts those paths into every container.
 
+> **Same-shell rule.** `ralph-afk` / `ralph-ghafk` read `$HOME` of the shell that launched them. Auth from the same shell context you intend to run the bins in. PowerShell host (`C:\Users\<you>\.config\gh\`) and WSL host (`\\wsl$\Ubuntu\home\<you>\.config\gh\`) are separate stores — don't mix.
+
+#### Linux / macOS / WSL bash
+
 ```bash
 mkdir -p ~/.claude ~/.config/gh
 touch ~/.claude.json
@@ -165,20 +180,50 @@ docker run -it --rm \
   docker.io/daonhan/ralph-sandbox:latest bash
 ```
 
-Inside the container:
+#### Windows PowerShell
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.claude","$HOME\.config\gh" | Out-Null
+if (-not (Test-Path "$HOME\.claude.json")) { New-Item -ItemType File "$HOME\.claude.json" | Out-Null }
+
+docker run -it --rm `
+  -v "${HOME}\.claude:/home/agent/.claude" `
+  -v "${HOME}\.claude.json:/home/agent/.claude.json" `
+  -v "${HOME}\.config\gh:/home/agent/.config/gh" `
+  docker.io/daonhan/ralph-sandbox:latest bash
+```
+
+#### Inside the container
 
 ```bash
 claude /login         # browser flow
 gh auth login         # only needed for ralph-ghafk
+```
+
+For `gh auth login` pick: `GitHub.com` → `HTTPS` → `Y` (authenticate Git) → `Login with web browser`. Copy the one-time code, open `https://github.com/login/device` on the host browser, paste, approve. Container prints `✓ Authentication complete`.
+
+```bash
+gh auth status        # verify
 exit
 ```
 
-Verify back on the host:
+#### Verify back on the host
+
+Linux / macOS / WSL:
 
 ```bash
 ls -la ~/.claude/.credentials.json ~/.claude.json
 cat ~/.config/gh/hosts.yml | head
 ```
+
+PowerShell:
+
+```powershell
+Get-ChildItem "$HOME\.claude\.credentials.json","$HOME\.claude.json"
+Get-Content "$HOME\.config\gh\hosts.yml"
+```
+
+Expected `hosts.yml` content: a `github.com:` block with `user:` and `oauth_token:` keys.
 
 #### Re-login / token expired
 
@@ -376,10 +421,12 @@ Only the first stage is the gate (sentinel-checked). Subsequent stages always ru
 
 Renderer is in `packages/core/src/render.ts`. Tags supported today:
 
-- `` !`<shell cmd>` `` — executed via `bash -c` (Linux/WSL) or `cmd.exe` (Windows) with `cwd = workspaceDir`. stdout (trailing newline trimmed) replaces the tag.
+- `` !`<shell cmd>` `` — executed via `bash` (Linux/macOS/WSL/Git Bash) or `cmd.exe` (Windows native fallback) with `cwd = workspaceDir`. stdout (trailing newline trimmed) replaces the tag. Failures throw and abort the iteration.
+- `` !?`<shell cmd>|||<fallback>` `` — try-shell. Same as `!` but stderr is suppressed and a non-zero exit returns the literal fallback string. Use this for cross-platform safety — avoids depending on shell-specific `2>/dev/null || echo "…"` idioms.
+- `@include:<rel-or-abs-path>` — inline a file (via Node `readFileSync`). Path resolved against the template's own directory when relative. No shell. Use this for bundled playbooks, not for live shell output.
 - `{{ INPUTS }}` — replaced with the `inputs` field passed into `runLoop`.
 
-Failures in `` !`…` `` throw and abort the iteration. Use shell-level `|| echo "<fallback>"` in the template if a command is allowed to fail.
+On Windows, the renderer prefers `bash.exe` (Git for Windows / WSL passthrough) over `cmd.exe`. The `!?` tag makes commands tolerant either way.
 
 ### Override the image
 

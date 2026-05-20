@@ -1,20 +1,20 @@
 <head>
 
-!`git rev-parse HEAD 2>/dev/null || echo "(no commits)"`
+!?`git rev-parse HEAD|||(no commits)`
 
 </head>
 
 <recent-commits>
 
-!`git log -n 3 --format="%H%n%ad%n%B---" --date=short 2>/dev/null || echo "No commits found"`
+!?`git log -n 3 --format="%H%n%ad%n%B---" --date=short|||No commits found`
 
 </recent-commits>
 
 <latest-diff>
 
-!`git show --stat HEAD 2>/dev/null || echo "No diff"`
+!?`git show --stat HEAD|||No diff`
 
-!`git show HEAD 2>/dev/null | head -c 200000 || echo "No diff body"`
+!?`git show HEAD | head -c 200000|||No diff body`
 
 </latest-diff>
 
@@ -38,7 +38,7 @@ If defects found:
 - Fix them directly in the working tree.
 - Run feedback loops:
   - Frontend / Node: `pnpm run test`, `pnpm run typecheck`
-  - Backend / Dotnet: `dotnet test`, `dotnet build` (apply MSB3248 workaround from `ralph/prompt.md` if it triggers)
+  - Backend / Dotnet: `dotnet test`, `dotnet build` (apply MSB3248 workaround from the implementer playbook if it triggers)
 - Commit with `git commit -am "fix(review): <short reason>"`. Subject ≤72 chars. No `Co-Authored-By` line. No file lists.
 
 If clean: output `<review>OK</review>` and stop. Do NOT commit.
