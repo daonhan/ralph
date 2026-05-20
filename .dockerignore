@@ -1,0 +1,29 @@
+# Build context is ralph/. Dockerfile installs system pkgs only —
+# no COPY needed, so exclude everything not required by the image.
+
+# Orchestrator source + node modules
+.sandcastle/
+.gitignore
+
+# Runtime tempfiles (also matched by ralph/.gitignore)
+.run-*.md
+.ghafk-prompt-*.md
+
+# Prompts + docs — image doesn't bake these; host bind-mounts at runtime
+prompt.md
+ghprompt.md
+README.md
+ralph-loop.instructions.md
+
+# Shell drivers — run on host
+afk.sh
+ghafk.sh
+once.sh
+ghonce.sh
+
+# Editor / OS junk
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

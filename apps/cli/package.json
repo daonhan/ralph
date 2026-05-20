@@ -1,0 +1,16 @@
+{
+  "name": "@daonhan/ralph",
+  "version": "0.1.0",
+  "description": "CLI for the ralph AFK loop (ralph-afk, ralph-ghafk).",
+  "type": "module",
+  "bin": {
+    "ralph-afk":   "./bin/ralph-afk.js",
+    "ralph-ghafk": "./bin/ralph-ghafk.js"
+  },
+  "files": ["bin", "README.md"],
+  "dependencies": {
+    "@daonhan/ralph-core": "workspace:^"
+  },
+  "engines": { "node": ">=20" },
+  "publishConfig": { "access": "public" }
+}
