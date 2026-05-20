@@ -32,16 +32,48 @@ If `<head>` shows `(no commits)` or HEAD is unchanged from the previous iteratio
 4. Security issues (input validation, secrets, injection, auth bypass)
 5. Half-finished implementations, dead code, leftover TODO from this commit
 
+# VERIFY (mandatory — always run, even if the diff looks clean)
+
+Run the project's feedback loops and read the output. A passing build/typecheck/test
+is a precondition for declaring the change good — never assume it from the diff.
+
+### Frontend / Node
+
+- `pnpm -r typecheck` — type check
+- `pnpm -r build` — build (skip if the repo has no build script)
+- `pnpm test` — run the test suite
+
+### Backend / Dotnet
+
+- `dotnet build` — type-check
+- `dotnet test` — run the tests
+
+**If `dotnet build`/`dotnet test` fails with MSB3248** ("Could not resolve assembly
+reference" / "file is corrupt") — this is a known virtiofs/9p I/O quirk when the repo
+is mounted from the Windows host, NOT a code defect. Re-run with outputs redirected to
+`/tmp` and parallelism disabled before treating it as red:
+
+```bash
+dotnet test <path-to-test-csproj> \
+  -m:1 /p:UseSharedCompilation=false /p:BuildInParallel=false \
+  /p:BaseIntermediateOutputPath=/tmp/ralph-obj/$(basename <path-to-test-csproj> .csproj)/ \
+  /p:BaseOutputPath=/tmp/ralph-bin/$(basename <path-to-test-csproj> .csproj)/
+```
+
 # ACTION
 
-If defects found:
-- Fix them directly in the working tree.
-- Run feedback loops:
-  - Frontend / Node: `pnpm run test`, `pnpm run typecheck`
-  - Backend / Dotnet: `dotnet test`, `dotnet build` (apply MSB3248 workaround from the implementer playbook if it triggers)
-- Commit with `git commit -am "fix(review): <short reason>"`. Subject ≤72 chars. No `Co-Authored-By` line. No file lists.
+The change is **GREEN** only when there are no defects AND build + typecheck + tests
+all pass. Decide based on that:
 
-If clean: output `<review>OK</review>` and stop. Do NOT commit.
+- **Red (defects found, or build/typecheck/tests fail):** fix the cause directly in the
+  working tree, re-run the feedback loops until they pass, then commit with
+  `git commit -am "fix(review): <short reason>"` (subject ≤72 chars, no `Co-Authored-By`,
+  no file lists). Output `<review>FIXED</review>`.
+- **Green:** output `<review>OK</review>` and stop. Do NOT commit.
+- **Cannot get to green** (e.g. failure is outside the scope of this commit, or an
+  environment issue you cannot resolve): commit any partial fix, then output
+  `<review>BLOCKED: <one-line reason and the exact failing command></review>`. Do NOT
+  output `OK` while anything is red — a false green is worse than an honest blocker.
 
 # RULES
 
