@@ -41,6 +41,20 @@ type StreamJson =
   | { type: "result"; result?: string; is_error?: boolean }
   | { type: string; [k: string]: unknown };
 
+/**
+ * Locate the sandbox Dockerfile within a build context. The Dockerfile lives at
+ * `templates/Dockerfile` so the release-please `ralph-sandbox` component can be
+ * scoped to the templates directory; the older context-root location is still
+ * honored as a fallback.
+ */
+export function resolveDockerfile(buildContext: string): string {
+  const inTemplates = join(buildContext, "templates", "Dockerfile");
+  if (existsSync(inTemplates)) return inTemplates;
+  const legacy = join(buildContext, "Dockerfile");
+  if (existsSync(legacy)) return legacy;
+  return inTemplates;
+}
+
 export function ensureImage(buildContext?: string): void {
   const inspect = spawnSync("docker", ["image", "inspect", IMAGE_REF], {
     stdio: "ignore",
@@ -58,7 +72,7 @@ export function ensureImage(buildContext?: string): void {
         `or override RALPH_IMAGE to an image you can pull.`
     );
   }
-  const dockerfile = join(buildContext, "Dockerfile");
+  const dockerfile = resolveDockerfile(buildContext);
   if (!existsSync(dockerfile)) {
     throw new Error(
       `docker pull failed for ${IMAGE_REF} and no Dockerfile at ${dockerfile}`
@@ -67,7 +81,7 @@ export function ensureImage(buildContext?: string): void {
   process.stderr.write(
     `[sandcastle] pull failed; building ${IMAGE_REF} from ${buildContext}\n`
   );
-  const build = spawnSync("docker", ["build", "-t", IMAGE_REF, buildContext], {
+  const build = spawnSync("docker", ["build", "-t", IMAGE_REF, "-f", dockerfile, buildContext], {
     stdio: "inherit",
   });
   if (build.status !== 0) {

@@ -20,10 +20,15 @@
   ],
   "packages": {
     "packages/core": {
-      "component": "ralph-core"
+      "component": "ralph-core",
+      "exclude-paths": ["packages/core/templates"]
     },
     "apps/cli": {
       "component": "ralph"
+    },
+    "packages/core/templates": {
+      "component": "ralph-sandbox",
+      "release-type": "simple"
     }
   }
 }

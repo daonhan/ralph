@@ -67,9 +67,8 @@ ralph/
 │   └── core/                    @daonhan/ralph-core
 │       ├── package.json
 │       ├── tsconfig.json
-│       ├── Dockerfile           builds ralph-sandbox image (Node + .NET + gh + claude)
 │       ├── src/                 main.ts, gh-main.ts, loop.ts, runner.ts, render.ts, stages.ts, index.ts
-│       └── templates/           afk.md, ghafk.md, review.md
+│       └── templates/           afk.md, ghafk.md, review.md, Dockerfile (builds ralph-sandbox image)
 └── (playbooks live in packages/core/templates/ alongside the prompt templates)
 ```
 
@@ -145,7 +144,7 @@ Build locally (offline, custom changes):
 
 ```bash
 cd ralph
-docker build -t docker.io/daonhan/ralph-sandbox:latest -f packages/core/Dockerfile .
+docker build -t docker.io/daonhan/ralph-sandbox:latest -f packages/core/templates/Dockerfile .
 ```
 
 The image bundles: Node 22, .NET SDK 9, `gh`, `jq`, `git`, the Claude Code CLI.
@@ -478,7 +477,7 @@ Edit `packages/core/templates/prompt.md` (and `ghprompt.md`) — the playbooks i
 | [`apps/cli/scripts/ghafk.sh`](./apps/cli/scripts/ghafk.sh) | Optional shim — GitHub-issue loop. Calls `ralph-ghafk`. |
 | [`packages/core/templates/prompt.md`](./packages/core/templates/prompt.md) | Agent playbook for `ralph-afk`. Shipped in core tarball. |
 | [`packages/core/templates/ghprompt.md`](./packages/core/templates/ghprompt.md) | Agent playbook for `ralph-ghafk`. Shipped in core tarball. |
-| [`packages/core/Dockerfile`](./packages/core/Dockerfile) | Builds `ralph-sandbox` image: Node 22 + .NET SDK 9 + `gh` + `claude`. Shipped in `@daonhan/ralph-core` tarball. |
+| [`packages/core/templates/Dockerfile`](./packages/core/templates/Dockerfile) | Builds `ralph-sandbox` image: Node 22 + .NET SDK 9 + `gh` + `claude`. Shipped in `@daonhan/ralph-core` tarball. |
 | [`.dockerignore`](./.dockerignore) | Shrinks build context (consumed at repo root for CI builds). |
 | [`package.json`](./package.json) | Monorepo root (private). Shared devDeps + pnpm workspace scripts. |
 | [`pnpm-workspace.yaml`](./pnpm-workspace.yaml) | Declares `apps/*` and `packages/*` as workspace members. |

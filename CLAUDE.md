@@ -50,7 +50,7 @@ Bins also accept `--help` / `-h`. `$RALPH_WORKSPACE` overrides cwd as the bind-m
 ### Building / publishing the sandbox image
 
 ```bash
-docker build -t docker.io/daonhan/ralph-sandbox:latest -f packages/core/Dockerfile .
+docker build -t docker.io/daonhan/ralph-sandbox:latest -f packages/core/templates/Dockerfile .
 ```
 
 CI in `.github/workflows/publish-image.yml` publishes multi-arch images on `workflow_dispatch` or a `image-v*` tag push.
@@ -105,7 +105,7 @@ Every run writes to `<workspaceDir>/.ralph-tmp/` on the host (gitignored): the r
 
 ### Sandbox image
 
-`packages/core/Dockerfile`. Node 22 + .NET SDK 10 + `gh` + `jq` + `git` + Claude Code CLI. User `agent` (UID 1000, renamed from base image's `node`). `safe.directory='*'` globally configured to tolerate bind-mount UID mismatch on Windows.
+`packages/core/templates/Dockerfile`. Node 22 + .NET SDK 10 + `gh` + `jq` + `git` + Claude Code CLI. User `agent` (UID 1000, renamed from base image's `node`). `safe.directory='*'` globally configured to tolerate bind-mount UID mismatch on Windows.
 
 ## Conventions to preserve
 

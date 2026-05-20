@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 
-import { IMAGE_REF } from "./runner.js";
+import { IMAGE_REF, resolveDockerfile } from "./runner.js";
 
 export type CliFlags = { help: boolean; printConfig: boolean; rest: string[] };
 
@@ -46,7 +45,7 @@ export function printConfig(
   ralphDir: string,
   sandcastleDir: string
 ): void {
-  const dockerfile = join(ralphDir, "Dockerfile");
+  const dockerfile = resolveDockerfile(ralphDir);
   const dfPresent = existsSync(dockerfile);
   process.stdout.write(`[${bin}] resolved config
   RALPH_WORKSPACE       ${workspaceDir}${process.env.RALPH_WORKSPACE ? "" : "  (default: cwd)"}
