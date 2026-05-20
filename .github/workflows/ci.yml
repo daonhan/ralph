@@ -1,0 +1,38 @@
+name: CI
+
+# Objective red/green signal for every change: type-checks, builds, and runs the
+# test suite. Runs on PRs (including release-please's Release PRs and any PR Ralph
+# opens against itself) and on pushes to main. A red run here is what the verifying
+# reviewer stage and the merge gate rely on.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Type-check
+        run: pnpm -r typecheck
+
+      - name: Build
+        run: pnpm -r build
+
+      - name: Test
+        run: pnpm test
