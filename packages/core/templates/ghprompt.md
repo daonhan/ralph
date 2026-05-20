@@ -1,60 +1,78 @@
 # ISSUES
 
-GitHub issues are provided at start of context. Parse it to get open issues with their bodies and comments.
+GitHub issues are provided at the start of context inside `<issues>`. Parse it to get
+the open issues with their bodies and comments.
 
-You will work on the AFK issues only, not the HITL ones.
+Work on the AFK issues only, not the HITL ones.
 
-You've also been passed a file containing the last few commits. Review these to understand what work has been done.
+You've also been passed the last few commits inside `<commits>`. Read them to see what
+has already been done.
 
-If all AFK tasks are complete, output <promise>NO MORE TASKS</promise>.
+If all AFK tasks are complete, output `<promise>NO MORE TASKS</promise>` and stop.
+
+# ORIENT
+
+Before changing anything, read the repo's own guidance and honor it:
+
+- `CLAUDE.md` / `AGENTS.md` (if present) — project-specific rules, conventions, and
+  constraints take precedence over generic habits.
+- `README.md` and existing code near what you're about to touch — match the
+  surrounding style, module system, and import conventions.
 
 # TASK SELECTION
 
-Pick the next task. Prioritize tasks in this order:
+Pick the single next issue. Prioritize in this order:
 
 1. Critical bugfixes
-2. Development infrastructure
-
-Getting development infrastructure like tests and types and dev scripts ready is an important precursor to building features.
-
-3. Tracer bullets for new features
-
-Tracer bullets are small slices of functionality that go through all layers of the system, allowing you to test and validate your approach early. This helps in identifying potential issues and ensures that the overall architecture is sound before investing significant time in development.
-
-TL;DR - build a tiny, end-to-end slice of the feature first, then expand it out.
-
+2. Development infrastructure (tests, types, dev scripts) — a precursor to features
+3. Tracer bullets for new features — a tiny end-to-end slice through all layers
+   first, then expand it out
 4. Polish and quick wins
 5. Refactors
 
-# EXPLORATION
-
-Explore the repo.
-
 # IMPLEMENTATION
 
-Complete the task.
+Complete that one issue. Keep the change scoped to it.
 
-# FEEDBACK LOOPS
+# FEEDBACK LOOPS (mandatory before committing)
 
-Before committing, run the feedback loops:
+Run the project's checks and read the output — do not assume success.
 
 ### Frontend / Node
 
-- `pnpm run test` to run the tests
-- `pnpm run typecheck` to run the type checker
+- `pnpm -r typecheck` — type check
+- `pnpm -r build` — build (skip only if there is no build script)
+- `pnpm test` — run the tests
 
 ### Backend / Dotnet
 
-- `dotnet test` to run the tests
-- `dotnet build` to type-check
+- `dotnet build` — type-check
+- `dotnet test` — run the tests
+
+**If `dotnet build`/`dotnet test` fails with MSB3248** ("Could not resolve assembly
+reference" / "file is corrupt") — this is a known virtiofs/9p I/O quirk when the repo
+is mounted from the Windows host, NOT a code defect. Re-run with outputs redirected to
+`/tmp` and parallelism disabled before treating it as red:
+
+```bash
+dotnet test <path-to-test-csproj> \
+  -m:1 /p:UseSharedCompilation=false /p:BuildInParallel=false \
+  /p:BaseIntermediateOutputPath=/tmp/ralph-obj/$(basename <path-to-test-csproj> .csproj)/ \
+  /p:BaseOutputPath=/tmp/ralph-bin/$(basename <path-to-test-csproj> .csproj)/
+```
+
+Do not commit while anything is red. Only if a failure is genuinely outside the scope
+of this issue may you defer it — and then record the blocker in the commit body.
 
 # COMMIT
 
-Make a single `git commit -am` with a short message:
+Make a single `git commit -am` with a Conventional Commit message:
 
-- Subject line (≤72 chars): what changed
-- Optional body (≤3 bullets): key decision, blocker for next iteration
-- No file lists (git tracks them), no `Co-Authored-By`
+- Subject (≤72 chars): `<type>: <what changed>` where `<type>` is one of
+  `feat`, `fix`, `perf`, `refactor`, `docs`, `ci`, `test`, `chore`. The type matters:
+  repos commonly drive changelogs and release automation off it.
+- Optional body (≤3 bullets): key decision, blocker for the next iteration.
+- No file lists (git tracks them), no `Co-Authored-By`.
 
 # THE ISSUE
 
