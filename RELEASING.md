@@ -203,9 +203,14 @@ releases:
 
 `ralph-sandbox` is **synthetic**: it has no `package.json` (release-type `simple`).
 It is rooted at `packages/core/templates`, which is where the image's inputs live —
-the `Dockerfile` and the agent playbook/iteration templates. `ralph-core` is rooted
-at `packages/core` and **excludes** `packages/core/templates`, so the two never bump
-each other:
+the `Dockerfile` and the agent playbook/iteration templates. What keeps the two
+apart is release-please's routing: each changed file is attributed to the component
+with the **longest matching directory prefix**, so anything under
+`packages/core/templates/` goes to `ralph-sandbox` and everything else under
+`packages/core/` goes to `ralph-core`. (`ralph-core` also lists
+`packages/core/templates` in `exclude-paths` as a belt-and-suspenders guard; it is
+redundant given the deeper sandbox path, but documents intent and protects against a
+future layout change.) The net effect:
 
 - a change under `packages/core/src/**` bumps `ralph-core` only;
 - a change to `packages/core/templates/**` (including the `Dockerfile`) bumps
