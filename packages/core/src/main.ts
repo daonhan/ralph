@@ -1,13 +1,36 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { parseFlags, printConfig, printHelp } from "./cli-help.js";
 import { runLoop } from "./loop.js";
 import { STAGES } from "./stages.js";
 
+const BIN = "ralph-afk";
+const USAGE = "<plan-and-prd> <iterations>";
+const DESC = "plan/PRD-driven Claude Code AFK loop";
+
 export async function runAfk(argv: string[]): Promise<void> {
-  const [planAndPrd, iterationsArg] = argv;
+  const flags = parseFlags(argv);
+
+  if (flags.help) {
+    printHelp(BIN, USAGE, DESC);
+    return;
+  }
+
+  const here = dirname(fileURLToPath(import.meta.url));
+  const sandcastleDir = resolve(here, "..");
+  const workspaceDir = resolve(process.env.RALPH_WORKSPACE ?? process.cwd());
+  const ralphDir = resolve(process.env.RALPH_DOCKER_CONTEXT ?? sandcastleDir);
+
+  if (flags.printConfig) {
+    printConfig(BIN, workspaceDir, ralphDir, sandcastleDir);
+    return;
+  }
+
+  const [planAndPrd, iterationsArg] = flags.rest;
   if (!planAndPrd || !iterationsArg) {
-    console.error("Usage: ralph-afk <plan-and-prd> <iterations>");
+    console.error(`Usage: ${BIN} ${USAGE}`);
+    console.error(`       ${BIN} --help`);
     process.exit(1);
   }
   const iterations = Number.parseInt(iterationsArg, 10);
@@ -15,11 +38,6 @@ export async function runAfk(argv: string[]): Promise<void> {
     console.error(`Invalid iterations: ${iterationsArg}`);
     process.exit(1);
   }
-
-  const here = dirname(fileURLToPath(import.meta.url));
-  const sandcastleDir = resolve(here, "..");
-  const workspaceDir = resolve(process.env.RALPH_WORKSPACE ?? process.cwd());
-  const ralphDir = resolve(process.env.RALPH_DOCKER_CONTEXT ?? workspaceDir);
 
   await runLoop({
     stages: [STAGES.implementer, STAGES.reviewer],

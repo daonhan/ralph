@@ -13,7 +13,10 @@ import { join, posix } from "node:path";
 
 import type { Stage } from "./stages.js";
 
-const IMAGE_TAG = process.env.RALPH_IMAGE_TAG ?? "ralph-sandbox";
+export const IMAGE_REF =
+  process.env.RALPH_IMAGE ??
+  process.env.RALPH_IMAGE_TAG ?? // legacy
+  "docker.io/daonhan/ralph-sandbox:latest";
 const STDERR_TAIL_LINES = 40;
 const TOOL_INPUT_PREVIEW = 200;
 const TOOL_RESULT_PREVIEW = 400;
@@ -38,14 +41,33 @@ type StreamJson =
   | { type: "result"; result?: string; is_error?: boolean }
   | { type: string; [k: string]: unknown };
 
-export function ensureImage(buildContext: string): void {
-  const inspect = spawnSync("docker", ["image", "inspect", IMAGE_TAG], {
+export function ensureImage(buildContext?: string): void {
+  const inspect = spawnSync("docker", ["image", "inspect", IMAGE_REF], {
     stdio: "ignore",
   });
   if (inspect.status === 0) return;
 
-  process.stderr.write(`[sandcastle] Building image ${IMAGE_TAG} from ${buildContext}\n`);
-  const build = spawnSync("docker", ["build", "-t", IMAGE_TAG, buildContext], {
+  process.stderr.write(`[sandcastle] Pulling image ${IMAGE_REF}\n`);
+  const pull = spawnSync("docker", ["pull", IMAGE_REF], { stdio: "inherit" });
+  if (pull.status === 0) return;
+
+  if (!buildContext) {
+    throw new Error(
+      `docker pull failed for ${IMAGE_REF} and no build context provided. ` +
+        `Set RALPH_DOCKER_CONTEXT to a directory containing a Dockerfile, ` +
+        `or override RALPH_IMAGE to an image you can pull.`
+    );
+  }
+  const dockerfile = join(buildContext, "Dockerfile");
+  if (!existsSync(dockerfile)) {
+    throw new Error(
+      `docker pull failed for ${IMAGE_REF} and no Dockerfile at ${dockerfile}`
+    );
+  }
+  process.stderr.write(
+    `[sandcastle] pull failed; building ${IMAGE_REF} from ${buildContext}\n`
+  );
+  const build = spawnSync("docker", ["build", "-t", IMAGE_REF, buildContext], {
     stdio: "inherit",
   });
   if (build.status !== 0) {
@@ -84,6 +106,12 @@ export async function runStage(
       `${workspaceDir}:/home/agent/workspace`,
       "-w",
       "/home/agent/workspace",
+      "-e",
+      "GIT_CONFIG_COUNT=1",
+      "-e",
+      "GIT_CONFIG_KEY_0=safe.directory",
+      "-e",
+      "GIT_CONFIG_VALUE_0=*",
     ];
 
     const home = process.env.HOME || process.env.USERPROFILE || "";
@@ -103,7 +131,7 @@ export async function runStage(
     }
 
     args.push(
-      IMAGE_TAG,
+      IMAGE_REF,
       "claude",
       "--verbose",
       "--print",

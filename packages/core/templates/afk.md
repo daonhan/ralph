@@ -1,6 +1,6 @@
 <commits>
 
-!`git log -n 5 --format="%H%n%ad%n%B---" --date=short 2>/dev/null || echo "No commits found"`
+!?`git log -n 5 --format="%H%n%ad%n%B---" --date=short|||No commits found`
 
 </commits>
 
@@ -10,4 +10,4 @@
 
 </inputs>
 
-!`cat ralph/prompt.md`
+@include:prompt.md

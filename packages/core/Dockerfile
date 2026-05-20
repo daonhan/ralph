@@ -34,6 +34,10 @@ RUN corepack enable
 RUN usermod -d /home/agent -m -l agent node
 USER agent
 
+# Bind-mounted host workspace may show foreign UID inside container.
+# Tell git to trust any path so `git ...` works against the mount.
+RUN git config --global --add safe.directory '*'
+
 # Claude Code CLI
 RUN curl -fsSL https://claude.ai/install.sh | bash
 

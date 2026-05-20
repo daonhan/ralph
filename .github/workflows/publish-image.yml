@@ -1,0 +1,69 @@
+name: Publish ralph-sandbox image
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag (e.g. latest, v0.1.0)"
+        required: true
+        default: latest
+      also_latest:
+        description: "Also tag as :latest"
+        required: false
+        default: "true"
+  push:
+    tags:
+      - "image-v*"
+
+concurrency:
+  group: publish-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "primary=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "also_latest=${{ inputs.also_latest }}" >> "$GITHUB_OUTPUT"
+          else
+            # push of image-v* tag: strip the "image-" prefix
+            echo "primary=${GITHUB_REF_NAME#image-}" >> "$GITHUB_OUTPUT"
+            echo "also_latest=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compose tag list
+        id: tags
+        run: |
+          REPO=docker.io/daonhan/ralph-sandbox
+          TAGS="${REPO}:${{ steps.tag.outputs.primary }}"
+          if [ "${{ steps.tag.outputs.also_latest }}" = "true" ] && [ "${{ steps.tag.outputs.primary }}" != "latest" ]; then
+            TAGS="${TAGS},${REPO}:latest"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./packages/core/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false

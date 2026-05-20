@@ -4,13 +4,21 @@
   "description": "CLI for the ralph AFK loop (ralph-afk, ralph-ghafk).",
   "type": "module",
   "bin": {
-    "ralph-afk":   "./bin/ralph-afk.js",
+    "ralph-afk": "./bin/ralph-afk.js",
     "ralph-ghafk": "./bin/ralph-ghafk.js"
   },
-  "files": ["bin", "README.md"],
+  "files": [
+    "bin",
+    "scripts",
+    "README.md"
+  ],
   "dependencies": {
     "@daonhan/ralph-core": "workspace:^"
   },
-  "engines": { "node": ">=20" },
-  "publishConfig": { "access": "public" }
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }
