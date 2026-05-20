@@ -343,7 +343,13 @@ npx -y @daonhan/ralph ralph-afk "<plan-and-prd>" 5
 pnpm install                          # links workspace, hoists devDeps
 pnpm -r build                         # compiles packages/core/dist
 pnpm -r typecheck                     # no-emit type check
+pnpm test                             # node --test (unit + config contract tests)
 ```
+
+### Self-hosting and releasing
+
+- **[`docs/SELF_HOSTING.md`](./docs/SELF_HOSTING.md)** — run Ralph against this repo (dogfood) via `scripts/dogfood.sh`; the verifying reviewer stage + CI keep auto-changes honest.
+- **[`RELEASING.md`](./RELEASING.md)** — how the three components are versioned and published (release-please). Supersedes the old `docs/PUBLISHING.md`.
 
 ### Build artifacts
 
@@ -475,6 +481,8 @@ Edit `packages/core/templates/prompt.md` (and `ghprompt.md`) — the playbooks i
 | --- | --- |
 | [`apps/cli/scripts/afk.sh`](./apps/cli/scripts/afk.sh) | Optional shim — plan/PRD loop. Falls back to `npx @daonhan/ralph ralph-afk`. Shipped in the npm tarball. |
 | [`apps/cli/scripts/ghafk.sh`](./apps/cli/scripts/ghafk.sh) | Optional shim — GitHub-issue loop. Calls `ralph-ghafk`. |
+| [`scripts/dogfood.sh`](./scripts/dogfood.sh) | Dev tool — run Ralph against its own repo (dogfood). Not shipped. |
+| [`docs/SELF_HOSTING.md`](./docs/SELF_HOSTING.md) | Runbook for self-hosting / dogfooding the loop. |
 | [`packages/core/templates/prompt.md`](./packages/core/templates/prompt.md) | Agent playbook for `ralph-afk`. Shipped in core tarball. |
 | [`packages/core/templates/ghprompt.md`](./packages/core/templates/ghprompt.md) | Agent playbook for `ralph-ghafk`. Shipped in core tarball. |
 | [`packages/core/templates/Dockerfile`](./packages/core/templates/Dockerfile) | Builds `ralph-sandbox` image: Node 22 + .NET SDK 9 + `gh` + `claude`. Shipped in `@daonhan/ralph-core` tarball. |
