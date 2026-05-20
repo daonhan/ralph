@@ -8,6 +8,10 @@ name: Publish to npm
 # Tag schema (see RELEASING.md):
 #   ralph-core-vX.Y.Z  -> publishes packages/core (@daonhan/ralph-core)
 #   ralph-vX.Y.Z       -> publishes apps/cli      (@daonhan/ralph)
+#
+# After a successful publish the matching GitHub Release is enriched with the
+# pnpm-packed .tgz, an SBOM (syft, SPDX-JSON), and a keyless cosign attestation
+# bundle. Those steps fail the workflow loudly rather than skipping silently.
 on:
   push:
     tags:
@@ -27,7 +31,10 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # gh release upload
+      id-token: write # keyless cosign attestation (OIDC)
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,7 +57,7 @@ jobs:
       - name: Resolve package from tag
         id: route
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          TAG="$RELEASE_TAG"
           case "$TAG" in
             ralph-core-v*)
               echo "dir=packages/core"        >> "$GITHUB_OUTPUT"
@@ -106,3 +113,35 @@ jobs:
           token: ${{ secrets.NPM_TOKEN }}
           package: ${{ steps.route.outputs.dir }}
           access: public
+
+      # ---- Release artifact enrichment (Phase 4) ----
+      - uses: sigstore/cosign-installer@v3
+      - uses: anchore/sbom-action/download-syft@v0
+
+      - name: Pack, SBOM, attest, and attach to the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PKG_DIR: ${{ steps.route.outputs.dir }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/artifacts"
+          mkdir -p "$OUT"
+
+          # 1) pnpm pack rewrites workspace: specifiers in the tarball's package.json.
+          (cd "$PKG_DIR" && pnpm pack --pack-destination "$OUT")
+          TGZ="$(ls "$OUT"/*.tgz | head -1)"
+          BASE="$(basename "$TGZ" .tgz)"
+          SBOM="$OUT/$BASE.sbom.spdx.json"
+          BUNDLE="$OUT/$BASE.cosign.bundle"
+
+          # 2) SBOM of the published tarball.
+          syft scan "file:$TGZ" -o "spdx-json=$SBOM"
+
+          # 3) Keyless (OIDC) cosign attestation over the tarball, bundled for offline verify.
+          cosign attest-blob --yes \
+            --predicate "$SBOM" --type spdxjson \
+            --bundle "$BUNDLE" "$TGZ"
+
+          # 4) Attach all three to the Release for this tag.
+          gh release upload "$RELEASE_TAG" "$TGZ" "$SBOM" "$BUNDLE" --clobber
+          echo "Uploaded to release $RELEASE_TAG: $(basename "$TGZ"), $(basename "$SBOM"), $(basename "$BUNDLE")"

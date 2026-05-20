@@ -7,6 +7,9 @@ name: Publish ralph-sandbox image
 # a base-image CVE) that do not warrant a semver bump.
 #
 # Tag schema (see RELEASING.md): ralph-sandbox-vX.Y.Z -> image tag vX.Y.Z
+#
+# For ralph-sandbox-v* releases the workflow also pins the immutable sha256 digest
+# into the GH Release body and attaches an SBOM (syft) + keyless cosign attestation.
 on:
   workflow_dispatch:
     inputs:
@@ -31,7 +34,8 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # to append the image digest to the GH Release body
+      contents: write # append digest to + upload artifacts on the GH Release
+      id-token: write # keyless cosign attestation (OIDC)
     steps:
       - uses: actions/checkout@v4
 
@@ -85,9 +89,15 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: false
 
-      # Pin the immutable digest into the GH Release notes so operators can deploy
-      # reproducibly. Only runs for ralph-sandbox-v* tags (which have a release).
-      - name: Append image digest to the GitHub Release
+      - uses: sigstore/cosign-installer@v3
+        if: steps.tag.outputs.release_tag != ''
+      - uses: anchore/sbom-action/download-syft@v0
+        if: steps.tag.outputs.release_tag != ''
+
+      # Pin the immutable digest into the GH Release notes and attach an SBOM +
+      # cosign attestation so operators can deploy reproducibly and audit the image.
+      # Only runs for ralph-sandbox-v* tags (which have a release).
+      - name: Enrich the GitHub Release (digest, SBOM, attestation)
         if: steps.tag.outputs.release_tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -95,11 +105,30 @@ jobs:
           RELEASE_TAG: ${{ steps.tag.outputs.release_tag }}
         run: |
           set -euo pipefail
-          REF="docker.io/daonhan/ralph-sandbox@${DIGEST}"
-          echo "Pinning ${REF} into release ${RELEASE_TAG}"
+          IMAGE_REF="docker.io/daonhan/ralph-sandbox@${DIGEST}"
+          OUT="$RUNNER_TEMP/artifacts"
+          mkdir -p "$OUT"
+          BASE="ralph-sandbox-${RELEASE_TAG#ralph-sandbox-}"
+          SBOM="$OUT/$BASE.image.sbom.spdx.json"
+          BUNDLE="$OUT/$BASE.image.cosign.bundle"
+
+          # 1) Append the immutable digest to the release body.
+          echo "Pinning ${IMAGE_REF} into release ${RELEASE_TAG}"
           BODY="$(gh release view "$RELEASE_TAG" --json body -q .body || true)"
           {
             printf '%s\n' "$BODY"
-            printf '\nImage: %s\n' "$REF"
-          } > /tmp/release-body.md
-          gh release edit "$RELEASE_TAG" --notes-file /tmp/release-body.md
+            printf '\nImage: %s\n' "$IMAGE_REF"
+          } > "$OUT/body.md"
+          gh release edit "$RELEASE_TAG" --notes-file "$OUT/body.md"
+
+          # 2) SBOM of the pushed image (scanned by digest, not by tag).
+          syft scan "$IMAGE_REF" -o "spdx-json=$SBOM"
+
+          # 3) Keyless (OIDC) cosign attestation over the image SBOM, bundled.
+          cosign attest-blob --yes \
+            --predicate "$SBOM" --type spdxjson \
+            --bundle "$BUNDLE" "$SBOM"
+
+          # 4) Attach SBOM + attestation to the release.
+          gh release upload "$RELEASE_TAG" "$SBOM" "$BUNDLE" --clobber
+          echo "Uploaded to release $RELEASE_TAG: $(basename "$SBOM"), $(basename "$BUNDLE")"
