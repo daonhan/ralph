@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 import { renderTemplate } from "./render.js";
-import { ensureImage, runStage } from "./runner.js";
+import { ensureImage, runStage, USE_COLOR, dim, bold, greenOut, boldOut, dimOut, SYM_OUT } from "./runner.js";
 import type { Stage } from "./stages.js";
 
 const SENTINEL = "<promise>NO MORE TASKS</promise>";
@@ -26,16 +26,18 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     let gateResult = "";
     for (let s = 0; s < stages.length; s++) {
       const stage = stages[s];
-      process.stderr.write(
-        `\n[sandcastle] iteration ${i}/${iterations} stage ${s + 1}/${stages.length} (${stage.name})\n`
-      );
+      const banner = USE_COLOR
+        ? `${dim("\u2501\u2501\u2501")} ${bold(`iteration ${i}/${iterations}`)} ${dim("\u00b7")} ${bold(stage.name)} ${dim(`(stage ${s + 1}/${stages.length})`)} ${dim("\u2501\u2501\u2501")}`
+        : `== iteration ${i}/${iterations} \u00b7 ${stage.name} (stage ${s + 1}/${stages.length}) ==`;
+      process.stderr.write(`\n${banner}\n`);
       const templatePath = join(sandcastleDir, "templates", stage.template);
       const prompt = renderTemplate(templatePath, { INPUTS: inputs }, { cwd: workspaceDir });
       const result = await runStage(stage, prompt, workspaceDir, i);
       if (s === 0) {
         gateResult = result;
         if (gateResult.includes(SENTINEL)) {
-          console.log(`Ralph complete after ${i} iterations.`);
+          const msg = greenOut(SYM_OUT.bullet) + " " + boldOut("Ralph complete") + dimOut(" after " + i + " iterations");
+          process.stdout.write(msg + "\n");
           return;
         }
       }
