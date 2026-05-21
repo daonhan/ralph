@@ -28,14 +28,12 @@ const NO_COLOR_ENV =
   process.env.NO_COLOR != null || process.env.TERM === "dumb";
 
 /** Controls ANSI codes on stderr (tool events, banners, docker output). */
-const USE_COLOR =
-  process.stderr.isTTY === true && !NO_COLOR_ENV;
+const USE_COLOR = process.stderr.isTTY === true && !NO_COLOR_ENV;
 
 /** Controls ANSI codes on stdout (assistant text bullets, completion line).
  *  Separate from USE_COLOR so `ralph-ghafk 1 > out.txt` stays clean even
  *  when stderr is still a TTY. */
-const USE_COLOR_STDOUT =
-  process.stdout.isTTY === true && !NO_COLOR_ENV;
+const USE_COLOR_STDOUT = process.stdout.isTTY === true && !NO_COLOR_ENV;
 
 const c = (code: string, s: string): string =>
   USE_COLOR ? `\x1b[${code}m${s}\x1b[0m` : s;
@@ -53,13 +51,31 @@ const dimOut = (s: string): string => cOut("2", s);
 
 const SYM = USE_COLOR
   ? { bullet: "●", cont: "⎿", check: "✓", cross: "✗", rule: "━", ellip: "…" }
-  : { bullet: "*", cont: "  >", check: "ok", cross: "FAIL", rule: "=", ellip: "..." };
+  : {
+      bullet: "*",
+      cont: "  >",
+      check: "ok",
+      cross: "FAIL",
+      rule: "=",
+      ellip: "...",
+    };
 
-const SYM_OUT = USE_COLOR_STDOUT
-  ? { bullet: "●" }
-  : { bullet: "*" };
+const SYM_OUT = USE_COLOR_STDOUT ? { bullet: "●" } : { bullet: "*" };
 
-export { USE_COLOR, USE_COLOR_STDOUT, dim, bold, cyan, green, red, SYM, greenOut, boldOut, dimOut, SYM_OUT };
+export {
+  USE_COLOR,
+  USE_COLOR_STDOUT,
+  dim,
+  bold,
+  cyan,
+  green,
+  red,
+  SYM,
+  greenOut,
+  boldOut,
+  dimOut,
+  SYM_OUT,
+};
 
 type AssistantBlock = {
   type: string;
@@ -161,7 +177,8 @@ export async function runStage(
   stage: Stage,
   renderedPrompt: string,
   workspaceDir: string,
-  iteration: number
+  iteration: number,
+  spillHostDir?: string
 ): Promise<string> {
   const tmpHostDir = join(workspaceDir, ".ralph-tmp");
   mkdirSync(tmpHostDir, { recursive: true });
@@ -233,6 +250,7 @@ export async function runStage(
     return await streamDocker(args, logPath);
   } finally {
     rmSync(promptHostPath, { force: true });
+    if (spillHostDir) rmSync(spillHostDir, { recursive: true, force: true });
   }
 }
 
@@ -293,10 +311,7 @@ function streamDocker(args: string[], logPath: string): Promise<string> {
 
 type ToolTrack = { name: string; startedAt: number };
 
-function renderEvent(
-  ev: StreamJson,
-  toolMap: Map<string, ToolTrack>
-): void {
+function renderEvent(ev: StreamJson, toolMap: Map<string, ToolTrack>): void {
   switch (ev.type) {
     case "system": {
       const sub = (ev as { subtype?: string }).subtype;
@@ -317,11 +332,15 @@ function renderEvent(
         if (block.type === "text" && typeof block.text === "string") {
           const lines = block.text.split("\n");
           const formatted = lines
-            .map((l, idx) => (idx === 0 ? `${boldOut(cyanOut(SYM_OUT.bullet))} ${l}` : `  ${l}`))
+            .map((l, idx) =>
+              idx === 0 ? `${boldOut(cyanOut(SYM_OUT.bullet))} ${l}` : `  ${l}`
+            )
             .join("\r\n");
           process.stdout.write(formatted + "\r\n\n");
         } else if (block.type === "thinking") {
-          process.stderr.write(`${dim(SYM.bullet + " thinking" + SYM.ellip)}\n`);
+          process.stderr.write(
+            `${dim(SYM.bullet + " thinking" + SYM.ellip)}\n`
+          );
         } else if (block.type === "tool_use") {
           const name = block.name ?? "?";
           const preview = previewInput(name, block.input);
@@ -345,9 +364,7 @@ function renderEvent(
           ? toolMap.get(block.tool_use_id)
           : undefined;
         const toolName = tracked?.name ?? "tool";
-        const elapsed = tracked
-          ? ` (${Date.now() - tracked.startedAt}ms)`
-          : "";
+        const elapsed = tracked ? ` (${Date.now() - tracked.startedAt}ms)` : "";
         if (block.tool_use_id) toolMap.delete(block.tool_use_id);
 
         if (block.is_error) {
@@ -372,7 +389,8 @@ function renderEvent(
     }
     case "result": {
       const isError = (ev as { is_error?: boolean }).is_error;
-      if (isError) process.stderr.write(`${red(SYM.bullet + " result errored")}\n`);
+      if (isError)
+        process.stderr.write(`${red(SYM.bullet + " result errored")}\n`);
       return;
     }
     default:
