@@ -24,24 +24,42 @@ const TOOL_ERROR_PREVIEW = 400;
 
 /* ── TTY-gated styling ────────────────────────────────────────────────── */
 
+const NO_COLOR_ENV =
+  process.env.NO_COLOR != null || process.env.TERM === "dumb";
+
+/** Controls ANSI codes on stderr (tool events, banners, docker output). */
 const USE_COLOR =
-  process.stderr.isTTY === true &&
-  process.env.NO_COLOR == null &&
-  process.env.TERM !== "dumb";
+  process.stderr.isTTY === true && !NO_COLOR_ENV;
+
+/** Controls ANSI codes on stdout (assistant text bullets, completion line).
+ *  Separate from USE_COLOR so `ralph-ghafk 1 > out.txt` stays clean even
+ *  when stderr is still a TTY. */
+const USE_COLOR_STDOUT =
+  process.stdout.isTTY === true && !NO_COLOR_ENV;
 
 const c = (code: string, s: string): string =>
   USE_COLOR ? `\x1b[${code}m${s}\x1b[0m` : s;
+const cOut = (code: string, s: string): string =>
+  USE_COLOR_STDOUT ? `\x1b[${code}m${s}\x1b[0m` : s;
 const dim = (s: string): string => c("2", s);
 const bold = (s: string): string => c("1", s);
 const cyan = (s: string): string => c("36", s);
 const green = (s: string): string => c("32", s);
 const red = (s: string): string => c("31", s);
+const boldOut = (s: string): string => cOut("1", s);
+const cyanOut = (s: string): string => cOut("36", s);
+const greenOut = (s: string): string => cOut("32", s);
+const dimOut = (s: string): string => cOut("2", s);
 
 const SYM = USE_COLOR
-  ? { bullet: "●", cont: "⎿", check: "✓", cross: "✗", rule: "━" }
-  : { bullet: "*", cont: "  >", check: "ok", cross: "FAIL", rule: "=" };
+  ? { bullet: "●", cont: "⎿", check: "✓", cross: "✗", rule: "━", ellip: "…" }
+  : { bullet: "*", cont: "  >", check: "ok", cross: "FAIL", rule: "=", ellip: "..." };
 
-export { USE_COLOR, dim, bold, cyan, green, red, SYM };
+const SYM_OUT = USE_COLOR_STDOUT
+  ? { bullet: "●" }
+  : { bullet: "*" };
+
+export { USE_COLOR, USE_COLOR_STDOUT, dim, bold, cyan, green, red, SYM, greenOut, boldOut, dimOut, SYM_OUT };
 
 type AssistantBlock = {
   type: string;
@@ -299,11 +317,11 @@ function renderEvent(
         if (block.type === "text" && typeof block.text === "string") {
           const lines = block.text.split("\n");
           const formatted = lines
-            .map((l, idx) => (idx === 0 ? `${bold(cyan(SYM.bullet))} ${l}` : `  ${l}`))
+            .map((l, idx) => (idx === 0 ? `${boldOut(cyanOut(SYM_OUT.bullet))} ${l}` : `  ${l}`))
             .join("\r\n");
           process.stdout.write(formatted + "\r\n\n");
         } else if (block.type === "thinking") {
-          process.stderr.write(`${dim(SYM.bullet + " thinking…")}\n`);
+          process.stderr.write(`${dim(SYM.bullet + " thinking" + SYM.ellip)}\n`);
         } else if (block.type === "tool_use") {
           const name = block.name ?? "?";
           const preview = previewInput(name, block.input);
@@ -333,9 +351,12 @@ function renderEvent(
         if (block.tool_use_id) toolMap.delete(block.tool_use_id);
 
         if (block.is_error) {
-          const snippet = text.slice(0, TOOL_ERROR_PREVIEW);
+          const snippet = text
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, TOOL_ERROR_PREVIEW);
           process.stderr.write(
-            `${dim(SYM.cont)} ${red(SYM.cross)} ${bold(toolName)}${red(" failed")}\n  ${red(snippet)}${text.length > snippet.length ? " …" : ""}\n`
+            `${dim(SYM.cont)} ${red(SYM.cross)} ${bold(toolName)}${red(" failed")}\n  ${red(snippet)}${text.length > snippet.length ? " " + SYM.ellip : ""}\n`
           );
         } else {
           const snippet = text
@@ -343,7 +364,7 @@ function renderEvent(
             .trim()
             .slice(0, TOOL_RESULT_PREVIEW);
           process.stderr.write(
-            `${dim(SYM.cont)} ${green(SYM.check)} ${bold(toolName)}${dim(elapsed)} ${dim(snippet)}${text.length > snippet.length ? " …" : ""}\n`
+            `${dim(SYM.cont)} ${green(SYM.check)} ${bold(toolName)}${dim(elapsed)} ${dim(snippet)}${text.length > snippet.length ? " " + SYM.ellip : ""}\n`
           );
         }
       }
@@ -400,5 +421,5 @@ function stringifyToolResult(content: unknown): string {
 
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
-  return s.slice(0, max - 1) + "…";
+  return s.slice(0, max - 1) + SYM.ellip;
 }
