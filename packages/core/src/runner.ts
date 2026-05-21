@@ -55,15 +55,39 @@ export function resolveDockerfile(buildContext: string): string {
   return inTemplates;
 }
 
+/**
+ * A "floating" image ref is one whose tag may move (no digest pin, and either
+ * no explicit tag or the conventional `:latest`). For these we always attempt
+ * a fresh pull so a stale local cache doesn't pin users to an old sandbox
+ * (e.g. an older .NET SDK) after we republish the image.
+ */
+function isFloatingRef(ref: string): boolean {
+  if (ref.includes("@sha256:")) return false;
+  const lastSlash = ref.lastIndexOf("/");
+  const namePart = lastSlash >= 0 ? ref.slice(lastSlash + 1) : ref;
+  const colon = namePart.indexOf(":");
+  if (colon < 0) return true;
+  return namePart.slice(colon + 1) === "latest";
+}
+
 export function ensureImage(buildContext?: string): void {
-  const inspect = spawnSync("docker", ["image", "inspect", IMAGE_REF], {
-    stdio: "ignore",
-  });
-  if (inspect.status === 0) return;
+  const floating = isFloatingRef(IMAGE_REF);
+  const hasLocal =
+    spawnSync("docker", ["image", "inspect", IMAGE_REF], { stdio: "ignore" })
+      .status === 0;
+
+  if (hasLocal && !floating) return;
 
   process.stderr.write(`[sandcastle] Pulling image ${IMAGE_REF}\n`);
   const pull = spawnSync("docker", ["pull", IMAGE_REF], { stdio: "inherit" });
   if (pull.status === 0) return;
+
+  if (hasLocal) {
+    process.stderr.write(
+      `[sandcastle] pull failed; using cached local copy of ${IMAGE_REF}\n`
+    );
+    return;
+  }
 
   if (!buildContext) {
     throw new Error(
@@ -81,9 +105,13 @@ export function ensureImage(buildContext?: string): void {
   process.stderr.write(
     `[sandcastle] pull failed; building ${IMAGE_REF} from ${buildContext}\n`
   );
-  const build = spawnSync("docker", ["build", "-t", IMAGE_REF, "-f", dockerfile, buildContext], {
-    stdio: "inherit",
-  });
+  const build = spawnSync(
+    "docker",
+    ["build", "-t", IMAGE_REF, "-f", dockerfile, buildContext],
+    {
+      stdio: "inherit",
+    }
+  );
   if (build.status !== 0) {
     throw new Error(`docker build failed (exit ${build.status})`);
   }
@@ -101,7 +129,10 @@ export async function runStage(
   const logsDir = join(tmpHostDir, "logs");
   mkdirSync(logsDir, { recursive: true });
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const logPath = join(logsDir, `${timestamp}-iter${iteration}-${stage.name}.ndjson`);
+  const logPath = join(
+    logsDir,
+    `${timestamp}-iter${iteration}-${stage.name}.ndjson`
+  );
 
   const promptName = `.run-${process.pid}-${iteration}-${Date.now()}.md`;
   const promptHostPath = join(tmpHostDir, promptName);
@@ -209,7 +240,9 @@ function streamDocker(args: string[], logPath: string): Promise<string> {
     child.on("close", (code) => {
       closeSync(logFd);
       if (code !== 0) {
-        reject(new Error(`docker run exited with ${code}\n${stderrTail.join("\n")}`));
+        reject(
+          new Error(`docker run exited with ${code}\n${stderrTail.join("\n")}`)
+        );
         return;
       }
       resolve(finalResult);
@@ -229,7 +262,9 @@ function renderEvent(ev: StreamJson): void {
       return;
     }
     case "assistant": {
-      const content = (ev as { message?: { content?: AssistantBlock[] } }).message?.content ?? [];
+      const content =
+        (ev as { message?: { content?: AssistantBlock[] } }).message?.content ??
+        [];
       for (const block of content) {
         if (block.type === "text" && typeof block.text === "string") {
           process.stdout.write(block.text.replace(/\n/g, "\r\n") + "\r\n\n");
@@ -245,16 +280,24 @@ function renderEvent(ev: StreamJson): void {
       return;
     }
     case "user": {
-      const content = (ev as { message?: { content?: UserBlock[] } }).message?.content ?? [];
+      const content =
+        (ev as { message?: { content?: UserBlock[] } }).message?.content ?? [];
       for (const block of content) {
         if (block.type !== "tool_result") continue;
         const text = stringifyToolResult(block.content);
         if (block.is_error) {
           const snippet = text.slice(0, TOOL_RESULT_PREVIEW * 2);
-          process.stderr.write(`[tool:error] ${snippet}${text.length > snippet.length ? " …" : ""}\n`);
+          process.stderr.write(
+            `[tool:error] ${snippet}${text.length > snippet.length ? " …" : ""}\n`
+          );
         } else {
-          const snippet = text.replace(/\s+/g, " ").trim().slice(0, TOOL_RESULT_PREVIEW);
-          process.stderr.write(`[tool:ok] ${snippet}${text.length > snippet.length ? " …" : ""}\n`);
+          const snippet = text
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, TOOL_RESULT_PREVIEW);
+          process.stderr.write(
+            `[tool:ok] ${snippet}${text.length > snippet.length ? " …" : ""}\n`
+          );
         }
       }
       return;
@@ -299,7 +342,8 @@ function stringifyToolResult(content: unknown): string {
     return content
       .map((c) => {
         if (typeof c === "string") return c;
-        if (c && typeof c === "object" && "text" in c) return String((c as { text: unknown }).text ?? "");
+        if (c && typeof c === "object" && "text" in c)
+          return String((c as { text: unknown }).text ?? "");
         return JSON.stringify(c);
       })
       .join("\n");
