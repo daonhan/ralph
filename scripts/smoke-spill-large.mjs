@@ -11,7 +11,7 @@ const spillRel = "spill-X";
 const spillHostDir = join(work, ".ralph-tmp", spillRel);
 const spillRefPath = posix.join(".ralph-tmp", spillRel);
 
-// 200_000 byte payload via a shell loop. Use printf to avoid shell quirks.
+// 200_000 byte payload via `yes ... | head -c N` — portable on bash/git-bash.
 writeFileSync(
   tpl,
   [

@@ -1,12 +1,6 @@
 // Render the real shipped templates against this repo. Verifies @spill paths,
 // inlined sections, and that prompts stay small.
-import {
-  mkdtempSync,
-  rmSync,
-  existsSync,
-  statSync,
-  readdirSync,
-} from "node:fs";
+import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import { renderTemplate } from "../packages/core/dist/render.js";

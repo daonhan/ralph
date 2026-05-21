@@ -59,6 +59,21 @@ export function renderTemplate(
           `@spill:${name} used but spillHostDir/spillRefPath not provided to renderTemplate`
         );
       }
+      // Reject any name that could escape spillHostDir. Templates are trusted
+      // (shipped in the npm tarball) but defense-in-depth — keep file writes
+      // confined to the per-iteration spill dir.
+      if (
+        name.includes("/") ||
+        name.includes("\\") ||
+        name === "." ||
+        name === ".." ||
+        name.includes("..") ||
+        isAbsolute(name)
+      ) {
+        throw new Error(
+          `@spill:${name} — name must be a plain filename (no path separators, no ..)`
+        );
+      }
       const tryMode = q === "?";
       let cmd = body;
       let fallback = "";
