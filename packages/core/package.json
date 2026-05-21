@@ -1,23 +1,43 @@
 {
   "name": "@daonhan/ralph-core",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Claude Code AFK orchestration: iteration loop, docker runner, template renderer.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".":        { "types": "./dist/index.d.ts",  "import": "./dist/index.js" },
-    "./loop":   { "types": "./dist/loop.d.ts",   "import": "./dist/loop.js" },
-    "./runner": { "types": "./dist/runner.d.ts", "import": "./dist/runner.js" },
-    "./stages": { "types": "./dist/stages.d.ts", "import": "./dist/stages.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./loop": {
+      "types": "./dist/loop.d.ts",
+      "import": "./dist/loop.js"
+    },
+    "./runner": {
+      "types": "./dist/runner.d.ts",
+      "import": "./dist/runner.js"
+    },
+    "./stages": {
+      "types": "./dist/stages.d.ts",
+      "import": "./dist/stages.js"
+    }
   },
-  "files": ["dist", "templates", "README.md"],
+  "files": [
+    "dist",
+    "templates",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "pnpm run clean && pnpm run build"
   },
-  "engines": { "node": ">=20" },
-  "publishConfig": { "access": "public" }
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }
