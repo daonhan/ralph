@@ -21,7 +21,7 @@ Add a small module-local style layer. No new prod deps (matches existing "small 
 
 ```ts
 const USE_COLOR =
-  process.stdout.isTTY === true &&
+  process.stderr.isTTY === true &&
   process.env.NO_COLOR == null &&
   process.env.TERM !== "dumb";
 
