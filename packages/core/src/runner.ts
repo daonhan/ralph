@@ -61,7 +61,7 @@ export function resolveDockerfile(buildContext: string): string {
  * a fresh pull so a stale local cache doesn't pin users to an old sandbox
  * (e.g. an older .NET SDK) after we republish the image.
  */
-function isFloatingRef(ref: string): boolean {
+export function isFloatingRef(ref: string): boolean {
   if (ref.includes("@sha256:")) return false;
   const lastSlash = ref.lastIndexOf("/");
   const namePart = lastSlash >= 0 ? ref.slice(lastSlash + 1) : ref;
