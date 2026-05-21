@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/daonhan/ralph/compare/ralph-v0.2.0...ralph-v0.2.1) (2026-05-21)
+
+
+### Miscellaneous Chores
+
+* release ralph-core@0.4.0 and ralph@0.4.0 ([d29e239](https://github.com/daonhan/ralph/commit/d29e23916b6b3656be40a85f32df61d59e17fdeb))
+
 ## [0.2.0](https://github.com/daonhan/ralph/compare/ralph-v0.1.0...ralph-v0.2.0) (2026-05-21)
 
 

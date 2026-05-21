@@ -24,7 +24,7 @@ Release PR appears.
 | Component | Artifact | Version | Released | Tag |
 | --- | --- | --- | --- | --- |
 | `ralph-core` | npm `@daonhan/ralph-core` | `0.3.1` | — | — |
-| `ralph` | npm `@daonhan/ralph` | `0.2.0` | — | — |
+| `ralph` | npm `@daonhan/ralph` | `0.2.1` | — | — |
 | `ralph-sandbox` | Docker `daonhan/ralph-sandbox` | `0.2.1` | — | — |
 <!-- status-table:end -->
 
