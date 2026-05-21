@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.2.0...ralph-sandbox-v0.2.1) (2026-05-21)
+
+
+### Bug Fixes
+
+* **core:** spill heavy template output to side files ([0571a67](https://github.com/daonhan/ralph/commit/0571a67728a7ae4353a24ba1bfa0a2d2433952dd))
+
 ## [0.2.0](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.1.1...ralph-sandbox-v0.2.0) (2026-05-21)
 
 
