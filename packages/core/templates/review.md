@@ -14,7 +14,9 @@
 
 !?`git show --stat HEAD|||No diff`
 
-!?`git show HEAD | head -c 200000|||No diff body`
+Full patch spilled to: @spill?:head.diff=`git show HEAD|||No diff body`
+
+Read that file with `Read` (use `offset`/`limit` for large diffs) before reviewing.
 
 </latest-diff>
 
@@ -35,6 +37,7 @@ If `<head>` shows `(no commits)` or HEAD is unchanged from the previous iteratio
 # ACTION
 
 If defects found:
+
 - Fix them directly in the working tree.
 - Run feedback loops:
   - Frontend / Node: `pnpm run test`, `pnpm run typecheck`

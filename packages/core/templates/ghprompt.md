@@ -1,8 +1,11 @@
 # ISSUES
 
-GitHub issues are provided at start of context. Parse it to get open issues with their bodies and comments.
+Two views of open GitHub issues are provided at the start of context:
 
-You will work on the AFK issues only, not the HITL ones.
+- `<issues-summary>` — inline lean index (number, title, labels). Use this to triage and pick a task.
+- `<issues-full-file>` — path to a spilled JSON file containing bodies + comments. `Read` that file (with `offset`/`limit` if it is large) once you have picked an issue you want to act on.
+
+You will work on the AFK issues only, not the HITL ones. Label filtering uses the `labels` field in the summary.
 
 You've also been passed a file containing the last few commits. Review these to understand what work has been done.
 
