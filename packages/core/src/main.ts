@@ -1,7 +1,12 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parseFlags, printConfig, printHelp } from "./cli-help.js";
+import {
+  parseFlags,
+  printConfig,
+  printHelp,
+  printVersion,
+} from "./cli-help.js";
 import { runLoop } from "./loop.js";
 import { STAGES } from "./stages.js";
 
@@ -9,9 +14,18 @@ const BIN = "ralph-afk";
 const USAGE = "<plan-and-prd> <iterations>";
 const DESC = "plan/PRD-driven Claude Code AFK loop";
 
-export async function runAfk(argv: string[]): Promise<void> {
+export type RunAfkOptions = { cliVersion?: string };
+
+export async function runAfk(
+  argv: string[],
+  opts: RunAfkOptions = {}
+): Promise<void> {
   const flags = parseFlags(argv);
 
+  if (flags.version) {
+    printVersion(BIN, opts.cliVersion);
+    return;
+  }
   if (flags.help) {
     printHelp(BIN, USAGE, DESC);
     return;
@@ -23,7 +37,7 @@ export async function runAfk(argv: string[]): Promise<void> {
   const ralphDir = resolve(process.env.RALPH_DOCKER_CONTEXT ?? sandcastleDir);
 
   if (flags.printConfig) {
-    printConfig(BIN, workspaceDir, ralphDir, sandcastleDir);
+    printConfig(BIN, workspaceDir, ralphDir, sandcastleDir, opts.cliVersion);
     return;
   }
 
