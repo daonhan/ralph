@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.5.0](https://github.com/daonhan/ralph/compare/ralph-v0.4.2...ralph-v0.5.0) (2026-05-22)
+
+
+### Features
+
+* global CLI install + container git fix ([fe6e181](https://github.com/daonhan/ralph/commit/fe6e181c47cc4f2caef9934ab7c50f8d7a906fb0))
+
+
+### Code Refactoring
+
+* restructure CLI scripts and templates ([6de08b2](https://github.com/daonhan/ralph/commit/6de08b2fd59ad0aeefefd636052addebda3d6a64))
+
+
+### Miscellaneous Chores
+
+* **main:** release ralph 0.2.0 ([f034b56](https://github.com/daonhan/ralph/commit/f034b56a59c6f04758d206dafa97b943a4a85a09))
+* **main:** release ralph 0.2.0 ([c80ca56](https://github.com/daonhan/ralph/commit/c80ca5692c55f94949de77cb041a241bb4799179))
+* **main:** release ralph 0.2.1 ([caefea0](https://github.com/daonhan/ralph/commit/caefea0bb2e5f3aea3dfa6af0944fc201a8293e3))
+* **main:** release ralph 0.2.1 ([c5e34fd](https://github.com/daonhan/ralph/commit/c5e34fd242a54fbbad60032c4d5d77b6677b12d8))
+* release ralph-core@0.4.0 and ralph@0.4.0 ([d29e239](https://github.com/daonhan/ralph/commit/d29e23916b6b3656be40a85f32df61d59e17fdeb))
+
 ## [0.2.1](https://github.com/daonhan/ralph/compare/ralph-v0.2.0...ralph-v0.2.1) (2026-05-21)
 
 
