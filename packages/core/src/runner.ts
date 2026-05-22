@@ -6,6 +6,7 @@ import {
   mkdirSync,
   openSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { createInterface } from "node:readline";
@@ -109,6 +110,101 @@ export function resolveDockerfile(buildContext: string): string {
   const legacy = join(buildContext, "Dockerfile");
   if (existsSync(legacy)) return legacy;
   return inTemplates;
+}
+
+/**
+ * Auto-detect the host Docker socket path. Checked in priority order:
+ *
+ *   1. RALPH_DOCKER_SOCK_PATH — explicit override.
+ *   2. DOCKER_HOST=unix:///path/to/sock — parse if scheme is unix://.
+ *   3. /var/run/docker.sock — vanilla Linux, Docker Desktop (macOS symlink).
+ *   4. $HOME/.docker/run/docker.sock — Docker Desktop on macOS (post-4.x).
+ *   5. $HOME/.colima/default/docker.sock — Colima default profile.
+ *   6. $HOME/.rd/docker.sock — Rancher Desktop.
+ *   7. $XDG_RUNTIME_DIR/docker.sock — rootless Docker.
+ *   8. $XDG_RUNTIME_DIR/podman/podman.sock — rootless Podman.
+ *
+ * On Windows, only the explicit overrides are considered; if neither is set
+ * we fall back to `/var/run/docker.sock` since Docker Desktop translates
+ * that path through its WSL2 backend.
+ *
+ * Returns the first existing path, or null if nothing matched.
+ */
+export function detectDockerSocketPath(): string | null {
+  const override =
+    process.env.RALPH_DOCKER_SOCK_PATH ||
+    parseDockerHost(process.env.DOCKER_HOST);
+  if (override) return override;
+
+  if (process.platform === "win32") {
+    // Docker Desktop on Windows translates this path through its WSL2 backend;
+    // existsSync can't see the named pipe so just return the conventional path.
+    return "/var/run/docker.sock";
+  }
+
+  const home = process.env.HOME || "";
+  const xdg = process.env.XDG_RUNTIME_DIR || "";
+  const candidates = [
+    "/var/run/docker.sock",
+    home && join(home, ".docker", "run", "docker.sock"),
+    home && join(home, ".colima", "default", "docker.sock"),
+    home && join(home, ".rd", "docker.sock"),
+    xdg && join(xdg, "docker.sock"),
+    xdg && join(xdg, "podman", "podman.sock"),
+  ].filter(Boolean) as string[];
+
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+  return null;
+}
+
+function parseDockerHost(raw: string | undefined): string | null {
+  if (!raw) return null;
+  if (raw.startsWith("unix://")) return raw.slice("unix://".length);
+  return null; // tcp://, npipe://, ssh:// — not supported via bind-mount
+}
+
+/**
+ * Build `docker run` args that bind-mount the host Docker socket into the
+ * sandbox so Testcontainers (and any other client of the Docker API) inside
+ * the container can spawn sibling containers on the host daemon.
+ *
+ * - Default: ON when a socket is detected by detectDockerSocketPath().
+ * - Opt-out: RALPH_DOCKER_SOCK=0
+ * - Explicit path: RALPH_DOCKER_SOCK_PATH=/path/to/docker.sock
+ *
+ * On Linux the socket is typically root:docker 0660, so UID 1000 `agent`
+ * inside the container cannot write to it. We read the socket's GID via
+ * statSync and pass `--group-add <gid>` so the agent user inherits write
+ * access without altering host perms. Docker Desktop on macOS/Windows
+ * exposes the socket world-accessible via its proxy, so no group fixup.
+ *
+ * Security note: mounting docker.sock grants the sandbox root-equivalent
+ * access to the host Docker daemon. The AFK loop already runs with
+ * --permission-mode bypassPermissions, so the blast radius is effectively
+ * "anything docker can do on this host". Disable via RALPH_DOCKER_SOCK=0
+ * when running untrusted prompts.
+ */
+export function resolveDockerSocketMount(): string[] | null {
+  if (process.env.RALPH_DOCKER_SOCK === "0") return null;
+  const sockPath = detectDockerSocketPath();
+  if (!sockPath) return null;
+
+  const args = ["-v", `${sockPath}:/var/run/docker.sock`];
+
+  if (process.platform === "linux") {
+    try {
+      const gid = statSync(sockPath).gid;
+      if (Number.isFinite(gid) && gid > 0) {
+        args.push("--group-add", String(gid));
+      }
+    } catch {
+      // socket gone between detect and statSync — skip group fixup
+    }
+  }
+
+  return args;
 }
 
 /**
@@ -231,6 +327,9 @@ export async function runStage(
         args.push("-v", `${ghConfigDir}:/home/agent/.config/gh:ro`);
       }
     }
+
+    const sockMount = resolveDockerSocketMount();
+    if (sockMount) args.push(...sockMount);
 
     args.push(
       IMAGE_REF,

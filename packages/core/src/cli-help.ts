@@ -16,7 +16,11 @@ export function parseFlags(argv: string[]): CliFlags {
   return { help, printConfig, rest };
 }
 
-export function printHelp(bin: string, usage: string, description: string): void {
+export function printHelp(
+  bin: string,
+  usage: string,
+  description: string
+): void {
   process.stdout.write(`${bin} — ${description}
 
 Usage:
@@ -33,6 +37,18 @@ Environment variables:
   RALPH_DOCKER_CONTEXT  docker build fallback context (default: bundled @daonhan/ralph-core dir)
   RALPH_IMAGE           image ref (default: docker.io/daonhan/ralph-sandbox:latest)
   RALPH_IMAGE_TAG       legacy alias for RALPH_IMAGE
+  RALPH_DOCKER_SOCK     "0" disables host docker.sock bind-mount (default: on if a
+                        socket is detected). Mounting lets Testcontainers inside the
+                        sandbox spawn sibling containers on the host daemon. Grants
+                        root-equivalent host access.
+  RALPH_DOCKER_SOCK_PATH explicit docker.sock host path. When unset, auto-detected via
+                        DOCKER_HOST (unix:// only), then a candidate list:
+                          /var/run/docker.sock
+                          $HOME/.docker/run/docker.sock  (Docker Desktop macOS 4.x+)
+                          $HOME/.colima/default/docker.sock
+                          $HOME/.rd/docker.sock          (Rancher Desktop)
+                          $XDG_RUNTIME_DIR/docker.sock   (rootless Docker)
+                          $XDG_RUNTIME_DIR/podman/podman.sock
 
 Image resolution: docker image inspect → docker pull → docker build (fallback).
 Build fallback runs only if pull fails AND $RALPH_DOCKER_CONTEXT/Dockerfile exists; expect ~5min.
