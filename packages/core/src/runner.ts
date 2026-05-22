@@ -174,11 +174,16 @@ function parseDockerHost(raw: string | undefined): string | null {
  * - Opt-out: RALPH_DOCKER_SOCK=0
  * - Explicit path: RALPH_DOCKER_SOCK_PATH=/path/to/docker.sock
  *
- * On Linux the socket is typically root:docker 0660, so UID 1000 `agent`
- * inside the container cannot write to it. We read the socket's GID via
- * statSync and pass `--group-add <gid>` so the agent user inherits write
- * access without altering host perms. Docker Desktop on macOS/Windows
- * exposes the socket world-accessible via its proxy, so no group fixup.
+ * Group fixup: the socket inside the sandbox is owned by a privileged group
+ * the `agent` (UID 1000) user is not in by default, so it must be added via
+ * `--group-add`:
+ *   - Linux native: socket is typically root:docker 0660. We statSync the
+ *     host path and pass --group-add <gid> matching the host's docker group.
+ *   - Docker Desktop (macOS/Windows): the bind-mounted socket surfaces as
+ *     root:root 0660 inside the container regardless of host filesystem
+ *     perms, so we pass --group-add 0 to grant the agent the root *group*
+ *     (this is the file-access group only; the agent process still runs as
+ *     UID 1000, not root).
  *
  * Security note: mounting docker.sock grants the sandbox root-equivalent
  * access to the host Docker daemon. The AFK loop already runs with
@@ -202,6 +207,10 @@ export function resolveDockerSocketMount(): string[] | null {
     } catch {
       // socket gone between detect and statSync — skip group fixup
     }
+  } else {
+    // Docker Desktop surfaces docker.sock as root:root 0660 inside the
+    // container. UID 1000 agent needs the root group to open it.
+    args.push("--group-add", "0");
   }
 
   return args;
