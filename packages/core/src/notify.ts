@@ -53,11 +53,6 @@ function fireAndForget(
   }
 }
 
-function escSingleQuote(s: string): string {
-  // For AppleScript single-quoted strings via the shell. Replace ' with '\''.
-  return s.replace(/'/g, "'\\''");
-}
-
 function escDoubleQuote(s: string): string {
   return s.replace(/"/g, '\\"');
 }
