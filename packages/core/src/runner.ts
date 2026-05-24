@@ -14,6 +14,10 @@ import { join, posix } from "node:path";
 
 import type { Stage } from "./stages.js";
 
+export type RunStageOptions = {
+  signal?: AbortSignal;
+};
+
 export const IMAGE_REF =
   process.env.RALPH_IMAGE ??
   process.env.RALPH_IMAGE_TAG ?? // legacy
@@ -231,7 +235,61 @@ export function isFloatingRef(ref: string): boolean {
   return namePart.slice(colon + 1) === "latest";
 }
 
-export function ensureImage(buildContext?: string): void {
+function abortError(): Error {
+  const err = new Error("docker command aborted");
+  err.name = "AbortError";
+  return err;
+}
+
+type DockerCommandOptions = {
+  signal?: AbortSignal;
+  stdio: "ignore" | "inherit";
+};
+
+function runDockerCommand(
+  args: string[],
+  options: DockerCommandOptions
+): Promise<number | null> {
+  if (options.signal?.aborted) {
+    return Promise.reject(abortError());
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn("docker", args, { stdio: options.stdio });
+    let settled = false;
+    let onAbort = (): void => {};
+
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      options.signal?.removeEventListener("abort", onAbort);
+      fn();
+    };
+    const rejectOnce = (err: unknown): void => finish(() => reject(err));
+    const resolveOnce = (code: number | null): void =>
+      finish(() => resolve(code));
+
+    onAbort = (): void => {
+      try {
+        child.kill();
+      } catch {
+        // Already dead; close/error handling will settle if needed.
+      }
+      rejectOnce(abortError());
+    };
+
+    if (options.signal?.aborted) {
+      onAbort();
+      return;
+    }
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+
+    child.on("error", rejectOnce);
+    child.on("close", resolveOnce);
+  });
+}
+
+function ensureImageSync(buildContext?: string): void {
   const floating = isFloatingRef(IMAGE_REF);
   const hasLocal =
     spawnSync("docker", ["image", "inspect", IMAGE_REF], { stdio: "ignore" })
@@ -278,23 +336,104 @@ export function ensureImage(buildContext?: string): void {
   }
 }
 
+async function ensureImageAsync(
+  buildContext: string | undefined,
+  options: RunStageOptions
+): Promise<void> {
+  const floating = isFloatingRef(IMAGE_REF);
+  const hasLocal =
+    (await runDockerCommand(["image", "inspect", IMAGE_REF], {
+      stdio: "ignore",
+      signal: options.signal,
+    })) === 0;
+
+  if (hasLocal && !floating) return;
+
+  process.stderr.write(`${dim("pulling")} ${IMAGE_REF}\n`);
+  const pullStatus = await runDockerCommand(["pull", IMAGE_REF], {
+    stdio: "inherit",
+    signal: options.signal,
+  });
+  if (pullStatus === 0) return;
+
+  if (hasLocal) {
+    process.stderr.write(
+      `${dim("pull failed; using cached local copy of")} ${IMAGE_REF}\n`
+    );
+    return;
+  }
+
+  if (!buildContext) {
+    throw new Error(
+      `docker pull failed for ${IMAGE_REF} and no build context provided. ` +
+        `Set RALPH_DOCKER_CONTEXT to a directory containing a Dockerfile, ` +
+        `or override RALPH_IMAGE to an image you can pull.`
+    );
+  }
+  const dockerfile = resolveDockerfile(buildContext);
+  if (!existsSync(dockerfile)) {
+    throw new Error(
+      `docker pull failed for ${IMAGE_REF} and no Dockerfile at ${dockerfile}`
+    );
+  }
+  process.stderr.write(
+    `${dim("pull failed; building")} ${IMAGE_REF} ${dim("from")} ${buildContext}\n`
+  );
+  const buildStatus = await runDockerCommand(
+    ["build", "-t", IMAGE_REF, "-f", dockerfile, buildContext],
+    {
+      stdio: "inherit",
+      signal: options.signal,
+    }
+  );
+  if (buildStatus !== 0) {
+    throw new Error(`docker build failed (exit ${buildStatus})`);
+  }
+}
+
+export function ensureImage(buildContext?: string): void;
+export function ensureImage(
+  buildContext: string | undefined,
+  options: RunStageOptions
+): Promise<void>;
+export function ensureImage(
+  buildContext?: string,
+  options?: RunStageOptions
+): void | Promise<void> {
+  if (options) return ensureImageAsync(buildContext, options);
+  return ensureImageSync(buildContext);
+}
+
+export function stageLogPath(
+  workspaceDir: string,
+  iteration: number,
+  stageName: string
+): string {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return join(
+    workspaceDir,
+    ".ralph-tmp",
+    "logs",
+    `${timestamp}-iter${iteration}-${stageName}.ndjson`
+  );
+}
+
 export async function runStage(
   stage: Stage,
   renderedPrompt: string,
   workspaceDir: string,
   iteration: number,
-  spillHostDir?: string
+  spillHostDir?: string,
+  logPathOverride?: string,
+  options: RunStageOptions = {}
 ): Promise<string> {
   const tmpHostDir = join(workspaceDir, ".ralph-tmp");
   mkdirSync(tmpHostDir, { recursive: true });
 
   const logsDir = join(tmpHostDir, "logs");
   mkdirSync(logsDir, { recursive: true });
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const logPath = join(
-    logsDir,
-    `${timestamp}-iter${iteration}-${stage.name}.ndjson`
-  );
+  const logPath =
+    logPathOverride ?? stageLogPath(workspaceDir, iteration, stage.name);
 
   const promptName = `.run-${process.pid}-${iteration}-${Date.now()}.md`;
   const promptHostPath = join(tmpHostDir, promptName);
@@ -355,14 +494,22 @@ export async function runStage(
       `Read the full instructions from the file ./${promptContainerPath} in the current workspace and execute them.`
     );
 
-    return await streamDocker(args, logPath);
+    return await streamDocker(args, logPath, options);
   } finally {
     rmSync(promptHostPath, { force: true });
     if (spillHostDir) rmSync(spillHostDir, { recursive: true, force: true });
   }
 }
 
-function streamDocker(args: string[], logPath: string): Promise<string> {
+function streamDocker(
+  args: string[],
+  logPath: string,
+  options: RunStageOptions = {}
+): Promise<string> {
+  if (options.signal?.aborted) {
+    return Promise.reject(abortError());
+  }
+
   return new Promise((resolve, reject) => {
     const logFd = openSync(logPath, "a");
     const toolMap = new Map<string, ToolTrack>();
@@ -373,9 +520,48 @@ function streamDocker(args: string[], logPath: string): Promise<string> {
 
     let finalResult = "";
     const stderrTail: string[] = [];
+    let settled = false;
+    let onAbort = (): void => {};
+    let rl: ReturnType<typeof createInterface> | undefined;
+    let rlErr: ReturnType<typeof createInterface> | undefined;
 
-    const rl = createInterface({ input: child.stdout });
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      options.signal?.removeEventListener("abort", onAbort);
+      try {
+        rl?.close();
+      } catch {
+        // Already closed.
+      }
+      try {
+        rlErr?.close();
+      } catch {
+        // Already closed.
+      }
+      try {
+        closeSync(logFd);
+      } catch {
+        // Already closed.
+      }
+      fn();
+    };
+
+    const rejectOnce = (err: unknown): void => finish(() => reject(err));
+    const resolveOnce = (value: string): void => finish(() => resolve(value));
+
+    onAbort = (): void => {
+      try {
+        child.kill();
+      } catch {
+        // Already dead; close handling below will settle if needed.
+      }
+      rejectOnce(abortError());
+    };
+
+    rl = createInterface({ input: child.stdout });
     rl.on("line", (line) => {
+      if (settled) return;
       if (!line.startsWith("{")) return;
 
       appendFileSync(logFd, line + "\n");
@@ -393,26 +579,31 @@ function streamDocker(args: string[], logPath: string): Promise<string> {
       }
     });
 
-    const rlErr = createInterface({ input: child.stderr });
+    rlErr = createInterface({ input: child.stderr });
     rlErr.on("line", (line) => {
+      if (settled) return;
       stderrTail.push(line);
       if (stderrTail.length > STDERR_TAIL_LINES) stderrTail.shift();
       process.stderr.write(`${dim("docker  " + line)}\n`);
     });
 
+    if (options.signal?.aborted) {
+      onAbort();
+      return;
+    }
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+
     child.on("error", (err) => {
-      closeSync(logFd);
-      reject(err);
+      rejectOnce(err);
     });
     child.on("close", (code) => {
-      closeSync(logFd);
       if (code !== 0) {
-        reject(
+        rejectOnce(
           new Error(`docker run exited with ${code}\n${stderrTail.join("\n")}`)
         );
         return;
       }
-      resolve(finalResult);
+      resolveOnce(finalResult);
     });
   });
 }
