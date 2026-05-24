@@ -1,4 +1,4 @@
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -7,6 +7,7 @@ import {
   printHelp,
   printVersion,
 } from "./cli-help.js";
+import { detachAndExit } from "./detach.js";
 import { runLoop } from "./loop.js";
 import { STAGES } from "./stages.js";
 
@@ -36,13 +37,28 @@ export async function runGhAfk(
   const workspaceDir = resolve(process.env.RALPH_WORKSPACE ?? process.cwd());
   const ralphDir = resolve(process.env.RALPH_DOCKER_CONTEXT ?? sandcastleDir);
 
+  const detachLogPath = flags.detach
+    ? (flags.log ??
+      join(workspaceDir, ".ralph-tmp", "logs", `detached-${process.pid}.log`))
+    : undefined;
+
   if (flags.printConfig) {
     printConfig(BIN, workspaceDir, ralphDir, sandcastleDir, {
       cliVersion: opts.cliVersion,
       noKeepAlive: flags.noKeepAlive,
       maxRetries: flags.maxRetries,
+      detach: flags.detach,
+      detachLogPath,
     });
     return;
+  }
+
+  if (flags.detach && detachLogPath) {
+    detachAndExit({
+      logPath: detachLogPath,
+      argv,
+      binEntry: process.argv[1],
+    });
   }
 
   const [iterationsArg] = flags.rest;

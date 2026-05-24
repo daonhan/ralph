@@ -16,6 +16,8 @@ export type CliFlags = {
   printConfig: boolean;
   noKeepAlive: boolean;
   maxRetries?: number;
+  detach: boolean;
+  log?: string;
   rest: string[];
 };
 
@@ -26,6 +28,9 @@ export function parseFlags(argv: string[]): CliFlags {
   let noKeepAlive = false;
   let maxRetries: number | undefined;
   let expectingMaxRetries = false;
+  let detach = false;
+  let log: string | undefined;
+  let expectingLog = false;
   const rest: string[] = [];
   for (const a of argv) {
     if (expectingMaxRetries) {
@@ -38,17 +43,39 @@ export function parseFlags(argv: string[]): CliFlags {
       expectingMaxRetries = false;
       continue;
     }
+    if (expectingLog) {
+      log = a;
+      expectingLog = false;
+      continue;
+    }
     if (a === "-h" || a === "--help") help = true;
     else if (a === "-V" || a === "--version") version = true;
     else if (a === "--print-config") printConfig = true;
     else if (a === "--no-keep-alive") noKeepAlive = true;
     else if (a === "--max-retries") expectingMaxRetries = true;
+    else if (a === "--detach") detach = true;
+    else if (a === "--log") expectingLog = true;
     else rest.push(a);
   }
   if (expectingMaxRetries) {
     throw new Error("--max-retries requires a value");
   }
-  return { help, version, printConfig, noKeepAlive, maxRetries, rest };
+  if (expectingLog) {
+    throw new Error("--log requires a value");
+  }
+  if (log !== undefined && !detach) {
+    throw new Error("--log is only meaningful with --detach");
+  }
+  return {
+    help,
+    version,
+    printConfig,
+    noKeepAlive,
+    maxRetries,
+    detach,
+    log,
+    rest,
+  };
 }
 
 /**
@@ -95,6 +122,8 @@ Flags:
   --print-config      resolve workspace / docker context / image / docker socket, print, exit without launching docker
   --no-keep-alive     skip OS wake-lock acquisition (default: acquire system-sleep inhibitor for loop lifetime)
   --max-retries <N>   per-stage retry budget on transient failure (default: 3; 0 disables retries)
+  --detach            fork the loop into a background process, print pid + log path, and exit (parent returns 0)
+  --log <path>        override the detached log path (default: <workspace>/.ralph-tmp/logs/detached-<pid>.log; requires --detach)
 
 Environment variables:
   RALPH_WORKSPACE       host dir bind-mounted at /home/agent/workspace (default: cwd)
@@ -123,6 +152,8 @@ export type PrintConfigOptions = {
   cliVersion?: string;
   noKeepAlive?: boolean;
   maxRetries?: number;
+  detach?: boolean;
+  detachLogPath?: string;
 };
 
 export function printConfig(
@@ -136,6 +167,8 @@ export function printConfig(
     cliVersion,
     noKeepAlive = false,
     maxRetries = DEFAULT_MAX_RETRIES,
+    detach = false,
+    detachLogPath,
   } = opts;
   const dockerfile = resolveDockerfile(ralphDir);
   const dfPresent = existsSync(dockerfile);
@@ -165,6 +198,8 @@ export function printConfig(
   }
 
   const keepAliveStatus = noKeepAlive ? "off" : "on (system sleep only)";
+  const detachStatus =
+    detach && detachLogPath ? `on (log: ${detachLogPath})` : "off";
 
   process.stdout.write(`[${bin}] resolved config
   version               ${bin} ${cli} (core ${core})
@@ -176,5 +211,6 @@ export function printConfig(
   RALPH_DOCKER_SOCK     ${sockStatus}
   keep-alive            ${keepAliveStatus}
   max-retries           ${maxRetries}
+  detach                ${detachStatus}
 `);
 }

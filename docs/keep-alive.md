@@ -115,9 +115,54 @@ ralph-afk --max-retries 0 "<plan>" 1     # fail fast on a short interactive run
 max-retries           3
 ```
 
+## Detach (Phase 3)
+
+`--detach` forks the loop into the background and exits the parent immediately with code `0`. Closing the terminal, dropping SSH, or logging out of the desktop session no longer kills the loop — the child is reparented to init and keeps iterating.
+
+```bash
+ralph-afk --detach "<plan>" 50
+# detached pid 12345, log /path/to/workspace/.ralph-tmp/logs/detached-12300.log
+```
+
+Under the hood:
+
+- The bin re-spawns itself via `process.execPath` (the same node binary) with `--detach` and `--log` stripped from argv. The child cannot fork again — no infinite loop.
+- Child stdio (stdout + stderr) is appended to the log file. Multiple runs targeting the same path concatenate cleanly rather than truncating.
+- The spawn is `detached: true` + `unref()` so the parent can exit. On Windows, `windowsHide: true` keeps a console window from popping in PowerShell.
+- The wake-lock + retry behavior from Phase 1 / Phase 2 still apply — they're acquired in the child, not orphaned in the parent.
+
+### Log target
+
+Default: `<workspace>/.ralph-tmp/logs/detached-<pid>.log` (the `<pid>` is the original parent process, fixed at fork time). Override with `--log <path>`:
+
+```bash
+ralph-afk --detach --log /var/log/ralph-overnight.log "<plan>" 50
+```
+
+`--log` without `--detach` is rejected (it is only meaningful in detached mode).
+
+### Reattaching
+
+There is no reattach surface in v1. Tail the log from any shell:
+
+```bash
+tail -f /path/to/workspace/.ralph-tmp/logs/detached-12300.log
+```
+
+`--print-config` shows the current state:
+
+```
+detach                off
+```
+
+or with `--detach` active:
+
+```
+detach                on (log: /path/to/workspace/.ralph-tmp/logs/detached-12300.log)
+```
+
 ## Coming in later phases
 
-- **Phase 3** — `--detach` fork-and-exit so closing the terminal doesn't kill the loop (`--log <path>` to override the log target).
 - **Phase 4** — `--notify` for OS-native notifications + terminal bell on terminal events.
 
 ## Out of scope (v1)
