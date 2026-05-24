@@ -53,14 +53,6 @@ export async function runGhAfk(
     return;
   }
 
-  if (flags.detach && detachLogPath) {
-    detachAndExit({
-      logPath: detachLogPath,
-      argv,
-      binEntry: process.argv[1],
-    });
-  }
-
   const [iterationsArg] = flags.rest;
   if (!iterationsArg) {
     console.error(`Usage: ${BIN} ${USAGE}`);
@@ -71,6 +63,14 @@ export async function runGhAfk(
   if (!Number.isFinite(iterations) || iterations < 1) {
     console.error(`Invalid iterations: ${iterationsArg}`);
     process.exit(1);
+  }
+
+  if (flags.detach && detachLogPath) {
+    detachAndExit({
+      logPath: detachLogPath,
+      argv,
+      binEntry: process.argv[1],
+    });
   }
 
   await runLoop({
