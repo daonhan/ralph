@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.5.1...ralph-core-v0.6.0) (2026-05-24)
+
+### Features
+
+* **core:** keep AFK runs awake by default with per-OS sleep inhibitors
+* **core:** add per-stage retry/backoff, detach mode, completion/failure notifications, and AFK flag wiring
+
+### Bug Fixes
+
+* **core:** abort active Docker work during image setup and stage execution on SIGINT/SIGTERM
+* **core:** log terminal stage failures, warn on early wake-lock exit, and escape macOS notification backslashes
+
 ## [0.5.1](https://github.com/daonhan/ralph/compare/ralph-core-v0.5.0...ralph-core-v0.5.1) (2026-05-22)
 
 

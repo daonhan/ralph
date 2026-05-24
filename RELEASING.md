@@ -23,8 +23,8 @@ Release PR appears.
 <!-- status-table:start -->
 | Component | Artifact | Version | Released | Tag |
 | --- | --- | --- | --- | --- |
-| `ralph-core` | npm `@daonhan/ralph-core` | `0.5.1` | 2026-05-22 | [`ralph-core-v0.5.0`](https://github.com/daonhan/ralph/releases/tag/ralph-core-v0.5.0) |
-| `ralph` | npm `@daonhan/ralph` | `0.5.1` | 2026-05-22 | [`ralph-v0.5.0`](https://github.com/daonhan/ralph/releases/tag/ralph-v0.5.0) |
+| `ralph-core` | npm `@daonhan/ralph-core` | `0.6.0` | 2026-05-24 | — |
+| `ralph` | npm `@daonhan/ralph` | `0.6.0` | 2026-05-24 | — |
 | `ralph-sandbox` | Docker `daonhan/ralph-sandbox` | `0.2.1` | 2026-05-22 | [`ralph-sandbox-v0.2.1`](https://github.com/daonhan/ralph/releases/tag/ralph-sandbox-v0.2.1) |
 <!-- status-table:end -->
 
@@ -184,6 +184,7 @@ boundary (e.g. the CLI starts requiring a newer core).
 
 | `@daonhan/ralph` (CLI) | requires `@daonhan/ralph-core` | tested `ralph-sandbox` image |
 | ---------------------- | ------------------------------ | ---------------------------- |
+| `0.6.0`                | `^0.6.0`                       | `v0.2.1` / `latest`          |
 | `0.1.0`                | `^0.1.1`                       | `v0.1.1` / `latest`          |
 
 The CLI declares its core dependency as `workspace:^` in the repo; the publish
