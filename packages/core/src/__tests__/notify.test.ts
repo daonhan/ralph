@@ -201,17 +201,17 @@ describe("notify", () => {
     expect(writes).toContain("\x07");
   });
 
-  it("body containing single quotes is safely escaped on darwin", () => {
+  it("body containing quotes and backslashes is safely escaped on darwin", () => {
     const { spawner, calls } = makeSpawner();
     const { stderr } = makeStderr();
     notify({
       level: "info",
       title: "title",
-      body: `hit "the" sentinel`,
+      body: `hit "the" C:\\tmp sentinel`,
       platform: "darwin",
       spawner,
       stderr,
     });
-    expect(calls[0].args[1]).toContain('hit \\"the\\" sentinel');
+    expect(calls[0].args[1]).toContain('hit \\"the\\" C:\\\\tmp sentinel');
   });
 });

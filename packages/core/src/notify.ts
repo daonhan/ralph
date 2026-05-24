@@ -54,7 +54,7 @@ function fireAndForget(
 }
 
 function escDoubleQuote(s: string): string {
-  return s.replace(/"/g, '\\"');
+  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 function escPsString(s: string): string {

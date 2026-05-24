@@ -136,4 +136,16 @@ describe("acquire", () => {
     releaser.release();
     expect(calls[0].child.kill).toHaveBeenCalledTimes(1);
   });
+
+  it("warns when the wake-lock child exits before release", () => {
+    const { spawner, calls } = makeSpawner();
+    const warn = vi.fn();
+    acquire({ platform: "linux", spawner, warn, wslHint: () => false });
+
+    calls[0].child.emit("close", 1, null);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toMatch(/exited early/);
+    expect(warn.mock.calls[0][0]).toMatch(/continuing without wake-lock/);
+  });
 });

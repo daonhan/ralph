@@ -148,6 +148,15 @@ export function acquire(opts: AcquireOptions = {}): Releaser {
       warn(`wake-lock child error: ${err.message}`);
     }
   });
+  child.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
+    if (released) return;
+    released = true;
+    const reason =
+      code == null ? `signal ${signal ?? "unknown"}` : `exit ${code}`;
+    warn(
+      `${spec.cmd} wake-lock exited early (${reason}); continuing without wake-lock`
+    );
+  });
 
   return {
     release: () => {

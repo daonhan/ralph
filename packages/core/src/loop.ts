@@ -58,11 +58,10 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     notify = false,
   } = opts;
 
-  ensureImage(ralphDir);
-
   const releaser: Releaser = noKeepAlive
     ? { release: () => {} }
     : acquire({ reason: "ralph-afk loop" });
+  const stageAbort = new AbortController();
 
   // Single release path: signal handlers and the finally below all funnel
   // through releaseOnce so the wake-lock child is killed exactly once.
@@ -72,13 +71,18 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     released = true;
     releaser.release();
   };
+  const abortActiveStage = (): void => {
+    if (!stageAbort.signal.aborted) stageAbort.abort();
+  };
 
   const onSigint = (): void => {
+    abortActiveStage();
     if (notify) notifyError("interrupted (SIGINT)");
     releaseOnce();
     process.exit(130);
   };
   const onSigterm = (): void => {
+    abortActiveStage();
     if (notify) notifyError("terminated (SIGTERM)");
     releaseOnce();
     process.exit(143);
@@ -89,6 +93,8 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
   let completedIterations = 0;
   let sentinelHit = false;
   try {
+    ensureImage(ralphDir);
+
     for (let i = 1; i <= iterations; i++) {
       for (let s = 0; s < stages.length; s++) {
         const stage = stages[s];
@@ -113,7 +119,9 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         try {
           result = await withRetries(
             () =>
-              runStage(stage, prompt, workspaceDir, i, spillHostDir, stageLog),
+              runStage(stage, prompt, workspaceDir, i, spillHostDir, stageLog, {
+                signal: stageAbort.signal,
+              }),
             {
               max: maxRetries,
               backoffMs: DEFAULT_BACKOFF_MS,
@@ -132,6 +140,12 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
             }
           );
         } catch (err) {
+          const failureMarker = `[failure] iteration ${i} stage ${stage.name} failed after ${maxRetries} retries: ${(err as Error).message}`;
+          try {
+            appendFileSync(stageLog, failureMarker + "\n");
+          } catch {
+            // log file may be unwritable; stderr still carries the failure.
+          }
           const msg = `${red(SYM.cross)} ${bold("iteration " + i + " stage " + stage.name + " failed")} after ${maxRetries} retries: ${(err as Error).message}`;
           process.stderr.write(msg + "\n");
           break;
