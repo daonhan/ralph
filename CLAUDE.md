@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. See [.claude/CLAUDE.md](.claude/CLAUDE.md) (behavioral rules).
 
 ## What this repo is
 
@@ -121,3 +121,7 @@ Every run writes to `<workspaceDir>/.ralph-tmp/` on the host (gitignored): the r
 - `docs/PUBLISHING.md` — npm publish notes.
 - `packages/core/templates/prompt.md` / `ghprompt.md` — agent playbooks. Edit these to change feedback loops or task priority.
 - `packages/core/templates/{afk,ghafk,review}.md` — iteration templates that `@include` the playbooks above.
+
+## Behavioral
+
+Apply `.claude/CLAUDE.md` (think first, simplicity, surgical changes, goal-driven). Make only changes the user asked for; match existing style; prefer smallest correct change; push back on over-engineering; state a brief plan + success criteria for non-trivial work.
