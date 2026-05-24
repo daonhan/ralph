@@ -3,3 +3,4 @@ dist/
 *.tsbuildinfo
 .ralph-tmp/
 .ghafk-prompt-*.md
+.pnpm-store/

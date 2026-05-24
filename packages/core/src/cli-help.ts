@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { DEFAULT_MAX_RETRIES } from "./retry.js";
 import {
   IMAGE_REF,
   detectDockerSocketPath,
@@ -14,6 +15,7 @@ export type CliFlags = {
   version: boolean;
   printConfig: boolean;
   noKeepAlive: boolean;
+  maxRetries?: number;
   rest: string[];
 };
 
@@ -22,15 +24,31 @@ export function parseFlags(argv: string[]): CliFlags {
   let version = false;
   let printConfig = false;
   let noKeepAlive = false;
+  let maxRetries: number | undefined;
+  let expectingMaxRetries = false;
   const rest: string[] = [];
   for (const a of argv) {
+    if (expectingMaxRetries) {
+      if (!/^\d+$/.test(a)) {
+        throw new Error(
+          `--max-retries must be a non-negative integer, got: ${JSON.stringify(a)}`
+        );
+      }
+      maxRetries = Number.parseInt(a, 10);
+      expectingMaxRetries = false;
+      continue;
+    }
     if (a === "-h" || a === "--help") help = true;
     else if (a === "-V" || a === "--version") version = true;
     else if (a === "--print-config") printConfig = true;
     else if (a === "--no-keep-alive") noKeepAlive = true;
+    else if (a === "--max-retries") expectingMaxRetries = true;
     else rest.push(a);
   }
-  return { help, version, printConfig, noKeepAlive, rest };
+  if (expectingMaxRetries) {
+    throw new Error("--max-retries requires a value");
+  }
+  return { help, version, printConfig, noKeepAlive, maxRetries, rest };
 }
 
 /**
@@ -76,6 +94,7 @@ Flags:
   -V, --version       print bin + core version and exit
   --print-config      resolve workspace / docker context / image / docker socket, print, exit without launching docker
   --no-keep-alive     skip OS wake-lock acquisition (default: acquire system-sleep inhibitor for loop lifetime)
+  --max-retries <N>   per-stage retry budget on transient failure (default: 3; 0 disables retries)
 
 Environment variables:
   RALPH_WORKSPACE       host dir bind-mounted at /home/agent/workspace (default: cwd)
@@ -103,6 +122,7 @@ Build fallback runs only if pull fails AND $RALPH_DOCKER_CONTEXT/Dockerfile exis
 export type PrintConfigOptions = {
   cliVersion?: string;
   noKeepAlive?: boolean;
+  maxRetries?: number;
 };
 
 export function printConfig(
@@ -112,7 +132,11 @@ export function printConfig(
   sandcastleDir: string,
   opts: PrintConfigOptions = {}
 ): void {
-  const { cliVersion, noKeepAlive = false } = opts;
+  const {
+    cliVersion,
+    noKeepAlive = false,
+    maxRetries = DEFAULT_MAX_RETRIES,
+  } = opts;
   const dockerfile = resolveDockerfile(ralphDir);
   const dfPresent = existsSync(dockerfile);
   const core = readCoreVersion();
@@ -151,5 +175,6 @@ export function printConfig(
   sandcastleDir         ${sandcastleDir}
   RALPH_DOCKER_SOCK     ${sockStatus}
   keep-alive            ${keepAliveStatus}
+  max-retries           ${maxRetries}
 `);
 }

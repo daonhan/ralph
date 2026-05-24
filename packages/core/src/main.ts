@@ -40,6 +40,7 @@ export async function runAfk(
     printConfig(BIN, workspaceDir, ralphDir, sandcastleDir, {
       cliVersion: opts.cliVersion,
       noKeepAlive: flags.noKeepAlive,
+      maxRetries: flags.maxRetries,
     });
     return;
   }
@@ -64,5 +65,6 @@ export async function runAfk(
     workspaceDir,
     sandcastleDir,
     noKeepAlive: flags.noKeepAlive,
+    maxRetries: flags.maxRetries,
   });
 }

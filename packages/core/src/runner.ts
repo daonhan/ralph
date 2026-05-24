@@ -278,23 +278,35 @@ export function ensureImage(buildContext?: string): void {
   }
 }
 
+export function stageLogPath(
+  workspaceDir: string,
+  iteration: number,
+  stageName: string
+): string {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return join(
+    workspaceDir,
+    ".ralph-tmp",
+    "logs",
+    `${timestamp}-iter${iteration}-${stageName}.ndjson`
+  );
+}
+
 export async function runStage(
   stage: Stage,
   renderedPrompt: string,
   workspaceDir: string,
   iteration: number,
-  spillHostDir?: string
+  spillHostDir?: string,
+  logPathOverride?: string
 ): Promise<string> {
   const tmpHostDir = join(workspaceDir, ".ralph-tmp");
   mkdirSync(tmpHostDir, { recursive: true });
 
   const logsDir = join(tmpHostDir, "logs");
   mkdirSync(logsDir, { recursive: true });
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const logPath = join(
-    logsDir,
-    `${timestamp}-iter${iteration}-${stage.name}.ndjson`
-  );
+  const logPath =
+    logPathOverride ?? stageLogPath(workspaceDir, iteration, stage.name);
 
   const promptName = `.run-${process.pid}-${iteration}-${Date.now()}.md`;
   const promptHostPath = join(tmpHostDir, promptName);

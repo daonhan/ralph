@@ -83,9 +83,40 @@ powercfg /change standby-timeout-dc 0
 
 A WSL2 → Windows host wake-lock bridge would require a Windows-side helper process; that's out of scope for v1.
 
+## Per-stage retry (Phase 2)
+
+Every `runStage` call is wrapped in an exponential-backoff retry. A transient failure (network blip, claude API hiccup, a brief docker daemon stall) no longer aborts the loop.
+
+Defaults:
+
+| Setting     | Value         |
+| ----------- | ------------- |
+| Max retries | `3`           |
+| Backoff     | `5s, 30s, 2m` |
+
+After the retry budget is exhausted, the failing stage is **skipped** — the loop moves on to the next iteration instead of throwing out of `runLoop`. A persistent gate-stage failure simply means no sentinel was seen, so the loop keeps iterating until it hits the iteration cap.
+
+Each retry is announced both on stderr and as a one-line marker appended to the per-stage NDJSON log:
+
+```
+[retry] attempt 1 of 3 after 5000 ms
+```
+
+Override via `--max-retries <N>` on either bin. `--max-retries 0` restores the previous fail-fast behavior (a single attempt; any failure breaks out of the current iteration's stage chain).
+
+```bash
+ralph-afk --max-retries 5 "<plan>" 50    # dial up for flaky environments
+ralph-afk --max-retries 0 "<plan>" 1     # fail fast on a short interactive run
+```
+
+`--print-config` shows the current value:
+
+```
+max-retries           3
+```
+
 ## Coming in later phases
 
-- **Phase 2** — per-iteration retry with exponential backoff (`--max-retries`).
 - **Phase 3** — `--detach` fork-and-exit so closing the terminal doesn't kill the loop (`--log <path>` to override the log target).
 - **Phase 4** — `--notify` for OS-native notifications + terminal bell on terminal events.
 
