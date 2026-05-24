@@ -301,13 +301,13 @@ No plan/PRD arg — context comes from open GitHub issues.
 
 Both bins are designed to chew through long runs unattended. Five AFK flags wire that up:
 
-| Flag                | Default                                          | What it does                                                             |
-| ------------------- | ------------------------------------------------ | ------------------------------------------------------------------------ |
-| `--no-keep-alive`   | off (wake-lock acquired)                         | Skip the OS wake-lock for the loop's lifetime.                           |
-| `--max-retries <N>` | `3`                                              | Per-stage retry budget on transient failures. `0` restores fail-fast.    |
-| `--detach`          | off                                              | Fork the loop into a background process, print pid + log path, and exit. |
-| `--log <path>`      | `<workspace>/.ralph-tmp/logs/detached-<pid>.log` | Override the detached log target. Only meaningful with `--detach`.       |
-| `--notify`          | off                                              | OS toast + terminal bell on loop completion or unrecoverable failure.    |
+| Flag                | Default                                                 | What it does                                                             |
+| ------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `--no-keep-alive`   | off (wake-lock acquired)                                | Skip the OS wake-lock for the loop's lifetime.                           |
+| `--max-retries <N>` | `3`                                                     | Per-stage retry budget on transient failures. `0` restores fail-fast.    |
+| `--detach`          | off                                                     | Fork the loop into a background process, print pid + log path, and exit. |
+| `--log <path>`      | `<workspace>/.ralph-tmp/logs/detached-<parent-pid>.log` | Override the detached log target. Only meaningful with `--detach`.       |
+| `--notify`          | off                                                     | OS toast + terminal bell on loop completion or unrecoverable failure.    |
 
 Canonical overnight recipe:
 

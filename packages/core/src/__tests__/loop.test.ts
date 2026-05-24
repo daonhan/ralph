@@ -206,4 +206,36 @@ describe("runLoop", () => {
     expect(mocks.release).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledWith(130);
   });
+
+  it("aborts image setup and releases the wake-lock on SIGTERM", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const exit = vi.spyOn(process, "exit").mockImplementation(((
+      code?: number
+    ) => {
+      throw new Error(`exit ${code}`);
+    }) as never);
+    let capturedSignal: AbortSignal | undefined;
+    mocks.ensureImage.mockImplementation((_ralphDir, options) => {
+      capturedSignal = options.signal;
+      return new Promise((_resolve, reject) => {
+        capturedSignal!.addEventListener("abort", () =>
+          reject(new Error("image aborted"))
+        );
+      });
+    });
+
+    const loop = runLoop(loopOptions(dirs));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(capturedSignal?.aborted).toBe(false);
+    expect(() => process.emit("SIGTERM")).toThrow("exit 143");
+
+    expect(capturedSignal?.aborted).toBe(true);
+    await expect(loop).rejects.toThrow("image aborted");
+    expect(mocks.runStage).not.toHaveBeenCalled();
+    expect(mocks.release).toHaveBeenCalledTimes(1);
+    expect(exit).toHaveBeenCalledWith(143);
+  });
 });

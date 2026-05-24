@@ -235,7 +235,61 @@ export function isFloatingRef(ref: string): boolean {
   return namePart.slice(colon + 1) === "latest";
 }
 
-export function ensureImage(buildContext?: string): void {
+function abortError(): Error {
+  const err = new Error("docker command aborted");
+  err.name = "AbortError";
+  return err;
+}
+
+type DockerCommandOptions = {
+  signal?: AbortSignal;
+  stdio: "ignore" | "inherit";
+};
+
+function runDockerCommand(
+  args: string[],
+  options: DockerCommandOptions
+): Promise<number | null> {
+  if (options.signal?.aborted) {
+    return Promise.reject(abortError());
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn("docker", args, { stdio: options.stdio });
+    let settled = false;
+    let onAbort = (): void => {};
+
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      options.signal?.removeEventListener("abort", onAbort);
+      fn();
+    };
+    const rejectOnce = (err: unknown): void => finish(() => reject(err));
+    const resolveOnce = (code: number | null): void =>
+      finish(() => resolve(code));
+
+    onAbort = (): void => {
+      try {
+        child.kill();
+      } catch {
+        // Already dead; close/error handling will settle if needed.
+      }
+      rejectOnce(abortError());
+    };
+
+    if (options.signal?.aborted) {
+      onAbort();
+      return;
+    }
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+
+    child.on("error", rejectOnce);
+    child.on("close", resolveOnce);
+  });
+}
+
+function ensureImageSync(buildContext?: string): void {
   const floating = isFloatingRef(IMAGE_REF);
   const hasLocal =
     spawnSync("docker", ["image", "inspect", IMAGE_REF], { stdio: "ignore" })
@@ -280,6 +334,74 @@ export function ensureImage(buildContext?: string): void {
   if (build.status !== 0) {
     throw new Error(`docker build failed (exit ${build.status})`);
   }
+}
+
+async function ensureImageAsync(
+  buildContext: string | undefined,
+  options: RunStageOptions
+): Promise<void> {
+  const floating = isFloatingRef(IMAGE_REF);
+  const hasLocal =
+    (await runDockerCommand(["image", "inspect", IMAGE_REF], {
+      stdio: "ignore",
+      signal: options.signal,
+    })) === 0;
+
+  if (hasLocal && !floating) return;
+
+  process.stderr.write(`${dim("pulling")} ${IMAGE_REF}\n`);
+  const pullStatus = await runDockerCommand(["pull", IMAGE_REF], {
+    stdio: "inherit",
+    signal: options.signal,
+  });
+  if (pullStatus === 0) return;
+
+  if (hasLocal) {
+    process.stderr.write(
+      `${dim("pull failed; using cached local copy of")} ${IMAGE_REF}\n`
+    );
+    return;
+  }
+
+  if (!buildContext) {
+    throw new Error(
+      `docker pull failed for ${IMAGE_REF} and no build context provided. ` +
+        `Set RALPH_DOCKER_CONTEXT to a directory containing a Dockerfile, ` +
+        `or override RALPH_IMAGE to an image you can pull.`
+    );
+  }
+  const dockerfile = resolveDockerfile(buildContext);
+  if (!existsSync(dockerfile)) {
+    throw new Error(
+      `docker pull failed for ${IMAGE_REF} and no Dockerfile at ${dockerfile}`
+    );
+  }
+  process.stderr.write(
+    `${dim("pull failed; building")} ${IMAGE_REF} ${dim("from")} ${buildContext}\n`
+  );
+  const buildStatus = await runDockerCommand(
+    ["build", "-t", IMAGE_REF, "-f", dockerfile, buildContext],
+    {
+      stdio: "inherit",
+      signal: options.signal,
+    }
+  );
+  if (buildStatus !== 0) {
+    throw new Error(`docker build failed (exit ${buildStatus})`);
+  }
+}
+
+export function ensureImage(buildContext?: string): void;
+export function ensureImage(
+  buildContext: string | undefined,
+  options: RunStageOptions
+): Promise<void>;
+export function ensureImage(
+  buildContext?: string,
+  options?: RunStageOptions
+): void | Promise<void> {
+  if (options) return ensureImageAsync(buildContext, options);
+  return ensureImageSync(buildContext);
 }
 
 export function stageLogPath(
@@ -377,12 +499,6 @@ export async function runStage(
     rmSync(promptHostPath, { force: true });
     if (spillHostDir) rmSync(spillHostDir, { recursive: true, force: true });
   }
-}
-
-function abortError(): Error {
-  const err = new Error("docker run aborted");
-  err.name = "AbortError";
-  return err;
 }
 
 function streamDocker(

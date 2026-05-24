@@ -127,7 +127,7 @@ Flags:
   --no-keep-alive     skip OS wake-lock acquisition (default: acquire system-sleep inhibitor for loop lifetime)
   --max-retries <N>   per-stage retry budget on transient failure (default: 3; 0 disables retries)
   --detach            fork the loop into a background process, print pid + log path, and exit (parent returns 0)
-  --log <path>        override the detached log path (default: <workspace>/.ralph-tmp/logs/detached-<pid>.log; requires --detach)
+  --log <path>        override the detached log path (default: <workspace>/.ralph-tmp/logs/detached-<parent-pid>.log; requires --detach)
   --notify            emit OS notification + terminal bell on loop completion or unrecoverable failure (default: off)
 
 Environment variables:

@@ -93,7 +93,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
   let completedIterations = 0;
   let sentinelHit = false;
   try {
-    ensureImage(ralphDir);
+    await ensureImage(ralphDir, { signal: stageAbort.signal });
 
     for (let i = 1; i <= iterations; i++) {
       for (let s = 0; s < stages.length; s++) {
