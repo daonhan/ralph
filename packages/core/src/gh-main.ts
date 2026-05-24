@@ -49,6 +49,7 @@ export async function runGhAfk(
       maxRetries: flags.maxRetries,
       detach: flags.detach,
       detachLogPath,
+      notify: flags.notify,
     });
     return;
   }
@@ -82,5 +83,6 @@ export async function runGhAfk(
     sandcastleDir,
     noKeepAlive: flags.noKeepAlive,
     maxRetries: flags.maxRetries,
+    notify: flags.notify,
   });
 }

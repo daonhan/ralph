@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 
 import { acquire, type Releaser } from "./keepalive.js";
+import { notifyComplete, notifyError } from "./notify.js";
 import { renderTemplate } from "./render.js";
 import {
   DEFAULT_BACKOFF_MS,
@@ -40,6 +41,8 @@ export type LoopOptions = {
   noKeepAlive?: boolean;
   /** Per-stage retry budget. Default: 3. Set to 0 to disable retries. */
   maxRetries?: number;
+  /** When true, fire OS notification + bell on loop terminal events. Default: false. */
+  notify?: boolean;
 };
 
 export async function runLoop(opts: LoopOptions): Promise<void> {
@@ -52,6 +55,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     sandcastleDir,
     noKeepAlive = false,
     maxRetries = DEFAULT_MAX_RETRIES,
+    notify = false,
   } = opts;
 
   ensureImage(ralphDir);
@@ -70,16 +74,20 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
   };
 
   const onSigint = (): void => {
+    if (notify) notifyError("interrupted (SIGINT)");
     releaseOnce();
     process.exit(130);
   };
   const onSigterm = (): void => {
+    if (notify) notifyError("terminated (SIGTERM)");
     releaseOnce();
     process.exit(143);
   };
   process.on("SIGINT", onSigint);
   process.on("SIGTERM", onSigterm);
 
+  let completedIterations = 0;
+  let sentinelHit = false;
   try {
     for (let i = 1; i <= iterations; i++) {
       for (let s = 0; s < stages.length; s++) {
@@ -137,14 +145,23 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
               boldOut("Ralph complete") +
               dimOut(" after " + i + " iterations");
             process.stdout.write(msg + "\n");
+            sentinelHit = true;
+            completedIterations = i;
             return;
           }
         }
       }
+      completedIterations = i;
     }
+  } catch (err) {
+    if (notify) notifyError((err as Error).message);
+    throw err;
   } finally {
     process.off("SIGINT", onSigint);
     process.off("SIGTERM", onSigterm);
     releaseOnce();
+    if (notify && (sentinelHit || completedIterations === iterations)) {
+      notifyComplete(completedIterations, sentinelHit);
+    }
   }
 }

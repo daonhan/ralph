@@ -297,6 +297,34 @@ No plan/PRD arg — context comes from open GitHub issues.
 
 ---
 
+## Running AFK
+
+Both bins are designed to chew through long runs unattended. Five AFK flags wire that up:
+
+| Flag                | Default                                          | What it does                                                             |
+| ------------------- | ------------------------------------------------ | ------------------------------------------------------------------------ |
+| `--no-keep-alive`   | off (wake-lock acquired)                         | Skip the OS wake-lock for the loop's lifetime.                           |
+| `--max-retries <N>` | `3`                                              | Per-stage retry budget on transient failures. `0` restores fail-fast.    |
+| `--detach`          | off                                              | Fork the loop into a background process, print pid + log path, and exit. |
+| `--log <path>`      | `<workspace>/.ralph-tmp/logs/detached-<pid>.log` | Override the detached log target. Only meaningful with `--detach`.       |
+| `--notify`          | off                                              | OS toast + terminal bell on loop completion or unrecoverable failure.    |
+
+Canonical overnight recipe:
+
+```bash
+ralph-afk --detach --notify "<plan-and-prd>" 50
+```
+
+This forks into the background, holds an OS wake-lock so the host doesn't sleep, retries transient stage failures up to 3× with exponential backoff (`5s / 30s / 2m`), and raises a toast + bell when the run finishes (sentinel hit or iteration cap reached) or fails (signal, uncaught exception). Tail the log from any shell:
+
+```bash
+tail -f <workspace>/.ralph-tmp/logs/detached-*.log
+```
+
+Full per-OS notes (wake-lock mechanism, BurntToast install, WSL2 caveat, etc.) live in [`docs/keep-alive.md`](./docs/keep-alive.md).
+
+---
+
 ## Consuming the package in another repo
 
 ### Global install (recommended — run from anywhere)

@@ -161,12 +161,69 @@ or with `--detach` active:
 detach                on (log: /path/to/workspace/.ralph-tmp/logs/detached-12300.log)
 ```
 
-## Coming in later phases
+## Notify (Phase 4)
 
-- **Phase 4** — `--notify` for OS-native notifications + terminal bell on terminal events.
+`--notify` opts into a best-effort OS notification + terminal bell on every terminal event:
+
+- **Clean completion** — sentinel hit or iteration cap reached → `info`-level notification.
+- **Unrecoverable failure** — uncaught exception, `SIGINT` (Ctrl-C), or `SIGTERM` during a run → `error`-level notification.
+
+Calls are fire-and-forget: the loop never blocks on toast delivery, and a missing OS utility never crashes. A terminal bell (`\x07`) is written to stderr on every notification regardless of OS path, so even a headless terminal with no toast surface still gets an audible signal.
+
+| OS      | Mechanism                                                                      | Fallback                                  |
+| ------- | ------------------------------------------------------------------------------ | ----------------------------------------- |
+| Windows | `powershell` → `New-BurntToastNotification` (if BurntToast installed)          | `msg.exe * "<title>: <body>"` → bell-only |
+| macOS   | `osascript -e 'display notification … sound name "Glass"'` (`Basso` for error) | bell-only                                 |
+| Linux   | `notify-send --urgency normal` (or `critical` for error)                       | bell-only                                 |
+
+```bash
+ralph-afk --notify "<plan>" 50
+```
+
+### Windows: BurntToast (optional)
+
+For real Windows 10/11 toasts install the BurntToast PowerShell module once:
+
+```powershell
+Install-Module -Name BurntToast -Force
+```
+
+Without it, the bin falls through to `msg.exe` (a console message dialog), and then to bell-only if `msg.exe` is missing too (Windows Home does not ship it).
+
+### macOS
+
+No setup needed — `osascript` is built in. Notifications appear in the Notification Center; the sound name is `Glass` for `info` and `Basso` for `error`.
+
+### Linux
+
+Requires `libnotify` (`notify-send`). Most desktop distros ship it; on headless servers install `libnotify-bin` (Debian/Ubuntu) or rely on the bell.
+
+`--print-config` shows the current state:
+
+```
+notify                on
+```
+
+or:
+
+```
+notify                off
+```
 
 ## Out of scope (v1)
 
 - **Power-loss / battery-death** — a dead battery kills the loop. Use a UPS if you care about overnight resilience to power events.
 - **Resume on restart** — if the host reboots, the loop does not auto-resume from iteration N+1. The git commits the loop has already produced are the practical resume mechanism.
 - **WSL2 → Windows host wake-lock bridge** — see WSL2 section above. Run natively on Windows for AFK use, or set the Windows power plan manually.
+- **Notification rich-actions / grouping** — plain title + body + bell only. No clickable actions, no Notification Center categorization, no mid-loop progress toasts.
+
+## Canonical overnight recipe
+
+```bash
+ralph-afk --detach --notify "<plan-and-prd>" 50
+```
+
+- `--detach` forks the loop into the background so you can close the terminal.
+- `--notify` raises an OS toast + bell when the run finishes (or fails).
+- Wake-lock and 3× retry are on by default — no flags needed.
+- Default log: `<workspace>/.ralph-tmp/logs/detached-<pid>.log` (override with `--log`).

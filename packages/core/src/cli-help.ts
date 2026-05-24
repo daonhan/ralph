@@ -18,6 +18,7 @@ export type CliFlags = {
   maxRetries?: number;
   detach: boolean;
   log?: string;
+  notify: boolean;
   rest: string[];
 };
 
@@ -31,6 +32,7 @@ export function parseFlags(argv: string[]): CliFlags {
   let detach = false;
   let log: string | undefined;
   let expectingLog = false;
+  let notify = false;
   const rest: string[] = [];
   for (const a of argv) {
     if (expectingMaxRetries) {
@@ -55,6 +57,7 @@ export function parseFlags(argv: string[]): CliFlags {
     else if (a === "--max-retries") expectingMaxRetries = true;
     else if (a === "--detach") detach = true;
     else if (a === "--log") expectingLog = true;
+    else if (a === "--notify") notify = true;
     else rest.push(a);
   }
   if (expectingMaxRetries) {
@@ -74,6 +77,7 @@ export function parseFlags(argv: string[]): CliFlags {
     maxRetries,
     detach,
     log,
+    notify,
     rest,
   };
 }
@@ -124,6 +128,7 @@ Flags:
   --max-retries <N>   per-stage retry budget on transient failure (default: 3; 0 disables retries)
   --detach            fork the loop into a background process, print pid + log path, and exit (parent returns 0)
   --log <path>        override the detached log path (default: <workspace>/.ralph-tmp/logs/detached-<pid>.log; requires --detach)
+  --notify            emit OS notification + terminal bell on loop completion or unrecoverable failure (default: off)
 
 Environment variables:
   RALPH_WORKSPACE       host dir bind-mounted at /home/agent/workspace (default: cwd)
@@ -154,6 +159,7 @@ export type PrintConfigOptions = {
   maxRetries?: number;
   detach?: boolean;
   detachLogPath?: string;
+  notify?: boolean;
 };
 
 export function printConfig(
@@ -169,6 +175,7 @@ export function printConfig(
     maxRetries = DEFAULT_MAX_RETRIES,
     detach = false,
     detachLogPath,
+    notify = false,
   } = opts;
   const dockerfile = resolveDockerfile(ralphDir);
   const dfPresent = existsSync(dockerfile);
@@ -200,6 +207,7 @@ export function printConfig(
   const keepAliveStatus = noKeepAlive ? "off" : "on (system sleep only)";
   const detachStatus =
     detach && detachLogPath ? `on (log: ${detachLogPath})` : "off";
+  const notifyStatus = notify ? "on" : "off";
 
   process.stdout.write(`[${bin}] resolved config
   version               ${bin} ${cli} (core ${core})
@@ -212,5 +220,6 @@ export function printConfig(
   keep-alive            ${keepAliveStatus}
   max-retries           ${maxRetries}
   detach                ${detachStatus}
+  notify                ${notifyStatus}
 `);
 }
