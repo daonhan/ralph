@@ -603,7 +603,11 @@ function streamDocker(
         if (typeof r === "string") finalResult = r;
         // Arm one-shot post-result grace timer to recover from claude-CLI
         // self-deadlocks where the child emits its final NDJSON but never
-        // exits. See docs/prd/result-grace-timer.md.
+        // exits. See docs/prd/result-grace-timer.md. Operators still on
+        // @daonhan/ralph-core <= 0.6.0 must recover manually via
+        // `docker ps --filter ancestor=docker.io/daonhan/ralph-sandbox:latest`
+        // + `docker kill <id>` (the --rm container is removed and the loop
+        // aborts the current iteration; prior committed work is preserved).
         if (!graceTimer && graceMs > 0) {
           graceTimer = setTimeout(() => {
             if (settled) return;

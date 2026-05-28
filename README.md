@@ -498,6 +498,12 @@ Edit `packages/core/templates/prompt.md` (and `ghprompt.md`) — the playbooks i
   ```
 - **`docker pull failed … and no Dockerfile at …`** — the default image ref isn't reachable (offline, registry down, or you set a custom `$RALPH_IMAGE` that doesn't exist) AND no Dockerfile is at `$RALPH_DOCKER_CONTEXT`. Fix one of: connectivity, `RALPH_IMAGE`, or place a Dockerfile at `$RALPH_DOCKER_CONTEXT`.
 - **`pull access denied … repository does not exist`** — `$RALPH_IMAGE` points at a private repo or a typo. Either `docker login`, switch to a public image, or unset `RALPH_IMAGE` to use the default.
+- **Loop hangs after a stage's final assistant message (no next iteration, no error)** — the claude CLI inside the sandbox emitted its final NDJSON `result` event but failed to exit. On `@daonhan/ralph-core ≥ 0.6.1` the runner self-recovers within `RALPH_RESULT_GRACE_MS` (default 30000ms) — bump or disable via env var. On `@daonhan/ralph-core ≤ 0.6.0` there is no timer; recover manually from a second shell:
+  ```bash
+  docker ps --filter ancestor=docker.io/daonhan/ralph-sandbox:latest
+  docker kill <container-id>
+  ```
+  The sandbox runs with `--rm` so the container is removed; ralph rejects the current stage with `docker run exited with <code>` and aborts that iteration. Work already committed in prior iterations is preserved.
 
 ---
 
