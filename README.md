@@ -359,12 +359,13 @@ npx -y @daonhan/ralph ralph-afk "<plan-and-prd>" 5
 
 ### Environment variables
 
-| Variable               | Default                                  | Purpose                                                                                                                                                                            |
-| ---------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RALPH_WORKSPACE`      | `process.cwd()`                          | Host path bind-mounted at `/home/agent/workspace`. Also where `.ralph-tmp/` is written.                                                                                            |
-| `RALPH_DOCKER_CONTEXT` | bundled `@daonhan/ralph-core` dir        | Build context for the `docker build` fallback. Only consulted if `docker pull` fails. Must contain `Dockerfile`. Defaults to the npm-installed core dir, which ships `Dockerfile`. |
-| `RALPH_IMAGE`          | `docker.io/daonhan/ralph-sandbox:latest` | Full image reference. `ensureImage` does `inspect` → `pull` → `build` (fallback).                                                                                                  |
-| `RALPH_IMAGE_TAG`      | _(legacy)_                               | Deprecated alias for `RALPH_IMAGE`. Honored if `RALPH_IMAGE` unset.                                                                                                                |
+| Variable                | Default                                  | Purpose                                                                                                                                                                                                                                                |
+| ----------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `RALPH_WORKSPACE`       | `process.cwd()`                          | Host path bind-mounted at `/home/agent/workspace`. Also where `.ralph-tmp/` is written.                                                                                                                                                                |
+| `RALPH_DOCKER_CONTEXT`  | bundled `@daonhan/ralph-core` dir        | Build context for the `docker build` fallback. Only consulted if `docker pull` fails. Must contain `Dockerfile`. Defaults to the npm-installed core dir, which ships `Dockerfile`.                                                                     |
+| `RALPH_IMAGE`           | `docker.io/daonhan/ralph-sandbox:latest` | Full image reference. `ensureImage` does `inspect` → `pull` → `build` (fallback).                                                                                                                                                                      |
+| `RALPH_IMAGE_TAG`       | _(legacy)_                               | Deprecated alias for `RALPH_IMAGE`. Honored if `RALPH_IMAGE` unset.                                                                                                                                                                                    |
+| `RALPH_RESULT_GRACE_MS` | `30000`                                  | Milliseconds to wait after the final NDJSON `result` event before force-killing a docker child that fails to exit on its own. `0` disables the timer (original wait-forever behavior). Invalid values (non-finite, negative) fall back to the default. |
 
 ---
 
@@ -497,6 +498,12 @@ Edit `packages/core/templates/prompt.md` (and `ghprompt.md`) — the playbooks i
   ```
 - **`docker pull failed … and no Dockerfile at …`** — the default image ref isn't reachable (offline, registry down, or you set a custom `$RALPH_IMAGE` that doesn't exist) AND no Dockerfile is at `$RALPH_DOCKER_CONTEXT`. Fix one of: connectivity, `RALPH_IMAGE`, or place a Dockerfile at `$RALPH_DOCKER_CONTEXT`.
 - **`pull access denied … repository does not exist`** — `$RALPH_IMAGE` points at a private repo or a typo. Either `docker login`, switch to a public image, or unset `RALPH_IMAGE` to use the default.
+- **Loop hangs after a stage's final assistant message (no next iteration, no error)** — the claude CLI inside the sandbox emitted its final NDJSON `result` event but failed to exit. On `@daonhan/ralph-core ≥ 0.6.1` the runner self-recovers within `RALPH_RESULT_GRACE_MS` (default 30000ms) — bump or disable via env var. On `@daonhan/ralph-core ≤ 0.6.0` there is no timer; recover manually from a second shell:
+  ```bash
+  docker ps --filter ancestor=docker.io/daonhan/ralph-sandbox:latest
+  docker kill <container-id>
+  ```
+  The sandbox runs with `--rm` so the container is removed; ralph rejects the current stage with `docker run exited with <code>` and aborts that iteration. Work already committed in prior iterations is preserved.
 
 ---
 
