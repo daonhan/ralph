@@ -23,6 +23,25 @@ export const IMAGE_REF =
   process.env.RALPH_IMAGE_TAG ?? // legacy
   "docker.io/daonhan/ralph-sandbox:latest";
 const STDERR_TAIL_LINES = 40;
+const DEFAULT_RESULT_GRACE_MS = 30_000;
+
+/**
+ * Parse `RALPH_RESULT_GRACE_MS`. Returns the configured millisecond budget,
+ * `0` to disable the timer entirely, or `defaultMs` for any invalid input
+ * (unset, empty, non-finite, negative).
+ */
+export function parseGraceMs(
+  raw: string | undefined,
+  defaultMs: number = DEFAULT_RESULT_GRACE_MS
+): number {
+  if (raw == null) return defaultMs;
+  const trimmed = raw.trim();
+  if (trimmed === "") return defaultMs;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n)) return defaultMs;
+  if (n < 0) return defaultMs;
+  return Math.floor(n);
+}
 const TOOL_INPUT_PREVIEW = 200;
 const TOOL_RESULT_PREVIEW = 120;
 const TOOL_ERROR_PREVIEW = 400;
@@ -513,6 +532,7 @@ function streamDocker(
   return new Promise((resolve, reject) => {
     const logFd = openSync(logPath, "a");
     const toolMap = new Map<string, ToolTrack>();
+    const graceMs = parseGraceMs(process.env.RALPH_RESULT_GRACE_MS);
 
     const child = spawn("docker", args, {
       stdio: ["ignore", "pipe", "pipe"],
@@ -524,10 +544,15 @@ function streamDocker(
     let onAbort = (): void => {};
     let rl: ReturnType<typeof createInterface> | undefined;
     let rlErr: ReturnType<typeof createInterface> | undefined;
+    let graceTimer: ReturnType<typeof setTimeout> | undefined;
 
     const finish = (fn: () => void): void => {
       if (settled) return;
       settled = true;
+      if (graceTimer) {
+        clearTimeout(graceTimer);
+        graceTimer = undefined;
+      }
       options.signal?.removeEventListener("abort", onAbort);
       try {
         rl?.close();
@@ -576,6 +601,24 @@ function streamDocker(
       if (parsed.type === "result") {
         const r = (parsed as { result?: string }).result;
         if (typeof r === "string") finalResult = r;
+        // Arm one-shot post-result grace timer to recover from claude-CLI
+        // self-deadlocks where the child emits its final NDJSON but never
+        // exits. See docs/prd/result-grace-timer.md.
+        if (!graceTimer && graceMs > 0) {
+          graceTimer = setTimeout(() => {
+            if (settled) return;
+            process.stderr.write(
+              `${dim(`grace timer fired after ${graceMs}ms post-result — killing docker child`)}\n`
+            );
+            try {
+              child.kill();
+            } catch {
+              // Already dead; close handler will be a no-op via settle guard.
+            }
+            resolveOnce(finalResult);
+          }, graceMs);
+          graceTimer.unref?.();
+        }
       }
     });
 
