@@ -16,6 +16,19 @@ This is claude's shell-snapshot wrapper polling for a backgrounded `git commit` 
 
 From the user's perspective: ralph appears frozen for a long time after a successful stage, with no actionable signal and no automatic recovery. They have to spot the stale container, run `docker kill <id>` by hand, and accept that the current iteration is lost even though the work was already committed and the issue was already closed.
 
+### Operator workaround (pre-fix)
+
+Until the grace timer ships, the only recovery is manual:
+
+```bash
+docker ps --filter ancestor=docker.io/daonhan/ralph-sandbox:latest
+docker kill <container-id>
+```
+
+The container is started with `--rm`, so killing it removes it. `streamDocker` rejects the current stage with `docker run exited with <code>`, the loop driver crashes the iteration, and the user restarts `ralph-ghafk N`. Work already committed in earlier iterations is preserved (it is on disk in the target workspace and pushed to the remote / GitHub issue), so no data is lost — only the wall-clock spent waiting before the operator noticed the hang.
+
+A concrete instance observed during the investigation that produced this PRD: container `4201c43a1afa` stayed up 26+ minutes after its `result` event before an operator killed it manually.
+
 ## Solution
 
 Add a grace-period timer in `streamDocker` that arms when the first `result` NDJSON event is observed. If the docker child has not exited cleanly by the time the timer fires, ralph kills the child and resolves the stage with the `finalResult` string already captured from the stream. The stage therefore completes with its real output, the loop advances to the next stage / next iteration, and the user sees a single line on stderr explaining why the kill happened.
@@ -46,6 +59,8 @@ From the user's perspective: ralph self-recovers from this class of hang without
 18. As a ralph maintainer, I want the README updated to document `RALPH_RESULT_GRACE_MS` alongside the other `RALPH_*` env vars, so that the knob is discoverable.
 19. As a ralph maintainer, I want the change verified by `pnpm -r typecheck` and a manual smoke run, so that verification matches the repo's existing standard (no test suite exists today).
 20. As a ralph maintainer, I want the fix to be safe in the worst case (kill SIGTERM fails, child still alive) — at minimum the timer should not double-fire and the promise should not double-settle.
+21. As a ralph user, I want the post-fix release notes to document the pre-fix manual recovery procedure (`docker ps --filter ancestor=…` + `docker kill <id>`), so that operators on an older `@daonhan/ralph-core` version still have a runbook for the same hang.
+22. As a ralph user, I want the fix to make the manual `docker kill` workaround unnecessary going forward, so that overnight runs do not require human intervention to recover from this class of hang.
 
 ## Implementation Decisions
 
