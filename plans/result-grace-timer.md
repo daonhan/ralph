@@ -1,6 +1,8 @@
 # Plan: Post-result grace timer in `streamDocker`
 
-> Source PRD: [daonhan/ralph#29](https://github.com/daonhan/ralph/issues/29) — recover from claude CLI hangs that survive past the final `result` NDJSON event.
+> Source PRD: [daonhan/ralph#29](https://github.com/daonhan/ralph/issues/29) (mirror in `docs/prd/result-grace-timer.md`) — recover from claude CLI hangs that survive past the final `result` NDJSON event.
+>
+> **Target release**: `@daonhan/ralph-core` **0.6.1** (patch bump from 0.6.0). Driven by release-please from the `fix(core): …` commit that lands the implementation; no manual `package.json` / `.release-please-manifest.json` edits. CLI (`@daonhan/ralph`) is not bumped unless a sibling commit in the same release cycle touches the bins. Sandbox image (`packages/core/templates`) is unaffected.
 
 ## Architectural decisions
 
