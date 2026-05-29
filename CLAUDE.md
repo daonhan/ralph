@@ -21,7 +21,7 @@ pnpm -r clean                # rm packages/core/dist
 pnpm publish-all             # pnpm -r publish --access public --no-git-checks
 ```
 
-No test suite, no linter configured. Verification = `pnpm -r typecheck` + manually invoking the bins.
+Verification = `pnpm -r typecheck` + `pnpm -r test` (`packages/core` runs `vitest run`; `apps/cli` has no tests) + root `pnpm test` (`node --test` over `scripts/*.test.mjs`). A husky pre-commit hook runs `lint-staged` (`prettier --ignore-unknown --write` on staged files) then `pnpm typecheck`. Full contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Per-package: `pnpm --filter @daonhan/ralph-core build` (only core has a build).
 
@@ -45,7 +45,7 @@ ralph-ghafk <iterations>                          # GitHub-issue-driven loop
 ralph-afk --print-config                          # diagnose: print workspace / docker context / image
 ```
 
-Bins also accept `--help` / `-h`. `$RALPH_WORKSPACE` overrides cwd as the bind-mounted target; `$RALPH_IMAGE` overrides the default `docker.io/daonhan/ralph-sandbox:latest`; `$RALPH_DOCKER_CONTEXT` is the `docker build` fallback context (default: bundled `@daonhan/ralph-core` dir, which ships the `Dockerfile`).
+Bins also accept `--help` / `-h`. `$RALPH_WORKSPACE` overrides cwd as the bind-mounted target; `$RALPH_IMAGE` overrides the default `docker.io/daonhan/ralph-sandbox:latest`; `$RALPH_DOCKER_CONTEXT` is the `docker build` fallback context (default: bundled `@daonhan/ralph-core` dir, which ships the `Dockerfile`). Other env knobs: `$RALPH_RESULT_GRACE_MS` (post-result grace timer, default `30000`, `0` disables), `$RALPH_DOCKER_SOCK=0` (disable the docker-socket mount), `$RALPH_DOCKER_SOCK_PATH` (explicit socket path), `$NO_COLOR` / `$TERM=dumb` (disable ANSI). Bins also accept `--version`/`-V`, `--no-keep-alive`, `--max-retries <N>`, `--detach`, `--log <path>`, `--notify` (see README "Running AFK").
 
 ### Building / publishing the sandbox image
 
@@ -53,19 +53,20 @@ Bins also accept `--help` / `-h`. `$RALPH_WORKSPACE` overrides cwd as the bind-m
 docker build -t docker.io/daonhan/ralph-sandbox:latest -f packages/core/templates/Dockerfile .
 ```
 
-CI in `.github/workflows/publish-image.yml` publishes multi-arch images on `workflow_dispatch` or a `image-v*` tag push.
+CI in `.github/workflows/publish-image.yml` builds + pushes a single-arch `linux/amd64` image on `workflow_dispatch`, a `ralph-sandbox-v*` tag (release-please primary; also enriches the GitHub Release with the sha256 digest + SBOM + cosign attestation), or a legacy `image-v*` tag (shim). npm + image releases are automated via release-please — see [RELEASING.md](RELEASING.md).
 
 ## Architecture
 
-The whole thing is small (~7 source files in `packages/core/src/`). Read these in order to understand the system:
+The core library is ~12 source files in `packages/core/src/` (plus a `__tests__/` vitest suite). Read the loop spine in order to understand the system:
 
 1. **`main.ts` / `gh-main.ts`** — bin entrypoints. Both parse flags via `cli-help.ts`, resolve `workspaceDir` / `ralphDir` / `sandcastleDir` from env vars, then call `runLoop` with a different stage chain.
 2. **`loop.ts`** (`runLoop`) — drives the iteration. For each iteration, walks the stage chain. **First stage is the gate**: its `result` string is sentinel-checked for `<promise>NO MORE TASKS</promise>` and the loop exits early on hit. Subsequent stages always run after a non-sentinel gate. Calls `ensureImage` once before the loop.
-3. **`render.ts`** (`renderTemplate`) — expands the four template tags below before each stage runs. Synchronous, uses host `execSync` for shell tags.
+3. **`render.ts`** (`renderTemplate`) — expands the five template tags below before each stage runs. Synchronous, uses host `execSync` for shell tags.
 4. **`runner.ts`** (`ensureImage`, `runStage`) — docker plumbing.
    - `ensureImage`: `docker image inspect` → `docker pull` → `docker build` (fallback). Build fallback only runs if pull fails AND `$RALPH_DOCKER_CONTEXT/Dockerfile` exists.
    - `runStage`: writes the rendered prompt to `<workspaceDir>/.ralph-tmp/.run-<pid>-<iter>-<ts>.md`, spawns `docker run --rm -i … claude --verbose --print --output-format stream-json --permission-mode <mode> "Read the full instructions from ./.ralph-tmp/<file> …"`. Streams NDJSON from stdout, captures the `result` event's payload as the stage return value. Tempfile cleaned in `finally`.
 5. **`stages.ts`** — three named stages (`implementer`, `ghafkImplementer`, `reviewer`), each pairing a template filename with a Claude `permissionMode` (always `bypassPermissions` — AFK requires non-interactive bash/edit approval; blast radius bounded to the workspace mount).
+6. **AFK machinery** — `cli-help.ts` (flag parsing: `--detach` / `--notify` / `--max-retries` / `--no-keep-alive` / `--log` / `--version` / `--print-config`), `retry.ts` (`withRetries`, default 3 + exponential backoff), `keepalive.ts` (OS wake-lock acquire/release), `detach.ts` (fork-and-exit background run), `notify.ts` (OS toast + bell). `loop.ts` wires these in and handles `SIGINT`→exit 130 / `SIGTERM`→exit 143 by aborting the active stage via an `AbortController`. Full runtime model: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ### Loop topology
 
@@ -78,20 +79,21 @@ Gate = first stage. Reviewer never gates.
 
 ### Template renderer (the part most likely to bite you)
 
-Templates live in `packages/core/templates/`. Four tag forms, expanded in this order:
+Templates live in `packages/core/templates/`. Five tag forms, expanded in this order (`@include` → `@spill` → `!?` → `!` → `{{ INPUTS }}`):
 
-| Tag               | Behavior                                                                                                                                                                                                                     |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `@include:<path>` | Inline a file via `readFileSync`. Path resolved against the template's dir when relative. **No shell**. Used to inject the agent playbooks (`prompt.md`, `ghprompt.md`) into the iteration templates (`afk.md`, `ghafk.md`). |
-| `` !?`<cmd>       |                                                                                                                                                                                                                              |     | <fallback>` `` | Try-shell. `execSync` with stderr suppressed; non-zero exit returns the literal `<fallback>` string. Match order matters: this regex matches before the plain `!` form. Use for cross-platform safety. |
-| `` !`<cmd>` ``    | Plain shell. `execSync` with `cwd = workspaceDir`. Failures throw and abort the iteration.                                                                                                                                   |
-| `{{ INPUTS }}`    | Replaced with the `inputs` string passed to `runLoop`.                                                                                                                                                                       |
+| Tag                  | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@include:<path>`    | Inline a file via `readFileSync`. Path resolved against the template's dir when relative. **No shell**. Used to inject the agent playbooks (`prompt.md`, `ghprompt.md`) into the iteration templates (`afk.md`, `ghafk.md`).                                                                                                                                                                                                                                                   |
+| `@spill[?]:<name>=…` | Run a command, write its stdout to `<spill-dir>/<name>`, and substitute the container-relative path `./.ralph-tmp/spill-…/<name>` into the prompt (the agent `Read`s it). The `?` form writes a fallback string on non-zero exit; `<name>` must be a plain filename (no path separators / `..`). Keeps large outputs (HEAD patch in `review.md`, full issue bodies in `ghafk.md`) out of the prompt. Requires `spillHostDir`/`spillRefPath` (supplied per-stage by `runLoop`). |
+| `` !?`<cmd>          |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |     | <fallback>` `` | Try-shell. `execSync` with stderr suppressed; non-zero exit returns the literal `<fallback>` string. Match order matters: this regex matches before the plain `!` form. Use for cross-platform safety. |
+| `` !`<cmd>` ``       | Plain shell. `execSync` with `cwd = workspaceDir`. Failures throw and abort the iteration.                                                                                                                                                                                                                                                                                                                                                                                     |
+| `{{ INPUTS }}`       | Replaced with the `inputs` string passed to `runLoop`.                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 Shell resolution lives in `resolveShell()` in `render.ts`: Linux/macOS → `/bin/bash`. Windows → walks `$PATH` looking for `bash.exe` (Git for Windows or WSL passthrough), falls back to `cmd.exe`. **Templates should prefer `!?` over `!` for any command that might be unavailable on `cmd.exe`** (e.g. `git log` redirects, `gh issue list`).
 
 ### Per-iteration scratch dir
 
-Every run writes to `<workspaceDir>/.ralph-tmp/` on the host (gitignored): the rendered prompt as `.run-<pid>-<iter>-<ts>.md` (cleaned in `finally`, may leak on SIGKILL — safe to delete) and the NDJSON stream log as `logs/<ts>-iter<N>-<stageName>.ndjson`.
+Every run writes to `<workspaceDir>/.ralph-tmp/` on the host (gitignored): the rendered prompt as `.run-<pid>-<iter>-<ts>.md` (cleaned in `finally`, may leak on SIGKILL — safe to delete) a per-stage spill dir `spill-<pid>-<iter>-<stageIdx>-<ts>/` holding `@spill` output (also cleaned in `finally`), and the NDJSON stream log as `logs/<ts>-iter<N>-<stageName>.ndjson` (kept; `--detach` adds `logs/detached-<pid>.log`).
 
 ### Credential mounts
 
@@ -100,6 +102,8 @@ Every run writes to `<workspaceDir>/.ralph-tmp/` on the host (gitignored): the r
 - `~/.claude` → `/home/agent/.claude`
 - `~/.claude.json` → `/home/agent/.claude.json`
 - `~/.config/gh` → `/home/agent/.config/gh:ro`
+
+`runStage` also injects git env vars (`GIT_CONFIG_COUNT/KEY_0=safe.directory/VALUE_0=*`) so git trusts the bind-mounted workspace, and — **by default** — bind-mounts the host Docker socket (`-v <sock>:/var/run/docker.sock` + a `--group-add` fixup, via `resolveDockerSocketMount`) so Testcontainers inside the sandbox can spawn sibling containers. That grants the sandbox root-equivalent host Docker access; disable with `RALPH_DOCKER_SOCK=0`, or set an explicit path with `RALPH_DOCKER_SOCK_PATH`.
 
 **Same-shell rule:** these paths resolve against the shell that invoked the bin. PowerShell `$HOME` (`C:\Users\<you>`) and WSL `$HOME` (`/home/<you>`) are separate stores — don't mix. `claude /login` and `gh auth login` must be run from a shell context that matches your eventual invocation context (or copied across — see README "Windows + WSL: credentials").
 
@@ -118,7 +122,8 @@ Every run writes to `<workspaceDir>/.ralph-tmp/` on the host (gitignored): the r
 ## Files for orientation
 
 - `README.md` — extensive user-facing docs (install paths per OS, first-run setup, troubleshooting). Read for usage/setup questions.
-- `docs/PUBLISHING.md` — npm publish notes.
+- `RELEASING.md` — single source of truth for releasing all three components (release-please flow, version policy, required secrets, rollback runbook). `docs/PUBLISHING.md` is a stub pointing here.
+- `CONTRIBUTING.md` — maintainer/contributor guide (dev loop, tests, adding a stage, releasing). `docs/ARCHITECTURE.md` — runtime internals reference.
 - `packages/core/templates/prompt.md` / `ghprompt.md` — agent playbooks. Edit these to change feedback loops or task priority.
 - `packages/core/templates/{afk,ghafk,review}.md` — iteration templates that `@include` the playbooks above.
 
