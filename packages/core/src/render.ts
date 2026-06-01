@@ -2,6 +2,13 @@ import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
+// SECURITY INVARIANT: the command bodies of the !`cmd`, !?`cmd`, and @spill tags
+// are executed on the HOST shell (see execSync calls below). Templates are trusted
+// (shipped in the npm tarball) and only ever embed STATIC command strings; {{ INPUTS }}
+// is substituted LAST, into the already-expanded text, and is never re-shelled. Never
+// author a tag whose command body interpolates runtime or untrusted data (issue bodies,
+// commit messages, INPUTS, branch names) — that would be direct host RCE. See SECURITY.md.
+
 // Order matters: !?`...` (try-shell w/ ||| fallback) must match before plain !`...`.
 const SHELL_TRY_TAG = /!\?`([^`]+)`/g;
 const SHELL_TAG = /!`([^`]+)`/g;
@@ -12,6 +19,9 @@ const INCLUDE_TAG = /@include:([^\s`)]+)/g;
 const SPILL_TAG = /@spill(\??):([^\s=]+)=`([^`]+)`/g;
 const INPUTS_TAG = /\{\{\s*INPUTS\s*\}\}/g;
 const TRY_SEP = "|||";
+// Cap on captured stdout for every shell/@spill tag (64 MiB). Large outputs are
+// meant to go through @spill (written to a file), not be inlined into the prompt.
+const SPILL_MAX_BUFFER = 64 * 1024 * 1024;
 
 export type RenderVars = {
   INPUTS: string;
@@ -89,7 +99,7 @@ export function renderTemplate(
         out = execSync(cmd, {
           shell,
           encoding: "utf8",
-          maxBuffer: 64 * 1024 * 1024,
+          maxBuffer: SPILL_MAX_BUFFER,
           cwd: opts.cwd,
           stdio: ["ignore", "pipe", tryMode ? "ignore" : "pipe"],
         });
@@ -113,7 +123,7 @@ export function renderTemplate(
         const out = execSync(cmd, {
           shell,
           encoding: "utf8",
-          maxBuffer: 64 * 1024 * 1024,
+          maxBuffer: SPILL_MAX_BUFFER,
           cwd: opts.cwd,
           stdio: ["ignore", "pipe", "ignore"],
         });
