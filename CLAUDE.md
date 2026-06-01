@@ -59,7 +59,7 @@ CI in `.github/workflows/publish-image.yml` builds + pushes a single-arch `linux
 
 The core library is ~12 source files in `packages/core/src/` (plus a `__tests__/` vitest suite). Read the loop spine in order to understand the system:
 
-1. **`main.ts` / `gh-main.ts`** — bin entrypoints. Both parse flags via `cli-help.ts`, resolve `workspaceDir` / `ralphDir` / `sandcastleDir` from env vars, then call `runLoop` with a different stage chain.
+1. **`main.ts` / `gh-main.ts`** — thin bin entrypoints. Each just calls `runBin` (`run-bin.ts`) with its stage chain + a `takesInputArg` flag. `runBin` parses flags via `cli-help.ts`, resolves `workspaceDir` / `ralphDir` / `packageDir` from env vars, then calls `runLoop`.
 2. **`loop.ts`** (`runLoop`) — drives the iteration. For each iteration, walks the stage chain. **First stage is the gate**: its `result` string is sentinel-checked for `<promise>NO MORE TASKS</promise>` and the loop exits early on hit. Subsequent stages always run after a non-sentinel gate. Calls `ensureImage` once before the loop.
 3. **`render.ts`** (`renderTemplate`) — expands the five template tags below before each stage runs. Synchronous, uses host `execSync` for shell tags.
 4. **`runner.ts`** (`ensureImage`, `runStage`) — docker plumbing.

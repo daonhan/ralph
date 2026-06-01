@@ -1,5 +1,12 @@
 # PRD: Shrink Ralph Agent Playbooks
 
+> **Status (2026-06): partially superseded — not implemented as written.** The
+> cross-file duplication this PRD targets has since been removed by factoring the
+> shared playbook body into `packages/core/templates/playbook-common.md`
+> (`@include`d by both `afk.md` and `ghafk.md`), not via the `_task-ladder.md` /
+> `_feedback-loops.md` / `_commit-format.md` snippet files this document proposes —
+> those do not exist. Treat the snippet design below as historical.
+
 ## Context
 
 User wants iteration context windows smaller so the in-container Claude agent stays focused on the task. Investigation showed each stage already runs in a fresh `--rm` Docker container with a fresh `claude --print` session (runner.ts:206-247, loop.ts:36-72) — so the per-stage context budget is already isolated. The remaining lever is the **prompt itself**: the playbooks shipped at `packages/core/templates/*.md` carry redundant prose, cross-file duplication, and verbose explanations of concepts the agent already knows.

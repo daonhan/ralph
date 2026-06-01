@@ -1,0 +1,46 @@
+name: CI
+
+# Pre-merge verification gate. Runs the full local-verify sequence
+# (build → typecheck → tests → offline smoke checks) on every PR and on
+# pushes to main. The publish-* workflows only fire on release tags, so this
+# is the only thing that catches regressions before they land.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The .mjs smoke scripts import from packages/core/dist, so build first.
+      - run: pnpm -r build
+
+      - run: pnpm -r typecheck
+
+      - run: pnpm -r test
+
+      - name: Root contract tests (node --test over scripts/*.test.mjs)
+        run: pnpm test
+
+      - name: Offline smoke checks (renderer + templates + spill)
+        run: |
+          node scripts/smoke-render.mjs
+          node scripts/smoke-templates.mjs
+          node scripts/smoke-spill-size.mjs
+          node scripts/smoke-spill-large.mjs

@@ -28,9 +28,9 @@ The harness drives the Claude Code CLI against a target repository in an iterati
 ralph-afk / ralph-ghafk           bin (apps/cli/bin/*.js → import { runAfk|runGhAfk })
         │
         ▼
-runAfk / runGhAfk                 (main.ts / gh-main.ts)
+runAfk / runGhAfk                 (main.ts / gh-main.ts → runBin in run-bin.ts)
    parseFlags (cli-help.ts)       --help/-V/--print-config/--no-keep-alive/--max-retries/--detach/--log/--notify
-   resolve workspaceDir, ralphDir, sandcastleDir from env
+   resolve workspaceDir, ralphDir, packageDir from env
    [--detach] detachAndExit       fork-and-exit, parent returns 0
         │
         ▼
@@ -54,13 +54,13 @@ The bin layer is thin: it parses flags, resolves three directories, and calls `r
 
 `ensureImage` runs exactly once, before the iteration loop, so a missing/floating image is resolved a single time per run.
 
-Three resolved directories drive everything (set in `main.ts` / `gh-main.ts`):
+Three resolved directories drive everything (set in `run-bin.ts`, shared by both bins):
 
-| Dir             | Source                                    | Use                                                                   |
-| --------------- | ----------------------------------------- | --------------------------------------------------------------------- |
-| `workspaceDir`  | `RALPH_WORKSPACE` or `process.cwd()`      | Bind-mounted at `/home/agent/workspace`; host root for `.ralph-tmp/`. |
-| `ralphDir`      | `RALPH_DOCKER_CONTEXT` or `sandcastleDir` | `docker build` fallback context.                                      |
-| `sandcastleDir` | `resolve(dirname(import.meta.url), "..")` | The installed core package dir; `templates/` is read from here.       |
+| Dir            | Source                                    | Use                                                                   |
+| -------------- | ----------------------------------------- | --------------------------------------------------------------------- |
+| `workspaceDir` | `RALPH_WORKSPACE` or `process.cwd()`      | Bind-mounted at `/home/agent/workspace`; host root for `.ralph-tmp/`. |
+| `ralphDir`     | `RALPH_DOCKER_CONTEXT` or `packageDir`    | `docker build` fallback context.                                      |
+| `packageDir`   | `resolve(dirname(import.meta.url), "..")` | The installed core package dir; `templates/` is read from here.       |
 
 ---
 

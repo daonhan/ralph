@@ -4,6 +4,8 @@ Zero-to-first-loop for a brand-new user who just wants to run Ralph against thei
 
 Ralph drives [Claude Code](https://docs.anthropic.com/claude/docs/claude-code) against your repo in an iterating implementer → reviewer loop, isolated inside an ephemeral Docker sandbox.
 
+> ⚠️ **Before you run it:** Ralph runs the agent with `--permission-mode bypassPermissions` and, by default, bind-mounts the host Docker socket (**root-equivalent access to the host Docker daemon**). Only run it against repos, plans, and issues you trust; set `RALPH_DOCKER_SOCK=0` to disable the socket mount. Full threat model in [SECURITY.md](./SECURITY.md).
+
 ## 1. Prerequisites
 
 - **Docker** running — Docker Desktop (Windows/macOS) or Docker Engine (Linux).
