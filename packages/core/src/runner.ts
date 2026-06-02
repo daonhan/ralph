@@ -381,6 +381,13 @@ export function stageLogPath(
  * Build the `claude` argv fragment that follows the image ref in a `docker run`
  * invocation. Extracted as a pure helper so callers can unit-test the argv
  * without spawning docker.
+ *
+ * @param stage - The stage configuration (name, permissionMode, etc.).
+ * @param promptContainerPath - The in-container path to the rendered prompt file.
+ * @param modelArgs - The `["--model", "<spec>"]` fragment from {@link resolveModelArgs},
+ *   or `[]` when `RALPH_MODEL` is unset.
+ * @returns The argv fragment starting with `"claude"` and ending with the prompt
+ *   instruction string, ready to be appended after the image ref.
  */
 export function buildClaudeArgs(
   stage: Stage,

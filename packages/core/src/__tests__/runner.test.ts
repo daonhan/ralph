@@ -72,7 +72,7 @@ describe("resolveModelArgs", () => {
 
 describe("buildClaudeArgs", () => {
   const stage = { name: "test", template: "test.md" };
-  const stageWithPerm = {
+  const stageWithPermissionMode = {
     name: "test",
     template: "test.md",
     permissionMode: "bypassPermissions",
@@ -100,7 +100,7 @@ describe("buildClaudeArgs", () => {
   });
 
   it("includes --permission-mode when stage has permissionMode", () => {
-    const args = buildClaudeArgs(stageWithPerm, promptPath, []);
+    const args = buildClaudeArgs(stageWithPermissionMode, promptPath, []);
     expect(args).toContain("--permission-mode");
     const idx = args.indexOf("--permission-mode");
     expect(args[idx + 1]).toBe("bypassPermissions");
