@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - id: release
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@v5
         with:
           # IMPORTANT: a tag created with the default GITHUB_TOKEN does NOT raise
           # a `push: tags` event in other workflows (GitHub's "a workflow cannot
