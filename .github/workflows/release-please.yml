@@ -43,7 +43,7 @@ jobs:
           manifest-file: .release-please-manifest.json
 
       # The steps below only do work when release-please opened/updated a PR.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: steps.release.outputs.prs_created == 'true'
         with:
           fetch-depth: 0
