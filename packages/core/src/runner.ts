@@ -56,6 +56,19 @@ export function parseGraceMs(
 }
 
 /**
+ * Resolve `RALPH_MODEL` into a `claude` argv fragment. Returns
+ * `["--model", trimmed]` for a non-empty value, or `[]` for unset / empty /
+ * whitespace-only input. Pass-through: ralph never validates the model spec,
+ * the `claude` CLI owns that.
+ */
+export function resolveModelArgs(raw: string | undefined): string[] {
+  if (raw == null) return [];
+  const trimmed = raw.trim();
+  if (trimmed === "") return [];
+  return ["--model", trimmed];
+}
+
+/**
  * Locate the sandbox Dockerfile within a build context. The Dockerfile lives at
  * `templates/Dockerfile` so the release-please `ralph-sandbox` component can be
  * scoped to the templates directory; the older context-root location is still
@@ -364,6 +377,40 @@ export function stageLogPath(
   );
 }
 
+/**
+ * Build the `claude` argv fragment that follows the image ref in a `docker run`
+ * invocation. Extracted as a pure helper so callers can unit-test the argv
+ * without spawning docker.
+ *
+ * @param stage - The stage configuration (name, permissionMode, etc.).
+ * @param promptContainerPath - The in-container path to the rendered prompt file.
+ * @param modelArgs - The `["--model", "<spec>"]` fragment from {@link resolveModelArgs},
+ *   or `[]` when `RALPH_MODEL` is unset.
+ * @returns The argv fragment starting with `"claude"` and ending with the prompt
+ *   instruction string, ready to be appended after the image ref.
+ */
+export function buildClaudeArgs(
+  stage: Stage,
+  promptContainerPath: string,
+  modelArgs: string[]
+): string[] {
+  const args = [
+    "claude",
+    "--verbose",
+    "--print",
+    "--output-format",
+    "stream-json",
+  ];
+  if (stage.permissionMode) {
+    args.push("--permission-mode", stage.permissionMode);
+  }
+  args.push(...modelArgs);
+  args.push(
+    `Read the full instructions from the file ./${promptContainerPath} in the current workspace and execute them.`
+  );
+  return args;
+}
+
 export async function runStage(
   stage: Stage,
   renderedPrompt: string,
@@ -436,17 +483,11 @@ export async function runStage(
 
     args.push(
       IMAGE_REF,
-      "claude",
-      "--verbose",
-      "--print",
-      "--output-format",
-      "stream-json"
-    );
-    if (stage.permissionMode) {
-      args.push("--permission-mode", stage.permissionMode);
-    }
-    args.push(
-      `Read the full instructions from the file ./${promptContainerPath} in the current workspace and execute them.`
+      ...buildClaudeArgs(
+        stage,
+        promptContainerPath,
+        resolveModelArgs(process.env.RALPH_MODEL)
+      )
     );
 
     return await streamDocker(args, logPath, options);

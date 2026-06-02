@@ -139,6 +139,10 @@ Environment variables:
                         socket is detected). Mounting lets Testcontainers inside the
                         sandbox spawn sibling containers on the host daemon. Grants
                         root-equivalent host access.
+  RALPH_MODEL           pin the sandbox Claude model. When non-empty, "--model <value>"
+                        is passed through to the in-container claude CLI for every
+                        stage. When unset (or empty/whitespace), the in-container CLI
+                        default is used. Pass-through — the claude CLI validates.
   RALPH_DOCKER_SOCK_PATH explicit docker.sock host path. When unset, auto-detected via
                         DOCKER_HOST (unix:// only), then a candidate list:
                           /var/run/docker.sock
@@ -208,6 +212,11 @@ export function printConfig(
   const detachStatus =
     detach && detachLogPath ? `on (log: ${detachLogPath})` : "off";
   const notifyStatus = notify ? "on" : "off";
+  const rawModel = process.env.RALPH_MODEL;
+  const modelStatus =
+    rawModel && rawModel.trim() !== ""
+      ? `${rawModel.trim()} (RALPH_MODEL)`
+      : "sandbox CLI default (RALPH_MODEL unset)";
 
   process.stdout.write(`[${bin}] resolved config
   version               ${bin} ${cli} (core ${core})
@@ -217,6 +226,7 @@ export function printConfig(
   Dockerfile at ctx     ${dfPresent ? "present" : "MISSING"} (${dockerfile})
   packageDir            ${packageDir}
   RALPH_DOCKER_SOCK     ${sockStatus}
+  model                 ${modelStatus}
   keep-alive            ${keepAliveStatus}
   max-retries           ${maxRetries}
   detach                ${detachStatus}
