@@ -56,6 +56,19 @@ export function parseGraceMs(
 }
 
 /**
+ * Resolve `RALPH_MODEL` into a `claude` argv fragment. Returns
+ * `["--model", trimmed]` for a non-empty value, or `[]` for unset / empty /
+ * whitespace-only input. Pass-through: ralph never validates the model spec,
+ * the `claude` CLI owns that.
+ */
+export function resolveModelArgs(raw: string | undefined): string[] {
+  if (raw == null) return [];
+  const trimmed = raw.trim();
+  if (trimmed === "") return [];
+  return ["--model", trimmed];
+}
+
+/**
  * Locate the sandbox Dockerfile within a build context. The Dockerfile lives at
  * `templates/Dockerfile` so the release-please `ralph-sandbox` component can be
  * scoped to the templates directory; the older context-root location is still
@@ -445,6 +458,7 @@ export async function runStage(
     if (stage.permissionMode) {
       args.push("--permission-mode", stage.permissionMode);
     }
+    args.push(...resolveModelArgs(process.env.RALPH_MODEL));
     args.push(
       `Read the full instructions from the file ./${promptContainerPath} in the current workspace and execute them.`
     );

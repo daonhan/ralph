@@ -45,7 +45,7 @@ ralph-ghafk <iterations>                          # GitHub-issue-driven loop
 ralph-afk --print-config                          # diagnose: print workspace / docker context / image
 ```
 
-Bins also accept `--help` / `-h`. `$RALPH_WORKSPACE` overrides cwd as the bind-mounted target; `$RALPH_IMAGE` overrides the default `docker.io/daonhan/ralph-sandbox:latest`; `$RALPH_DOCKER_CONTEXT` is the `docker build` fallback context (default: bundled `@daonhan/ralph-core` dir, which ships the `Dockerfile`). Other env knobs: `$RALPH_RESULT_GRACE_MS` (post-result grace timer, default `30000`, `0` disables), `$RALPH_DOCKER_SOCK=0` (disable the docker-socket mount), `$RALPH_DOCKER_SOCK_PATH` (explicit socket path), `$NO_COLOR` / `$TERM=dumb` (disable ANSI). Bins also accept `--version`/`-V`, `--no-keep-alive`, `--max-retries <N>`, `--detach`, `--log <path>`, `--notify` (see README "Running AFK").
+Bins also accept `--help` / `-h`. `$RALPH_WORKSPACE` overrides cwd as the bind-mounted target; `$RALPH_IMAGE` overrides the default `docker.io/daonhan/ralph-sandbox:latest`; `$RALPH_DOCKER_CONTEXT` is the `docker build` fallback context (default: bundled `@daonhan/ralph-core` dir, which ships the `Dockerfile`). Other env knobs: `$RALPH_RESULT_GRACE_MS` (post-result grace timer, default `30000`, `0` disables), `$RALPH_DOCKER_SOCK=0` (disable the docker-socket mount), `$RALPH_DOCKER_SOCK_PATH` (explicit socket path), `$RALPH_MODEL` (pass-through `--model <value>` to the in-container claude CLI; unset = sandbox CLI default), `$NO_COLOR` / `$TERM=dumb` (disable ANSI). Bins also accept `--version`/`-V`, `--no-keep-alive`, `--max-retries <N>`, `--detach`, `--log <path>`, `--notify` (see README "Running AFK").
 
 ### Building / publishing the sandbox image
 
