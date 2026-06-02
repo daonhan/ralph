@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseGraceMs, resolveModelArgs } from "../runner.js";
+import { buildClaudeArgs, parseGraceMs, resolveModelArgs } from "../runner.js";
 
 describe("parseGraceMs", () => {
   it("returns the default when unset", () => {
@@ -67,5 +67,55 @@ describe("resolveModelArgs", () => {
 
   it("trims surrounding whitespace", () => {
     expect(resolveModelArgs("  opus  ")).toEqual(["--model", "opus"]);
+  });
+});
+
+describe("buildClaudeArgs", () => {
+  const stage = { name: "test", template: "test.md" };
+  const stageWithPerm = {
+    name: "test",
+    template: "test.md",
+    permissionMode: "bypassPermissions",
+  };
+  const promptPath = ".ralph-tmp/prompt.md";
+
+  it("includes the claude invocation and prompt instruction", () => {
+    const args = buildClaudeArgs(stage, promptPath, []);
+    expect(args[0]).toBe("claude");
+    expect(args).toContain("--verbose");
+    expect(args).toContain("--print");
+    expect(args.at(-1)).toContain(promptPath);
+  });
+
+  it("appends --model args when RALPH_MODEL is set", () => {
+    const args = buildClaudeArgs(stage, promptPath, ["--model", "opus"]);
+    expect(args).toContain("--model");
+    const idx = args.indexOf("--model");
+    expect(args[idx + 1]).toBe("opus");
+  });
+
+  it("does not include --model when modelArgs is empty", () => {
+    const args = buildClaudeArgs(stage, promptPath, []);
+    expect(args).not.toContain("--model");
+  });
+
+  it("includes --permission-mode when stage has permissionMode", () => {
+    const args = buildClaudeArgs(stageWithPerm, promptPath, []);
+    expect(args).toContain("--permission-mode");
+    const idx = args.indexOf("--permission-mode");
+    expect(args[idx + 1]).toBe("bypassPermissions");
+  });
+
+  it("omits --permission-mode when stage has no permissionMode", () => {
+    const args = buildClaudeArgs(stage, promptPath, []);
+    expect(args).not.toContain("--permission-mode");
+  });
+
+  it("places --model args before the prompt instruction", () => {
+    const args = buildClaudeArgs(stage, promptPath, ["--model", "opus"]);
+    const modelIdx = args.indexOf("--model");
+    const promptIdx = args.findIndex((a) => a.includes(promptPath));
+    expect(modelIdx).toBeGreaterThan(-1);
+    expect(modelIdx).toBeLessThan(promptIdx);
   });
 });
