@@ -19,3 +19,5 @@ Read that file with `Read` (use `offset`/`limit` if it is large) to get bodies a
 </issues-full-file>
 
 @include:ghprompt.md
+
+@include:playbook-common.md

@@ -166,7 +166,7 @@ export function printConfig(
   bin: string,
   workspaceDir: string,
   ralphDir: string,
-  sandcastleDir: string,
+  packageDir: string,
   opts: PrintConfigOptions = {}
 ): void {
   const {
@@ -215,7 +215,7 @@ export function printConfig(
   RALPH_DOCKER_CONTEXT  ${ralphDir}${process.env.RALPH_DOCKER_CONTEXT ? "" : "  (default: bundled core dir)"}
   RALPH_IMAGE           ${IMAGE_REF}${process.env.RALPH_IMAGE || process.env.RALPH_IMAGE_TAG ? "" : "  (default)"}
   Dockerfile at ctx     ${dfPresent ? "present" : "MISSING"} (${dockerfile})
-  sandcastleDir         ${sandcastleDir}
+  packageDir            ${packageDir}
   RALPH_DOCKER_SOCK     ${sockStatus}
   keep-alive            ${keepAliveStatus}
   max-retries           ${maxRetries}

@@ -10,10 +10,8 @@ import {
   backoffFor,
   withRetries,
 } from "./retry.js";
+import { ensureImage, runStage, stageLogPath } from "./runner.js";
 import {
-  ensureImage,
-  runStage,
-  stageLogPath,
   USE_COLOR,
   dim,
   bold,
@@ -23,9 +21,11 @@ import {
   dimOut,
   SYM,
   SYM_OUT,
-} from "./runner.js";
+} from "./stream-render.js";
 import type { Stage } from "./stages.js";
 
+// The agent emits this literal when there is no more work; the same string is
+// mirrored in the playbook templates (prompt.md / ghprompt.md) that instruct it.
 const SENTINEL = "<promise>NO MORE TASKS</promise>";
 
 export type LoopOptions = {
@@ -34,9 +34,12 @@ export type LoopOptions = {
   stages: [Stage, ...Stage[]];
   inputs: string;
   iterations: number;
+  /** Docker `build` fallback context (must contain a Dockerfile). */
   ralphDir: string;
+  /** Host repo bind-mounted into the sandbox at /home/agent/workspace. */
   workspaceDir: string;
-  sandcastleDir: string;
+  /** Installed @daonhan/ralph-core dir; stage templates are read from <packageDir>/templates. */
+  packageDir: string;
   /** When true, skip OS wake-lock acquisition. Default: false. */
   noKeepAlive?: boolean;
   /** Per-stage retry budget. Default: 3. Set to 0 to disable retries. */
@@ -52,7 +55,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     iterations,
     ralphDir,
     workspaceDir,
-    sandcastleDir,
+    packageDir,
     noKeepAlive = false,
     maxRetries = DEFAULT_MAX_RETRIES,
     notify = false,
@@ -102,7 +105,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
           ? `${dim("\u2501\u2501\u2501")} ${bold(`iteration ${i}/${iterations}`)} ${dim("\u00b7")} ${bold(stage.name)} ${dim(`(stage ${s + 1}/${stages.length})`)} ${dim("\u2501\u2501\u2501")}`
           : `== iteration ${i}/${iterations} \u00b7 ${stage.name} (stage ${s + 1}/${stages.length}) ==`;
         process.stderr.write(`\n${banner}\n`);
-        const templatePath = join(sandcastleDir, "templates", stage.template);
+        const templatePath = join(packageDir, "templates", stage.template);
         const spillRel = `spill-${process.pid}-${i}-${s}-${Date.now()}`;
         const spillHostDir = join(workspaceDir, ".ralph-tmp", spillRel);
         const spillRefPath = posix.join(".ralph-tmp", spillRel);

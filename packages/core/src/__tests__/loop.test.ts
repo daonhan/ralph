@@ -39,6 +39,9 @@ vi.mock("../runner.js", () => ({
       "logs",
       `iter${iteration}-${stageName}.ndjson`
     ),
+}));
+
+vi.mock("../stream-render.js", () => ({
   USE_COLOR: false,
   dim: (s: string) => s,
   bold: (s: string) => s,
@@ -58,26 +61,26 @@ const sentinel = "<promise>NO MORE TASKS</promise>";
 type LoopDirs = {
   root: string;
   ralphDir: string;
-  sandcastleDir: string;
+  packageDir: string;
   workspaceDir: string;
 };
 
 function makeDirs(): LoopDirs {
   const root = mkdtempSync(join(tmpdir(), "ralph-loop-"));
   const ralphDir = join(root, "ralph");
-  const sandcastleDir = join(root, "sandcastle");
+  const packageDir = join(root, "sandcastle");
   const workspaceDir = join(root, "workspace");
 
-  mkdirSync(join(sandcastleDir, "templates"), { recursive: true });
+  mkdirSync(join(packageDir, "templates"), { recursive: true });
   mkdirSync(ralphDir, { recursive: true });
   mkdirSync(workspaceDir, { recursive: true });
   writeFileSync(
-    join(sandcastleDir, "templates", stage.template),
+    join(packageDir, "templates", stage.template),
     "run {{ INPUTS }}",
     "utf8"
   );
 
-  return { root, ralphDir, sandcastleDir, workspaceDir };
+  return { root, ralphDir, packageDir, workspaceDir };
 }
 
 function loopOptions(dirs: LoopDirs, overrides = {}) {
@@ -87,7 +90,7 @@ function loopOptions(dirs: LoopDirs, overrides = {}) {
     iterations: 1,
     ralphDir: dirs.ralphDir,
     workspaceDir: dirs.workspaceDir,
-    sandcastleDir: dirs.sandcastleDir,
+    packageDir: dirs.packageDir,
     ...overrides,
   };
 }

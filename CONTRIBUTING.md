@@ -194,14 +194,20 @@ await runLoop({
 
 The agent playbooks are plain Markdown:
 
+- [`packages/core/templates/playbook-common.md`](./packages/core/templates/playbook-common.md)
+  — the **shared** body: task-priority ladder, feedback loops (incl. the dotnet MSB3248
+  workaround), commit rules, final rules. Injected into **both** loops.
 - [`packages/core/templates/prompt.md`](./packages/core/templates/prompt.md) — the
-  `ralph-afk` (plan/PRD) playbook.
-- [`packages/core/templates/ghprompt.md`](./packages/core/templates/ghprompt.md) —
-  the `ralph-ghafk` (GitHub-issue) playbook.
+  `ralph-afk` (plan/PRD) **header**: where the work comes from (`<inputs>`) + progress recording.
+- [`packages/core/templates/ghprompt.md`](./packages/core/templates/ghprompt.md) — the
+  `ralph-ghafk` (GitHub-issue) **header**: issue triage + close/comment the issue.
 
-The iteration templates `afk.md` / `ghafk.md` / `review.md` pull the playbooks in
-with the `@include:` tag — edit the playbook, not the wrapper, to change task
-priority or feedback loops. After editing a template, run `node
+The iteration templates `afk.md` / `ghafk.md` each `@include` their bespoke header **and**
+`playbook-common.md`; `review.md` is standalone. Edit `playbook-common.md` to change task
+priority or feedback loops for both loops; edit a header for loop-specific behavior. The
+renderer's `@include` is single-pass (a file pulled in by `@include` is not re-scanned for
+further `@include`s), so both includes live at the top level of `afk.md` / `ghafk.md` — don't
+nest an `@include` inside `prompt.md` / `ghprompt.md`. After editing, run `node
 scripts/smoke-templates.mjs` to confirm it still renders.
 
 ## Smoke-test published artifacts
@@ -274,3 +280,9 @@ overrides, the rollback runbook, and the compatibility matrix.
 - **Conventional-commit messages drive release-please.** The commit type sets the
   bump and CHANGELOG section, and the path decides the component — see
   [`./RELEASING.md`](./RELEASING.md) section 3.
+- **Template shell tags must stay static.** The `` !`cmd` ``, `` !?`cmd` ``, and
+  `@spill` tags run their command body on the **host shell**. Only ever put static
+  command strings in a tag body — never interpolate runtime or untrusted data (INPUTS,
+  issue/commit text, branch names) into one. `{{ INPUTS }}` is substituted last and is
+  read by the agent inside the container, never re-shelled on the host. Breaking this
+  invariant is direct host RCE — see [`./SECURITY.md`](./SECURITY.md).

@@ -3,6 +3,26 @@
   "version": "0.6.1",
   "description": "CLI for the ralph AFK loop (ralph-afk, ralph-ghafk).",
   "type": "module",
+  "license": "MIT",
+  "author": "Paul Nguyen <daonhan@gmail.com>",
+  "homepage": "https://github.com/daonhan/ralph/tree/main/apps/cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/daonhan/ralph.git",
+    "directory": "apps/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/daonhan/ralph/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "claude",
+    "ai-agent",
+    "afk",
+    "docker",
+    "automation",
+    "cli"
+  ],
   "bin": {
     "ralph-afk": "./bin/ralph-afk.js",
     "ralph-ghafk": "./bin/ralph-ghafk.js"

@@ -1,6 +1,13 @@
 # Ralph — Autonomous Claude Code Loop
 
+[![@daonhan/ralph](https://img.shields.io/npm/v/@daonhan/ralph?label=%40daonhan%2Fralph)](https://www.npmjs.com/package/@daonhan/ralph)
+[![@daonhan/ralph-core](https://img.shields.io/npm/v/@daonhan/ralph-core?label=%40daonhan%2Fralph-core)](https://www.npmjs.com/package/@daonhan/ralph-core)
+[![CI](https://github.com/daonhan/ralph/actions/workflows/ci.yml/badge.svg)](https://github.com/daonhan/ralph/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 Ralph drives [Claude Code](https://docs.anthropic.com/claude/docs/claude-code) against a target repository in an iterating implementer → reviewer pipeline, isolated inside a custom Docker image. The harness ships as two npm packages, with thin bash shims that wire host paths + credentials into the CLI.
+
+> ⚠️ **Security:** Ralph runs Claude with `--permission-mode bypassPermissions` inside the sandbox and, **by default, bind-mounts the host Docker socket — granting root-equivalent access to the host Docker daemon.** Point it only at repositories, plans, and GitHub issues you trust. Disable the socket mount with `RALPH_DOCKER_SOCK=0`. See **[SECURITY.md](./SECURITY.md)** for the full threat model.
 
 > **New here?** Start with **[QUICKSTART.md](./QUICKSTART.md)** (zero-to-first-loop). Hacking on Ralph itself → **[CONTRIBUTING.md](./CONTRIBUTING.md)**. Internals → **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**.
 
@@ -475,7 +482,7 @@ Set `RALPH_IMAGE=registry.example.com/my-image:tag` before invoking the shim, or
 
 ### Change feedback loops or task priority
 
-Edit `packages/core/templates/prompt.md` (and `ghprompt.md`) — the playbooks injected via `@include:prompt.md`.
+The shared task-priority ladder, feedback loops, commit rules, and final rules live in `packages/core/templates/playbook-common.md` (injected into both loops). The per-loop bespoke headers are `prompt.md` (plan/PRD source + progress recording, for `ralph-afk`) and `ghprompt.md` (issue triage + close/comment, for `ralph-ghafk`). `afk.md` / `ghafk.md` each `@include` their header plus `playbook-common.md`.
 
 ---
 
@@ -553,3 +560,9 @@ Edit `packages/core/templates/prompt.md` (and `ghprompt.md`) — the playbooks i
 | [`packages/core/templates/afk.md`](./packages/core/templates/afk.md)             | `ralph-afk` prompt template.                                                                                                                                                 |
 | [`packages/core/templates/ghafk.md`](./packages/core/templates/ghafk.md)         | `ralph-ghafk` prompt template.                                                                                                                                               |
 | [`packages/core/templates/review.md`](./packages/core/templates/review.md)       | Reviewer prompt template.                                                                                                                                                    |
+
+---
+
+## License
+
+[MIT](./LICENSE) (c) Paul Nguyen.

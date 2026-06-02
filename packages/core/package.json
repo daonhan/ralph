@@ -3,6 +3,27 @@
   "version": "0.6.1",
   "description": "Claude Code AFK orchestration: iteration loop, docker runner, template renderer.",
   "type": "module",
+  "license": "MIT",
+  "author": "Paul Nguyen <daonhan@gmail.com>",
+  "homepage": "https://github.com/daonhan/ralph/tree/main/packages/core#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/daonhan/ralph.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/daonhan/ralph/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "claude",
+    "ai-agent",
+    "afk",
+    "docker",
+    "automation",
+    "code-review",
+    "orchestration"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
