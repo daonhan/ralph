@@ -16,6 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -86,3 +87,30 @@ jobs:
             git checkout -
             echo "::endgroup::"
           done
+
+      - name: Publish released sandbox image
+        if: steps.release.outputs.releases_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          RELEASE_OUTPUTS: ${{ toJson(steps.release.outputs) }}
+        run: |
+          set -euo pipefail
+          TAG="$(node -e '
+            const outputs = JSON.parse(process.env.RELEASE_OUTPUTS || "{}");
+            const tag = Object.values(outputs).find((value) =>
+              typeof value === "string" && /^ralph-sandbox-v/.test(value)
+            );
+            process.stdout.write(tag || "");
+          ')"
+          if [ -z "$TAG" ]; then
+            echo "no ralph-sandbox release tag in release-please outputs"
+            exit 0
+          fi
+
+          IMAGE_TAG="${TAG#ralph-sandbox-}"
+          echo "Dispatching publish-image.yml for ${TAG} (${IMAGE_TAG})"
+          gh workflow run publish-image.yml \
+            --ref "$TAG" \
+            -f tag="$IMAGE_TAG" \
+            -f also_latest=true \
+            -f release_tag="$TAG"

@@ -21,6 +21,10 @@ on:
         description: "Also tag as :latest"
         required: false
         default: "true"
+      release_tag:
+        description: "GitHub Release tag to enrich (e.g. ralph-sandbox-v0.2.2); leave blank for rebuild-only dispatches"
+        required: false
+        default: ""
   push:
     tags:
       - "ralph-sandbox-v*"
@@ -44,9 +48,14 @@ jobs:
         run: |
           REF="${GITHUB_REF_NAME}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RELEASE_TAG="${{ inputs.release_tag }}"
+            if [ -n "$RELEASE_TAG" ] && [ "${RELEASE_TAG#ralph-sandbox-}" = "$RELEASE_TAG" ]; then
+              echo "::error::release_tag must look like ralph-sandbox-vX.Y.Z, got '$RELEASE_TAG'"
+              exit 1
+            fi
             echo "primary=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
             echo "also_latest=${{ inputs.also_latest }}" >> "$GITHUB_OUTPUT"
-            echo "release_tag=" >> "$GITHUB_OUTPUT"
+            echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
           elif [ "${REF#ralph-sandbox-}" != "$REF" ]; then
             # ralph-sandbox-vX.Y.Z -> strip "ralph-sandbox-" -> vX.Y.Z
             echo "primary=${REF#ralph-sandbox-}" >> "$GITHUB_OUTPUT"
