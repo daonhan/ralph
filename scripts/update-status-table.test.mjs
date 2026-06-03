@@ -58,6 +58,25 @@ test("renderStatusTable tolerates empty tagInfo (all dashes)", () => {
   );
 });
 
+test("renderStatusTable ignores tag info for a different manifest version", () => {
+  const out = renderStatusTable(
+    { ...manifest, "apps/cli": "0.6.1" },
+    {
+      ralph: {
+        tag: "ralph-v0.5.1",
+        date: "2026-05-22",
+        url: "https://github.com/daonhan/ralph/releases/tag/ralph-v0.5.1",
+      },
+    }
+  );
+
+  assert.match(
+    out,
+    /\| `ralph` \| npm `@daonhan\/ralph` \| `0.6.1` \| — \| — \|/
+  );
+  assert.doesNotMatch(out, /ralph-v0\.5\.1/);
+});
+
 test("replaceBlock rewrites only between the markers", () => {
   const doc = `intro\n${START}\nstale\n${END}\noutro\n`;
   const out = replaceBlock(doc, "TABLE");

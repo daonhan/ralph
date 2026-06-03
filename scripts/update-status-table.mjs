@@ -12,7 +12,7 @@
 //   node scripts/update-status-table.mjs --check   # exit 1 if it would change
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export const START = "<!-- status-table:start -->";
@@ -37,6 +37,17 @@ export const COMPONENTS = [
   },
 ];
 
+export function expectedReleaseTag(component, version) {
+  if (!version || version === "—") return undefined;
+  return `${component}-v${version}`;
+}
+
+function tagInfoForManifestVersion(component, version, info) {
+  const expectedTag = expectedReleaseTag(component, version);
+  if (!expectedTag || !info || info.tag !== expectedTag) return {};
+  return info;
+}
+
 /**
  * Pure renderer: given the parsed release-please manifest and a tag-info map
  * keyed by component name ({ tag, date, url }), return the markdown table that
@@ -49,7 +60,11 @@ export const COMPONENTS = [
 export function renderStatusTable(manifest, tagInfo) {
   const rows = COMPONENTS.map((c) => {
     const version = manifest[c.path] ?? "—";
-    const info = (tagInfo && tagInfo[c.component]) || {};
+    const info = tagInfoForManifestVersion(
+      c.component,
+      version,
+      tagInfo && tagInfo[c.component]
+    );
     const released = info.date ?? "—";
     const tagCell = info.tag
       ? info.url
@@ -82,15 +97,15 @@ export function replaceBlock(doc, table) {
 
 // ---- side-effectful shell below; only used when run as a script ----
 
-function sh(cmd) {
-  return execSync(cmd, { stdio: ["ignore", "pipe", "ignore"] })
+function git(args) {
+  return execFileSync("git", args, { stdio: ["ignore", "pipe", "ignore"] })
     .toString()
     .trim();
 }
 
 function repoSlug() {
   try {
-    const url = sh("git config --get remote.origin.url");
+    const url = git(["config", "--get", "remote.origin.url"]);
     const m = url.match(/github\.com[:/](.+?)(?:\.git)?$/);
     return m ? m[1] : null;
   } catch {
@@ -98,17 +113,19 @@ function repoSlug() {
   }
 }
 
-function collectTagInfo() {
+function collectTagInfo(manifest) {
   const slug = repoSlug();
   const tagInfo = {};
   for (const c of COMPONENTS) {
+    const expectedTag = expectedReleaseTag(c.component, manifest[c.path]);
+    if (!expectedTag) continue;
     let line = "";
     try {
-      line = sh(
-        `git for-each-ref --sort=-version:refname ` +
-          `--format='%(refname:short)\t%(creatordate:short)' ` +
-          `'refs/tags/${c.component}-v*'`
-      ).split("\n")[0];
+      line = git([
+        "for-each-ref",
+        "--format=%(refname:short)\t%(creatordate:short)",
+        `refs/tags/${expectedTag}`,
+      ]).split("\n")[0];
     } catch {
       line = "";
     }
@@ -129,7 +146,7 @@ function main() {
   const manifest = JSON.parse(
     readFileSync(".release-please-manifest.json", "utf8")
   );
-  const tagInfo = collectTagInfo();
+  const tagInfo = collectTagInfo(manifest);
   const doc = readFileSync("RELEASING.md", "utf8");
   const updated = replaceBlock(doc, renderStatusTable(manifest, tagInfo));
   if (updated === doc) {
