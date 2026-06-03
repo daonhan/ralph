@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.2](https://github.com/daonhan/ralph/compare/ralph-v0.5.1...ralph-v0.6.2) (2026-06-03)
+
+### Features
+
+* surface the CLI/core version banner at AFK loop startup
+
 ## [0.6.0](https://github.com/daonhan/ralph/compare/ralph-v0.5.1...ralph-v0.6.0) (2026-05-24)
 
 ### Features

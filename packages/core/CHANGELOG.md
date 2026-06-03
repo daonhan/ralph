@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/daonhan/ralph/compare/ralph-core-v0.5.1...ralph-core-v0.6.2) (2026-06-03)
+
+### Features
+
+* **core:** print the CLI and core version banner at loop startup
+* **loop:** use the active bin name in the wake-lock reason
+
 ## [0.6.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.5.1...ralph-core-v0.6.0) (2026-05-24)
 
 ### Features
