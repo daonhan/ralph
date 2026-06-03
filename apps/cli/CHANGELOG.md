@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/daonhan/ralph/compare/ralph-v0.6.2...ralph-v0.6.3) (2026-06-03)
+
+
+### Miscellaneous Chores
+
+* **release:** repair release-please state ([f0dffaf](https://github.com/daonhan/ralph/commit/f0dffafbd9c3ba4ee2aa224d6ea126df039cbe44))
+
 ## [0.6.2](https://github.com/daonhan/ralph/compare/ralph-v0.5.1...ralph-v0.6.2) (2026-06-03)
 
 ### Features
