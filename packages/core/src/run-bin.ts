@@ -101,5 +101,7 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
     noKeepAlive: flags.noKeepAlive,
     maxRetries: flags.maxRetries,
     notify: flags.notify,
+    bin: cfg.bin,
+    cliVersion: cfg.cliVersion,
   });
 }

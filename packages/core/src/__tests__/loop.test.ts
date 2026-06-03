@@ -134,6 +134,21 @@ describe("runLoop", () => {
     expect(mocks.notifyComplete).toHaveBeenCalledWith(1, true);
   });
 
+  it("prints the cli + core version banner at loop init", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(sentinel);
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk", cliVersion: "9.9.9" }));
+
+    const stderr = (
+      process.stderr.write as unknown as { mock: { calls: unknown[][] } }
+    ).mock.calls
+      .map((c) => String(c[0]))
+      .join("");
+    expect(stderr).toContain("ralph-afk 9.9.9 (core ");
+  });
+
   it("logs terminal stage failure and continues with the next iteration", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);

@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 
+import { readCoreVersion } from "./cli-help.js";
 import { acquire, type Releaser } from "./keepalive.js";
 import { notifyComplete, notifyError } from "./notify.js";
 import { renderTemplate } from "./render.js";
@@ -46,6 +47,10 @@ export type LoopOptions = {
   maxRetries?: number;
   /** When true, fire OS notification + bell on loop terminal events. Default: false. */
   notify?: boolean;
+  /** Bin name for the init-time version banner (e.g. "ralph-afk"). */
+  bin?: string;
+  /** CLI version for the init-time version banner. */
+  cliVersion?: string;
 };
 
 export async function runLoop(opts: LoopOptions): Promise<void> {
@@ -59,7 +64,14 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     noKeepAlive = false,
     maxRetries = DEFAULT_MAX_RETRIES,
     notify = false,
+    bin = "ralph",
+    cliVersion = "?",
   } = opts;
+
+  const versionLine = `${bin} ${cliVersion} (core ${readCoreVersion()})`;
+  process.stderr.write(
+    `${USE_COLOR ? `${dim("━━━")} ${bold(versionLine)} ${dim("━━━")}` : `== ${versionLine} ==`}\n`
+  );
 
   const releaser: Releaser = noKeepAlive
     ? { release: () => {} }
