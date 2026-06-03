@@ -125,7 +125,7 @@ jobs:
           echo "Pinning ${IMAGE_REF} into release ${RELEASE_TAG}"
           BODY="$(gh release view "$RELEASE_TAG" --json body -q .body || true)"
           {
-            printf '%s\n' "$BODY"
+            printf '%s\n' "$BODY" | grep -v '^Image: docker\.io/daonhan/ralph-sandbox@sha256:' || true
             printf '\nImage: %s\n' "$IMAGE_REF"
           } > "$OUT/body.md"
           gh release edit "$RELEASE_TAG" --notes-file "$OUT/body.md"
@@ -134,9 +134,20 @@ jobs:
           syft scan "$IMAGE_REF" -o "spdx-json=$SBOM"
 
           # 3) Keyless (OIDC) cosign attestation over the image SBOM, bundled.
-          cosign attest-blob --yes \
-            --predicate "$SBOM" --type spdxjson \
-            --bundle "$BUNDLE" "$SBOM"
+          for attempt in 1 2 3; do
+            if cosign attest-blob --yes \
+              --predicate "$SBOM" --type spdxjson \
+              --bundle "$BUNDLE" "$SBOM"; then
+              break
+            fi
+            if [ "$attempt" = 3 ]; then
+              echo "::error::cosign attest-blob failed after ${attempt} attempts"
+              exit 1
+            fi
+            sleep_for=$((attempt * 30))
+            echo "cosign attest-blob failed; retrying in ${sleep_for}s"
+            sleep "$sleep_for"
+          done
 
           # 4) Attach SBOM + attestation to the release.
           gh release upload "$RELEASE_TAG" "$SBOM" "$BUNDLE" --clobber
