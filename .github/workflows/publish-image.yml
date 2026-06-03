@@ -103,8 +103,8 @@ jobs:
       - uses: anchore/sbom-action/download-syft@v0
         if: steps.tag.outputs.release_tag != ''
 
-      # Pin the immutable digest into the GH Release notes and attach an SBOM +
-      # cosign attestation so operators can deploy reproducibly and audit the image.
+      # Pin the immutable digest into the GH Release notes and attach an SBOM.
+      # Also attach a cosign attestation when Sigstore's transparency log is available.
       # Only runs for ralph-sandbox-v* tags (which have a release).
       - name: Enrich the GitHub Release (digest, SBOM, attestation)
         if: steps.tag.outputs.release_tag != ''
@@ -134,21 +134,33 @@ jobs:
           syft scan "$IMAGE_REF" -o "spdx-json=$SBOM"
 
           # 3) Keyless (OIDC) cosign attestation over the image SBOM, bundled.
+          # Rekor outages should not block a successfully published Docker image.
+          ATTESTATION_READY=false
           for attempt in 1 2 3; do
             if cosign attest-blob --yes \
               --predicate "$SBOM" --type spdxjson \
               --bundle "$BUNDLE" "$SBOM"; then
+              ATTESTATION_READY=true
               break
             fi
             if [ "$attempt" = 3 ]; then
-              echo "::error::cosign attest-blob failed after ${attempt} attempts"
-              exit 1
+              echo "::warning::cosign attest-blob failed after ${attempt} attempts; uploading SBOM without attestation"
+              break
             fi
             sleep_for=$((attempt * 30))
             echo "cosign attest-blob failed; retrying in ${sleep_for}s"
             sleep "$sleep_for"
           done
 
-          # 4) Attach SBOM + attestation to the release.
-          gh release upload "$RELEASE_TAG" "$SBOM" "$BUNDLE" --clobber
-          echo "Uploaded to release $RELEASE_TAG: $(basename "$SBOM"), $(basename "$BUNDLE")"
+          # 4) Attach release assets.
+          UPLOADS=("$SBOM")
+          if [ "$ATTESTATION_READY" = "true" ]; then
+            UPLOADS+=("$BUNDLE")
+          fi
+          gh release upload "$RELEASE_TAG" "${UPLOADS[@]}" --clobber
+
+          UPLOADED="$(basename "$SBOM")"
+          if [ "$ATTESTATION_READY" = "true" ]; then
+            UPLOADED="${UPLOADED}, $(basename "$BUNDLE")"
+          fi
+          echo "Uploaded to release $RELEASE_TAG: $UPLOADED"
