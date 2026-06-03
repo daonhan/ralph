@@ -26,7 +26,7 @@ const manifest = JSON.parse(
 
 const ROOT_PATH = ".";
 const isRelevant = (file, path) =>
-  path === ROOT_PATH || file.indexOf(`${path}/`) === 0;
+  path === ROOT_PATH || file === path || file.indexOf(`${path}/`) === 0;
 
 /**
  * Given the set of files a single commit touches, return the set of component
@@ -89,6 +89,18 @@ test("feat touching only packages/core/src/** bumps ralph-core, not ralph-sandbo
   expectOnly(
     ["packages/core/src/runner.ts", "packages/core/package.json"],
     "ralph-core"
+  );
+});
+
+test("component changelog-only changes do not trigger release PRs", () => {
+  const got = bumpedComponents([
+    "packages/core/CHANGELOG.md",
+    "apps/cli/CHANGELOG.md",
+  ]);
+  assert.equal(
+    got.size,
+    0,
+    `expected changelog-only repair changes not to bump components, got ${[...got].join(", ") || "(none)"}`
   );
 });
 
