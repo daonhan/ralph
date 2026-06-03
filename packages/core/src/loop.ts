@@ -75,7 +75,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
 
   const releaser: Releaser = noKeepAlive
     ? { release: () => {} }
-    : acquire({ reason: "ralph-afk loop" });
+    : acquire({ reason: `${bin} loop` });
   const stageAbort = new AbortController();
 
   // Single release path: signal handlers and the finally below all funnel

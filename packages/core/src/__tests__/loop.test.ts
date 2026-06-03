@@ -149,6 +149,16 @@ describe("runLoop", () => {
     expect(stderr).toContain("ralph-afk 9.9.9 (core ");
   });
 
+  it("uses the bin name in the wake-lock reason", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(sentinel);
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-ghafk" }));
+
+    expect(mocks.acquire).toHaveBeenCalledWith({ reason: "ralph-ghafk loop" });
+  });
+
   it("logs terminal stage failure and continues with the next iteration", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
