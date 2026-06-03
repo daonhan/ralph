@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.2.1...ralph-sandbox-v0.2.2) (2026-06-03)
+
+
+### Bug Fixes
+
+* retarget the plan/PRD playbook and dedup the shared playbook body ([d950995](https://github.com/daonhan/ralph/commit/d9509958fd4f7fd24c71c722953b99a493321737))
+
 ## [0.2.1](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.2.0...ralph-sandbox-v0.2.1) (2026-05-21)
 
 
