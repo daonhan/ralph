@@ -108,7 +108,7 @@ jobs:
           '
 
       - name: Publish ${{ steps.route.outputs.name }}
-        uses: JS-DevTools/npm-publish@v3
+        uses: JS-DevTools/npm-publish@v4
         with:
           token: ${{ secrets.NPM_TOKEN }}
           package: ${{ steps.route.outputs.dir }}
