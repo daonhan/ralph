@@ -9,7 +9,7 @@ You will work on the AFK issues only, not the HITL ones. Label filtering uses th
 
 You've also been passed a file containing the last few commits. Review these to understand what work has been done.
 
-If all AFK tasks are complete, output `<promise>NO MORE TASKS</promise>`.
+If all AFK tasks are complete, output <promise>NO MORE TASKS</promise>.
 
 # TASK SELECTION
 
@@ -50,19 +50,6 @@ Before committing, run the feedback loops:
 
 - `dotnet test` to run the tests
 - `dotnet build` to type-check
-
-**If `dotnet test` or `dotnet build` fails with MSB3248** ("Could not resolve assembly reference" / "file is corrupt") — this is a known virtiofs/9p I/O quirk when the repo is mounted from the Windows host. It is NOT a code defect. Do not defer verification. Re-run with build outputs redirected to `/tmp` and parallelism disabled:
-
-```bash
-dotnet test <path-to-test-csproj> \
-  -m:1 \
-  /p:UseSharedCompilation=false \
-  /p:BuildInParallel=false \
-  /p:BaseIntermediateOutputPath=/tmp/ralph-obj/$(basename <path-to-test-csproj> .csproj)/ \
-  /p:BaseOutputPath=/tmp/ralph-bin/$(basename <path-to-test-csproj> .csproj)/
-```
-
-Only if that second attempt also fails may you defer and record the blocker in the commit message.
 
 # COMMIT
 
