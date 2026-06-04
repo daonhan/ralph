@@ -296,8 +296,8 @@ No plan/PRD arg — context comes from open GitHub issues.
 
 1. **Render template** `packages/core/templates/ghafk.md`:
    - `` !?`git log -n 5 …|||No commits found` `` → recent commits (try-shell)
-   - `` !?`gh issue list --state open --limit 50 --json number,title,labels|||[]` `` → a lean inline index of open issues (number / title / labels)
-   - `` @spill?:issues.json=`gh issue list … --json number,title,body,labels,comments` `` → full issue bodies + comments written to `.ralph-tmp/spill-…/issues.json`; the agent `Read`s that file before picking a task
+   - `` !`gh issue list --state open --limit 50 --json number,title,labels` `` → a lean inline index of open issues (number / title / labels); failures abort the render and are retried as stage failures
+   - `` @spill:issues.json=`gh issue list … --json number,title,body,labels,comments` `` → full issue bodies + comments written to `.ralph-tmp/spill-…/issues.json`; failures abort the render and are retried as stage failures
    - `@include:ghprompt.md` → the agent playbook (inlined by the Node renderer, no shell)
 2. **ghafk-implementer stage** (gate) — agent picks one open AFK issue, implements it, commits, closes / comments on the issue.
 3. **Sentinel check** — same as `ralph-afk`.
@@ -483,7 +483,7 @@ Set `RALPH_IMAGE=registry.example.com/my-image:tag` before invoking the shim, or
 
 ### Change feedback loops or task priority
 
-The agent playbooks are self-contained: `packages/core/templates/prompt.md` (plan/PRD source + progress recording, for `ralph-afk`) and `ghprompt.md` (issue triage + close/comment, for `ralph-ghafk`). Each carries its own task-priority ladder, feedback loops, commit rules, and final rules. `afk.md` / `ghafk.md` each `@include` their respective playbook. Edit the playbook for a loop to change its task priority or feedback loops.
+The agent playbooks are self-contained: `packages/core/templates/prompt.md` (plan/PRD source + progress recording, for `ralph-afk`) and `packages/core/templates/ghprompt.md` (issue triage + close/comment, for `ralph-ghafk`). Each carries its own task-priority ladder, feedback loops, commit rules, and final rules. `afk.md` / `ghafk.md` each `@include` their respective playbook. Edit the playbook for a loop to change its task priority or feedback loops.
 
 ---
 
@@ -499,8 +499,8 @@ The agent playbooks are self-contained: `packages/core/templates/prompt.md` (pla
 - **`Cannot find module '@daonhan/ralph-core'`** — `@daonhan/ralph` was installed but its dep didn't resolve. Re-run `npm install` (or `pnpm install`) in the workspace, or use `npx -y @daonhan/ralph` to let npx fetch a clean copy.
 - **`@esbuild/win32-x64 package is present but this platform needs @esbuild/linux-x64`** — `node_modules/` installed from the wrong OS. Delete `node_modules/` + lockfile and reinstall under WSL.
 - **`Not logged in · Please run /login`** — Claude credentials missing inside the container. Run the interactive `docker run … claude /login` step from "First-run setup".
-- **`gh issue list` fails with `not a git repository`** — the workspace has no `.git`. The `ghafk.md` template uses `|| echo "[]"` fallback so the iteration still proceeds, but `gh` cannot detect the target repo. Initialize the repo, or push first.
-- **`MSB3248` during `dotnet build` / `dotnet test`** — virtiofs/9p quirk on Windows-mounted source. The agent retries automatically per the recipe in `packages/core/templates/prompt.md`; manual repro:
+- **`gh issue list` fails with `not a git repository`** — the workspace has no `.git`, so `gh` cannot detect the target repo. `ghafk.md` treats this as a render failure and retries the stage instead of rendering an empty issue list. Initialize the repo, or push first.
+- **`MSB3248` during `dotnet build` / `dotnet test`** — virtiofs/9p quirk on Windows-mounted source. The agent retries automatically per the recipes in `packages/core/templates/prompt.md` and `packages/core/templates/ghprompt.md`; manual repro:
   ```bash
   dotnet test <path-to-test-csproj> \
     -m:1 \
