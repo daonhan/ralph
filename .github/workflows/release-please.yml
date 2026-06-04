@@ -50,7 +50,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         if: steps.release.outputs.prs_created == 'true'
         with:
           node-version: 20
