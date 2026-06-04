@@ -11,5 +11,3 @@
 </inputs>
 
 @include:prompt.md
-
-@include:playbook-common.md

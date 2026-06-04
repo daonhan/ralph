@@ -192,23 +192,22 @@ await runLoop({
 
 ## Customizing prompts
 
-The agent playbooks are plain Markdown:
+The agent playbooks are plain Markdown, each self-contained:
 
-- [`packages/core/templates/playbook-common.md`](./packages/core/templates/playbook-common.md)
-  — the **shared** body: task-priority ladder, feedback loops (incl. the dotnet MSB3248
-  workaround), commit rules, final rules. Injected into **both** loops.
 - [`packages/core/templates/prompt.md`](./packages/core/templates/prompt.md) — the
-  `ralph-afk` (plan/PRD) **header**: where the work comes from (`<inputs>`) + progress recording.
+  `ralph-afk` (plan/PRD) playbook: where the work comes from (`<inputs>`) + progress recording,
+  plus the task-priority ladder, feedback loops (incl. the dotnet MSB3248 workaround), commit
+  rules, and final rules.
 - [`packages/core/templates/ghprompt.md`](./packages/core/templates/ghprompt.md) — the
-  `ralph-ghafk` (GitHub-issue) **header**: issue triage + close/comment the issue.
+  `ralph-ghafk` (GitHub-issue) playbook: issue triage + close/comment the issue, plus the same
+  shared task ladder / feedback loops / commit rules / final rules.
 
-The iteration templates `afk.md` / `ghafk.md` each `@include` their bespoke header **and**
-`playbook-common.md`; `review.md` is standalone. Edit `playbook-common.md` to change task
-priority or feedback loops for both loops; edit a header for loop-specific behavior. The
-renderer's `@include` is single-pass (a file pulled in by `@include` is not re-scanned for
-further `@include`s), so both includes live at the top level of `afk.md` / `ghafk.md` — don't
-nest an `@include` inside `prompt.md` / `ghprompt.md`. After editing, run `node
-scripts/smoke-templates.mjs` to confirm it still renders.
+The iteration templates `afk.md` / `ghafk.md` each `@include` their respective playbook;
+`review.md` is standalone. Edit a playbook to change task priority, feedback loops, or
+loop-specific behavior. The renderer's `@include` is single-pass (a file pulled in by
+`@include` is not re-scanned for further `@include`s), so the include lives at the top level of
+`afk.md` / `ghafk.md` — don't nest an `@include` inside `prompt.md` / `ghprompt.md`. After
+editing, run `node scripts/smoke-templates.mjs` to confirm it still renders.
 
 ## Smoke-test published artifacts
 

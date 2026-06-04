@@ -483,7 +483,7 @@ Set `RALPH_IMAGE=registry.example.com/my-image:tag` before invoking the shim, or
 
 ### Change feedback loops or task priority
 
-The shared task-priority ladder, feedback loops, commit rules, and final rules live in `packages/core/templates/playbook-common.md` (injected into both loops). The per-loop bespoke headers are `prompt.md` (plan/PRD source + progress recording, for `ralph-afk`) and `ghprompt.md` (issue triage + close/comment, for `ralph-ghafk`). `afk.md` / `ghafk.md` each `@include` their header plus `playbook-common.md`.
+The agent playbooks are self-contained: `packages/core/templates/prompt.md` (plan/PRD source + progress recording, for `ralph-afk`) and `ghprompt.md` (issue triage + close/comment, for `ralph-ghafk`). Each carries its own task-priority ladder, feedback loops, commit rules, and final rules. `afk.md` / `ghafk.md` each `@include` their respective playbook. Edit the playbook for a loop to change its task priority or feedback loops.
 
 ---
 

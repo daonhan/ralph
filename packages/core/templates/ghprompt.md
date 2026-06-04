@@ -9,10 +9,62 @@ You will work on the AFK issues only, not the HITL ones. Label filtering uses th
 
 You've also been passed a file containing the last few commits. Review these to understand what work has been done.
 
-If all AFK tasks are complete, output `<promise>NO MORE TASKS</promise>`.
+If all AFK tasks are complete, output <promise>NO MORE TASKS</promise>.
+
+# TASK SELECTION
+
+Pick the next task. Prioritize tasks in this order:
+
+1. Critical bugfixes
+2. Development infrastructure
+
+Getting development infrastructure like tests and types and dev scripts ready is an important precursor to building features.
+
+3. Tracer bullets for new features
+
+Tracer bullets are small slices of functionality that go through all layers of the system, allowing you to test and validate your approach early. This helps in identifying potential issues and ensures that the overall architecture is sound before investing significant time in development.
+
+TL;DR - build a tiny, end-to-end slice of the feature first, then expand it out.
+
+4. Polish and quick wins
+5. Refactors
+
+# EXPLORATION
+
+Explore the repo.
+
+# IMPLEMENTATION
+
+Complete the task.
+
+# FEEDBACK LOOPS
+
+Before committing, run the feedback loops:
+
+### Frontend / Node
+
+- `pnpm run test` to run the tests
+- `pnpm run typecheck` to run the type checker
+
+### Backend / Dotnet
+
+- `dotnet test` to run the tests
+- `dotnet build` to type-check
+
+# COMMIT
+
+Make a single `git commit -am` with a short message:
+
+- Subject line (≤72 chars): what changed
+- Optional body (≤3 bullets): key decision, blocker for next iteration
+- No file lists (git tracks them), no `Co-Authored-By`
 
 # THE ISSUE
 
 If the task is complete, close the original GitHub issue.
 
 If the task is not complete, leave a comment on the GitHub issue with what was done.
+
+# FINAL RULES
+
+ONLY WORK ON A SINGLE TASK.
