@@ -202,6 +202,33 @@ describe("runLoop", () => {
     expect(firstLog).toContain("[retry] attempt 1 of 1 after 5000 ms");
   });
 
+  it("retries a failing render and surfaces it as a terminal failure (no false completion)", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    // Template whose shell tag always fails — emulates a flaky `gh issue list`.
+    // Such a failure must abort/retry the stage, never silently degrade the
+    // prompt into a false `<promise>NO MORE TASKS</promise>` completion.
+    const failStage: Stage = { name: "implementer", template: "fail.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "fail.md"),
+      "!`exit 1`",
+      "utf8"
+    );
+
+    await runLoop(
+      loopOptions(dirs, { stages: [failStage] as [Stage], maxRetries: 0 })
+    );
+
+    // Render threw before the stage ran: runStage never invoked, loop did not
+    // reject, and the terminal failure was logged.
+    expect(mocks.runStage).not.toHaveBeenCalled();
+    const log = readFileSync(
+      join(dirs.workspaceDir, ".ralph-tmp", "logs", "iter1-implementer.ndjson"),
+      "utf8"
+    );
+    expect(log).toContain("[failure] iteration 1 stage implementer failed");
+  });
+
   it("aborts the active stage and releases the wake-lock on SIGINT", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);

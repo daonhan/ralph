@@ -121,11 +121,6 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         const spillRel = `spill-${process.pid}-${i}-${s}-${Date.now()}`;
         const spillHostDir = join(workspaceDir, ".ralph-tmp", spillRel);
         const spillRefPath = posix.join(".ralph-tmp", spillRel);
-        const prompt = renderTemplate(
-          templatePath,
-          { INPUTS: inputs },
-          { cwd: workspaceDir, spillHostDir, spillRefPath }
-        );
 
         const stageLog = stageLogPath(workspaceDir, i, stage.name);
         mkdirSync(dirname(stageLog), { recursive: true });
@@ -133,10 +128,26 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         let result: string;
         try {
           result = await withRetries(
-            () =>
-              runStage(stage, prompt, workspaceDir, i, spillHostDir, stageLog, {
-                signal: stageAbort.signal,
-              }),
+            () => {
+              // Render inside the retry: a failing template shell/@spill tag
+              // (e.g. a flaky `gh issue list`) is retried with backoff instead
+              // of crashing the loop — and a hard failure surfaces as a terminal
+              // stage failure rather than a degraded prompt that false-completes.
+              const prompt = renderTemplate(
+                templatePath,
+                { INPUTS: inputs },
+                { cwd: workspaceDir, spillHostDir, spillRefPath }
+              );
+              return runStage(
+                stage,
+                prompt,
+                workspaceDir,
+                i,
+                spillHostDir,
+                stageLog,
+                { signal: stageAbort.signal }
+              );
+            },
             {
               max: maxRetries,
               backoffMs: DEFAULT_BACKOFF_MS,
