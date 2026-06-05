@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.3](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.2.2...ralph-sandbox-v0.2.3) (2026-06-05)
+
+
+### Bug Fixes
+
+* **ghafk:** fail loud on gh issue-fetch errors instead of false-completing ([74832b8](https://github.com/daonhan/ralph/commit/74832b80d44b3357c4d197e6d282048336d8cfa4))
+* **ghafk:** remove silent fallbacks for issue list commands ([bd2b94d](https://github.com/daonhan/ralph/commit/bd2b94d1aa39f3d316fbd02ef3826f4c7e5c7f09))
+* **ghafk:** surface issue fetch failures ([0e5d3a2](https://github.com/daonhan/ralph/commit/0e5d3a2b4910db22f1eef4907c9b105857a96340))
+
 ## [0.2.2](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.2.1...ralph-sandbox-v0.2.2) (2026-06-03)
 
 
