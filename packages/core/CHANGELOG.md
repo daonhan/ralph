@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.3](https://github.com/daonhan/ralph/compare/ralph-core-v0.6.2...ralph-core-v0.6.3) (2026-06-05)
+
+
+### Bug Fixes
+
+* **ghafk:** fail loud on gh issue-fetch errors instead of false-completing ([74832b8](https://github.com/daonhan/ralph/commit/74832b80d44b3357c4d197e6d282048336d8cfa4))
+* **release:** revert premature 0.6.3 bump so release-please anchors on 0.6.2 ([d290a65](https://github.com/daonhan/ralph/commit/d290a65b60abe427c6a38b266a0cc2b1eac1ac5c))
+* **release:** revert premature 0.6.3 bump so release-please anchors on 0.6.2 ([add45ea](https://github.com/daonhan/ralph/commit/add45eab9068fce3168f9b16ede195f8a7c36ed1))
+
+
+### Miscellaneous Chores
+
+* **release:** bump ralph and ralph-core to 0.6.3 ([ea1c006](https://github.com/daonhan/ralph/commit/ea1c00615296e0433706257b23f0087030984374))
+
 ## [0.6.2](https://github.com/daonhan/ralph/compare/ralph-core-v0.5.1...ralph-core-v0.6.2) (2026-06-03)
 
 ### Features
