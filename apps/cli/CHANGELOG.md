@@ -1,10 +1,10 @@
 # Changelog
 
-## [0.6.0](https://github.com/daonhan/ralph/compare/ralph-v0.5.1...ralph-v0.6.0) (2026-05-24)
+## [0.6.2](https://github.com/daonhan/ralph/compare/ralph-v0.5.1...ralph-v0.6.2) (2026-06-03)
 
 ### Features
 
-* ship the CLI with `@daonhan/ralph-core@0.6.0` for built-in AFK keep-alive, retry, detach, and notification support
+* ship the CLI with `@daonhan/ralph-core@0.6.2` for built-in AFK keep-alive, retry, `--detach`, `--notify`, and `RALPH_MODEL` support
 
 ## [0.5.1](https://github.com/daonhan/ralph/compare/ralph-v0.5.0...ralph-v0.5.1) (2026-05-22)
 

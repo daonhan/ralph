@@ -1,15 +1,19 @@
 # Changelog
 
-## [0.6.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.5.1...ralph-core-v0.6.0) (2026-05-24)
+## [0.6.2](https://github.com/daonhan/ralph/compare/ralph-core-v0.5.1...ralph-core-v0.6.2) (2026-06-03)
 
 ### Features
 
 * **core:** keep AFK runs awake by default with per-OS sleep inhibitors
-* **core:** add per-stage retry/backoff, detach mode, completion/failure notifications, and AFK flag wiring
+* **core:** add per-stage retry/backoff, `--detach` background mode, and `--notify` completion/failure OS toast + bell
+* **core:** wire `RALPH_MODEL` through to the sandbox `claude --model`
+* **core:** print a cli + core version banner at loop init
 
 ### Bug Fixes
 
-* **core:** abort active Docker work during image setup and stage execution on SIGINT/SIGTERM
+* **core:** abort active Docker work on SIGINT/SIGTERM and clean up AFK signals
+* **core:** grace-timer recovers from a post-result claude-CLI hang
+* **core:** warn on the docker.sock mount (root-equivalent host access)
 * **core:** log terminal stage failures, warn on early wake-lock exit, and escape macOS notification backslashes
 
 ## [0.5.1](https://github.com/daonhan/ralph/compare/ralph-core-v0.5.0...ralph-core-v0.5.1) (2026-05-22)
