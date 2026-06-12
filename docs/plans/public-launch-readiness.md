@@ -28,7 +28,7 @@ Eliminate the defect that makes every release half-complete. Create a repo-scope
 
 - [ ] A PAT exists with `repo` scope (classic) or contents + actions + pull-requests write (fine-grained).
 - [ ] `gh secret list` shows `RELEASE_PLEASE_TOKEN` alongside the existing `NPM_TOKEN` / `DOCKERHUB_*`.
-- [ ] The "never hand-edit `.release-please-manifest.json` / `package.json` versions" rule is recorded where future contributors will see it (RELEASING.md / memory).
+- [x] The "never hand-edit `.release-please-manifest.json` / `package.json` versions" rule is recorded where future contributors will see it (RELEASING.md / memory). (RELEASING.md §intro callout: "release-please owns the version state — never hand-edit it")
 - [ ] No change is made to manifest or version fields as part of this phase.
 
 ---

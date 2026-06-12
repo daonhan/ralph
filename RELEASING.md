@@ -18,6 +18,14 @@ last-released version of each component). Conventional-commit history on `main`
 determines what gets released; you write `feat:` / `fix:` commits as usual and a
 Release PR appears.
 
+> **release-please owns the version state — never hand-edit it.**
+> `.release-please-manifest.json` and the per-package `version` fields in
+> `packages/core/package.json` / `apps/cli/package.json` are written by
+> release-please, not by hand. A manual bump (commit `ea1c006`, "bump to 0.6.3")
+> once desynced the manifest and set off a cascade of phantom versions (0.6.0,
+> 0.6.3) and revert churn. Let the Release PR carry the bump; to force a specific
+> version, use a `Release-As:` footer (§5) — never edit those files directly.
+
 ## 1. Current versions
 
 <!-- status-table:start -->
