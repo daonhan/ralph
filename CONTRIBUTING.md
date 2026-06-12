@@ -116,8 +116,9 @@ Smoke scripts in `scripts/` (import the built `dist/`, so run after `pnpm -r bui
 
 ## Pre-commit hook
 
-`pnpm install` runs the root `"prepare": "husky"` script, which installs the git
-hooks. On commit, [`.husky/pre-commit`](./.husky/pre-commit) runs:
+`pnpm install` runs the root `"prepare": "husky || git config core.hooksPath .husky"`
+script, which installs the git hooks or falls back to setting `core.hooksPath`.
+On commit, [`.husky/pre-commit`](./.husky/pre-commit) runs:
 
 ```bash
 pnpm exec lint-staged    # prettier --ignore-unknown --write on staged files
