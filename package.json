@@ -14,7 +14,7 @@
     "build": "pnpm -r run build",
     "clean": "pnpm -r run clean",
     "typecheck": "pnpm -r run typecheck",
-    "test": "node --test scripts/runner-floating-ref.test.mjs scripts/release-please-config.test.mjs scripts/update-status-table.test.mjs",
+    "test": "node --test scripts/runner-floating-ref.test.mjs scripts/release-please-config.test.mjs scripts/update-status-table.test.mjs scripts/registries-not-behind-git.test.mjs",
     "publish-all": "pnpm -r publish --access public --no-git-checks",
     "prepare": "husky"
   },

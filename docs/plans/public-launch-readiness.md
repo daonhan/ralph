@@ -61,10 +61,10 @@ The one automatable invariant from the PRD: a check that the latest component ta
 
 ### Acceptance criteria
 
-- [ ] A pure comparison function exists: (per-component latest tag, per-component published version) → list of lagging components.
-- [ ] A `node --test` spec covers: all-in-sync → empty; npm behind tag → flagged; image behind tag → flagged; registry ahead → not flagged.
-- [ ] The test is wired into the root `pnpm test` script alongside the existing `scripts/*.test.mjs`.
-- [ ] The comparison core runs with no network access (live lookups injected).
+- [x] A pure comparison function exists: (per-component latest tag, per-component published version) → list of lagging components. (`findLaggingComponents` in `scripts/registries-not-behind-git.mjs`)
+- [x] A `node --test` spec covers: all-in-sync → empty; npm behind tag → flagged; image behind tag → flagged; registry ahead → not flagged. (`scripts/registries-not-behind-git.test.mjs`, 8 cases)
+- [x] The test is wired into the root `pnpm test` script alongside the existing `scripts/*.test.mjs`.
+- [x] The comparison core runs with no network access (live lookups injected at the edge via `collectState`/`main`, behind the entrypoint guard).
 
 ---
 
