@@ -80,10 +80,10 @@ Bumps: `actions/checkout` v4→v5, `actions/setup-node` v4→v6, `pnpm/action-se
 
 ### Acceptance criteria
 
-- [ ] The five actions are bumped across `ci.yml`, `publish-npm.yml`, `publish-image.yml`, `release-please.yml` (only where each appears).
-- [ ] The change is a standalone PR, not bundled with the roll-forward.
-- [ ] CI on the PR is green before merge.
-- [ ] No remaining `uses:` pins on the deprecated Node-20 action majors.
+- [x] The five actions are bumped across `ci.yml`, `publish-npm.yml`, `publish-image.yml`, `release-please.yml` (only where each appears). (checkout v4→v5, setup-node v4→v6, pnpm/action-setup v4→v6, login-action v3→v4, npm-publish v3→v4 — 11 `uses:` lines)
+- [ ] The change is a standalone PR, not bundled with the roll-forward. (Landed as an isolated commit touching only the 4 workflow files; PR still to be opened by the maintainer.)
+- [ ] CI on the PR is green before merge. (Local feedback loops green: `pnpm -r typecheck`, 59 core + 25 root tests; GitHub Actions CI verification pending the PR.)
+- [x] No remaining `uses:` pins on the deprecated Node-20 action majors.
 
 ---
 
