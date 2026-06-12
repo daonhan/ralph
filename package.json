@@ -16,7 +16,7 @@
     "typecheck": "pnpm -r run typecheck",
     "test": "node --test scripts/runner-floating-ref.test.mjs scripts/release-please-config.test.mjs scripts/update-status-table.test.mjs scripts/registries-not-behind-git.test.mjs",
     "publish-all": "pnpm -r publish --access public --no-git-checks",
-    "prepare": "husky"
+    "prepare": "husky || git config core.hooksPath .husky"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

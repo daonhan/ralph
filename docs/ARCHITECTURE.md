@@ -358,7 +358,7 @@ pnpm --filter @daonhan/ralph-core test
 pnpm test
 ```
 
-The pre-commit hook ([`../.husky/pre-commit`](../.husky/pre-commit)) runs `pnpm exec lint-staged` (Prettier `--write` on staged files) then `pnpm typecheck`.
+The pre-commit hook ([`../.husky/pre-commit`](../.husky/pre-commit)) runs `pnpm exec lint-staged` (Prettier `--write` on staged files) then `pnpm typecheck`. The root `prepare` script is `husky || git config core.hooksPath .husky` so installs still work if Husky does not self-initialize.
 
 Build the sandbox image locally from [`../packages/core/templates/Dockerfile`](../packages/core/templates/Dockerfile) (`node:22-bookworm` + git/curl/jq + .NET SDK 10 + `gh` + Claude Code CLI; base `node` user renamed to `agent` UID 1000; `safe.directory=*` global; `WORKDIR /home/agent/workspace`; `ENTRYPOINT []`, `CMD ["claude"]`):
 
