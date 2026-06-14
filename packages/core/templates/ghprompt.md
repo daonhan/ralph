@@ -78,6 +78,28 @@ If the task is complete, close the original GitHub issue.
 
 If the task is not complete, leave a comment on the GitHub issue with what was done.
 
+# LEARNINGS
+
+The repo's accumulated learnings are in the `<learnings>` block — durable, reusable knowledge from prior iterations (conventions, gotchas, decisions and their why, dead ends). Consult it during EXPLORATION and IMPLEMENTATION so you don't relearn what's known or repeat a dead end.
+
+If, while doing the task, you discover a NEW durable, reusable learning — a repo convention, a non-obvious gotcha, a decision and its why, or a dead-end to avoid — append it tersely to the right section of `./.ralph/LEARNINGS.md`. Create the file if it does not exist, with these four sections:
+
+```
+
+# Ralph learnings
+
+## Conventions
+
+## Gotchas
+
+## Decisions
+
+## Dead ends
+
+```
+
+Dedupe against existing entries and prune anything no longer true. This file is committed WITH your task commit (it is git-tracked) — do NOT make a separate commit for it. The bar is durable AND reusable: do NOT record routine or one-off task details.
+
 # FINAL RULES
 
 ONLY WORK ON A SINGLE TASK.

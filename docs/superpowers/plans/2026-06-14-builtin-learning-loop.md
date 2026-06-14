@@ -264,7 +264,7 @@ Prose instructions (no test — covered by the render suite staying green + the 
 - Modify: `packages/core/templates/prompt.md`
 - Modify: `packages/core/templates/ghprompt.md`
 
-- [ ] **Step 1: Add a `# LEARNINGS` section to `prompt.md`**
+- [x] **Step 1: Add a `# LEARNINGS` section to `prompt.md`**
 
 In `packages/core/templates/prompt.md`, insert a new section between `# RECORDING PROGRESS` (its full block) and `# FINAL RULES`. Replace:
 
@@ -304,7 +304,7 @@ Dedupe against existing entries and prune anything no longer true. This file is 
 # FINAL RULES
 ```
 
-- [ ] **Step 2: Add the same `# LEARNINGS` section to `ghprompt.md`**
+- [x] **Step 2: Add the same `# LEARNINGS` section to `ghprompt.md`**
 
 In `packages/core/templates/ghprompt.md`, insert the section between the `# THE ISSUE` block and `# FINAL RULES`. Replace:
 
@@ -344,12 +344,12 @@ Dedupe against existing entries and prune anything no longer true. This file is 
 # FINAL RULES
 ```
 
-- [ ] **Step 3: Verify the render suite still passes**
+- [x] **Step 3: Verify the render suite still passes**
 
 Run: `pnpm --filter @daonhan/ralph-core test -- render learnings`
 Expected: PASS (the playbooks are `@include`-d into `afk.md`/`ghafk.md`; rendering must still succeed).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add packages/core/templates/prompt.md packages/core/templates/ghprompt.md
