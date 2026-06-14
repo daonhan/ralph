@@ -5,13 +5,13 @@
 **Please do not open a public issue for security vulnerabilities.**
 
 Report privately via GitHub Security Advisories — open the repository's
-**[Security → Report a vulnerability](https://github.com/daonhan/ralph/security/advisories/new)**
+**[Security → Report a vulnerability](https://github.com/phamvuhoang/ralph/security/advisories/new)**
 form — or email **daonhan@gmail.com**. Include a description, reproduction steps, and the
 affected version. You'll get an acknowledgement within a few days and a fix or mitigation plan.
 
 ## Supported versions
 
-Only the latest published minor of each package (`@daonhan/ralph`, `@daonhan/ralph-core`) is
+Only the latest published minor of each package (`@phamvuhoang/ralph`, `@phamvuhoang/ralph-core`) is
 supported with security fixes. Pin by exact version if you need reproducibility.
 
 ## Threat model — read before running

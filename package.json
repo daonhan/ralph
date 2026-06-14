@@ -7,7 +7,7 @@
   "author": "Paul Nguyen <daonhan@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/daonhan/ralph.git"
+    "url": "git+https://github.com/phamvuhoang/ralph.git"
   },
   "packageManager": "pnpm@9.12.0",
   "scripts": {

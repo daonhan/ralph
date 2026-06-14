@@ -1,18 +1,18 @@
 {
-  "name": "@daonhan/ralph",
+  "name": "@phamvuhoang/ralph",
   "version": "0.6.3",
   "description": "CLI for the ralph AFK loop (ralph-afk, ralph-ghafk).",
   "type": "module",
   "license": "MIT",
   "author": "Paul Nguyen <daonhan@gmail.com>",
-  "homepage": "https://github.com/daonhan/ralph/tree/main/apps/cli#readme",
+  "homepage": "https://github.com/phamvuhoang/ralph/tree/main/apps/cli#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/daonhan/ralph.git",
+    "url": "git+https://github.com/phamvuhoang/ralph.git",
     "directory": "apps/cli"
   },
   "bugs": {
-    "url": "https://github.com/daonhan/ralph/issues"
+    "url": "https://github.com/phamvuhoang/ralph/issues"
   },
   "keywords": [
     "claude-code",
@@ -32,7 +32,7 @@
     "README.md"
   ],
   "dependencies": {
-    "@daonhan/ralph-core": "workspace:^"
+    "@phamvuhoang/ralph-core": "workspace:^"
   },
   "engines": {
     "node": ">=20"

@@ -49,7 +49,7 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
   }
 
   // run-bin.js ships in the same dist/ dir as the bin entrypoints, so ".." is
-  // the installed @daonhan/ralph-core package dir (which holds templates/).
+  // the installed @phamvuhoang/ralph-core package dir (which holds templates/).
   const here = dirname(fileURLToPath(import.meta.url));
   const packageDir = resolve(here, "..");
   const workspaceDir = resolve(process.env.RALPH_WORKSPACE ?? process.cwd());

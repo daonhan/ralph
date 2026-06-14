@@ -48,14 +48,14 @@
   <text x="40" y="92" class="sub">This diagram shows how Ralph drives the Claude Code CLI against a target repo while you&#x2019;re AFK.</text>
   <text x="40" y="110" class="sub">Each iteration renders prompt templates, then runs implementer &#x2192; reviewer stages directly on the host.</text>
   <text x="40" y="128" class="sub">The loop exits early when the gate stage returns &lt;promise&gt;NO MORE TASKS&lt;/promise&gt;.</text>
-  <text x="1250" y="62" class="brand">&#x1F6E0; daonhan/ralph</text>
+  <text x="1250" y="62" class="brand">&#x1F6E0; phamvuhoang/ralph</text>
 
   <!-- ══════════ Row 1: CLI Layer + Template Layer ══════════ -->
   <!-- CLI Layer -->
   <rect x="32" y="160" width="672" height="270" rx="16" class="layer"/>
   <rect x="298" y="146" width="140" height="30" rx="15" fill="#111"/>
   <text x="368" y="166" text-anchor="middle" class="pill-t">CLI Layer</text>
-  <text x="368" y="200" text-anchor="middle" class="layer-cap">Shims (afk.sh / ghafk.sh) &#x2192; bins (apps/cli, no build) &#x2192; @daonhan/ralph-core runAfk / runGhAfk &#x2192; runBin</text>
+  <text x="368" y="200" text-anchor="middle" class="layer-cap">Shims (afk.sh / ghafk.sh) &#x2192; bins (apps/cli, no build) &#x2192; @phamvuhoang/ralph-core runAfk / runGhAfk &#x2192; runBin</text>
 
   <rect x="56" y="218" width="304" height="84" rx="10" class="card-cli"/>
   <text x="72" y="244" class="card-t">&#x25B6; ralph-afk</text>
@@ -325,8 +325,8 @@
 
   <rect x="56" y="1778" width="300" height="100" rx="10" class="card-rel"/>
   <text x="72" y="1804" class="card-t">&#x1F4E6; pnpm monorepo</text>
-  <text x="72" y="1824" class="card-d">apps/cli (@daonhan/ralph) &#xB7;</text>
-  <text x="72" y="1840" class="card-d">packages/core (@daonhan/ralph-core),</text>
+  <text x="72" y="1824" class="card-d">apps/cli (@phamvuhoang/ralph) &#xB7;</text>
+  <text x="72" y="1840" class="card-d">packages/core (@phamvuhoang/ralph-core),</text>
   <text x="72" y="1856" class="card-d">linked via workspace:^.</text>
 
   <rect x="396" y="1778" width="300" height="100" rx="10" class="card-rel"/>
@@ -343,7 +343,7 @@
 
   <rect x="1076" y="1778" width="300" height="100" rx="10" class="card-rel"/>
   <text x="1092" y="1804" class="card-t">&#x1F3F7; Artifacts</text>
-  <text x="1092" y="1824" class="card-d">npm: @daonhan/ralph + ralph-core &#xB7;</text>
+  <text x="1092" y="1824" class="card-d">npm: @phamvuhoang/ralph + ralph-core &#xB7;</text>
   <text x="1092" y="1840" class="card-d">install globally, run ralph-afk or</text>
   <text x="1092" y="1856" class="card-d">ralph-ghafk on any git repo.</text>
 

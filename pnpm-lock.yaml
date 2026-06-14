@@ -25,7 +25,7 @@ importers:
 
   apps/cli:
     dependencies:
-      "@daonhan/ralph-core":
+      "@phamvuhoang/ralph-core":
         specifier: workspace:^
         version: link:../../packages/core
 

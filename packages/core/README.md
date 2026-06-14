@@ -1,21 +1,21 @@
-# @daonhan/ralph-core
+# @phamvuhoang/ralph-core
 
-Library half of **[Ralph](https://github.com/daonhan/ralph)** — a harness that drives the
+Library half of **[Ralph](https://github.com/phamvuhoang/ralph)** — a harness that drives the
 [Claude Code](https://docs.anthropic.com/claude/docs/claude-code) CLI against a target
 repository in an iterating implementer → reviewer loop, running directly on the host OS.
 
 This package is the engine: the iteration loop driver, the runner + NDJSON stream
 renderer, the prompt-template renderer, and the stage registry. The user-facing CLI lives in
-**[`@daonhan/ralph`](https://www.npmjs.com/package/@daonhan/ralph)** (`ralph-afk` / `ralph-ghafk`).
+**[`@phamvuhoang/ralph`](https://www.npmjs.com/package/@phamvuhoang/ralph)** (`ralph-afk` / `ralph-ghafk`).
 
 > **Security:** Ralph runs Claude with `--permission-mode bypassPermissions`. Point it
 > only at repositories and prompts you trust. See the repo's
-> [SECURITY.md](https://github.com/daonhan/ralph/blob/main/SECURITY.md).
+> [SECURITY.md](https://github.com/phamvuhoang/ralph/blob/main/SECURITY.md).
 
 ## Install
 
 ```bash
-npm i @daonhan/ralph-core
+npm i @phamvuhoang/ralph-core
 ```
 
 ## Use
@@ -27,7 +27,7 @@ import {
   runLoop,
   STAGES,
   renderTemplate,
-} from "@daonhan/ralph-core";
+} from "@phamvuhoang/ralph-core";
 
 // Drive the plan/PRD loop from argv (same entry the ralph-afk bin uses):
 await runAfk(["<plan-and-prd>", "5"]);
@@ -45,9 +45,9 @@ required. The `templates/` directory (prompt playbooks) ships in the tarball.
 ## Docs
 
 Full usage, setup, environment variables, and architecture are in the
-**[main README](https://github.com/daonhan/ralph#readme)** and
-**[docs/ARCHITECTURE.md](https://github.com/daonhan/ralph/blob/main/docs/ARCHITECTURE.md)**.
+**[main README](https://github.com/phamvuhoang/ralph#readme)** and
+**[docs/ARCHITECTURE.md](https://github.com/phamvuhoang/ralph/blob/main/docs/ARCHITECTURE.md)**.
 
 ## License
 
-[MIT](https://github.com/daonhan/ralph/blob/main/LICENSE) © Paul Nguyen.
+[MIT](https://github.com/phamvuhoang/ralph/blob/main/LICENSE) © Paul Nguyen.

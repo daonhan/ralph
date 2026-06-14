@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { runAfk } from "@daonhan/ralph-core";
+import { runAfk } from "@phamvuhoang/ralph-core";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgPath = join(here, "..", "package.json");

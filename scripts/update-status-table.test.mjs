@@ -20,7 +20,7 @@ const tagInfo = {
   "ralph-core": {
     tag: "ralph-core-v0.2.0",
     date: "2026-05-20",
-    url: "https://github.com/daonhan/ralph/releases/tag/ralph-core-v0.2.0",
+    url: "https://github.com/phamvuhoang/ralph/releases/tag/ralph-core-v0.2.0",
   },
   // "ralph" intentionally absent -> "—" date and tag
 };
@@ -28,8 +28,8 @@ const tagInfo = {
 const EXPECTED = [
   "| Component | Artifact | Version | Released | Tag |",
   "| --- | --- | --- | --- | --- |",
-  "| `ralph-core` | npm `@daonhan/ralph-core` | `0.2.0` | 2026-05-20 | [`ralph-core-v0.2.0`](https://github.com/daonhan/ralph/releases/tag/ralph-core-v0.2.0) |",
-  "| `ralph` | npm `@daonhan/ralph` | `0.1.0` | — | — |",
+  "| `ralph-core` | npm `@phamvuhoang/ralph-core` | `0.2.0` | 2026-05-20 | [`ralph-core-v0.2.0`](https://github.com/phamvuhoang/ralph/releases/tag/ralph-core-v0.2.0) |",
+  "| `ralph` | npm `@phamvuhoang/ralph` | `0.1.0` | — | — |",
 ].join("\n");
 
 test("renderStatusTable snapshots the expected markdown block", () => {
@@ -47,7 +47,7 @@ test("renderStatusTable tolerates empty tagInfo (all dashes)", () => {
   const out = renderStatusTable(manifest, {});
   assert.match(
     out,
-    /\| `ralph-core` \| npm `@daonhan\/ralph-core` \| `0.2.0` \| — \| — \|/
+    /\| `ralph-core` \| npm `@phamvuhoang\/ralph-core` \| `0.2.0` \| — \| — \|/
   );
 });
 
@@ -58,14 +58,14 @@ test("renderStatusTable ignores tag info for a different manifest version", () =
       ralph: {
         tag: "ralph-v0.5.1",
         date: "2026-05-22",
-        url: "https://github.com/daonhan/ralph/releases/tag/ralph-v0.5.1",
+        url: "https://github.com/phamvuhoang/ralph/releases/tag/ralph-v0.5.1",
       },
     }
   );
 
   assert.match(
     out,
-    /\| `ralph` \| npm `@daonhan\/ralph` \| `0.6.1` \| — \| — \|/
+    /\| `ralph` \| npm `@phamvuhoang\/ralph` \| `0.6.1` \| — \| — \|/
   );
   assert.doesNotMatch(out, /ralph-v0\.5\.1/);
 });

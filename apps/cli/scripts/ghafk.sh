@@ -9,4 +9,4 @@ fi
 if [ -x "./node_modules/.bin/ralph-ghafk" ]; then
   exec ./node_modules/.bin/ralph-ghafk "$@"
 fi
-exec npx -y @daonhan/ralph ralph-ghafk "$@"
+exec npx -y @phamvuhoang/ralph ralph-ghafk "$@"

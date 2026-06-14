@@ -1,6 +1,6 @@
 # Architecture
 
-Internals reference for **library extenders** of `@daonhan/ralph-core` and **core contributors** who need the runtime model before touching `loop` / `render` / `runner`. For user-facing install/setup, see [`../README.md`](../README.md); for release mechanics, [`../RELEASING.md`](../RELEASING.md).
+Internals reference for **library extenders** of `@phamvuhoang/ralph-core` and **core contributors** who need the runtime model before touching `loop` / `render` / `runner`. For user-facing install/setup, see [`../README.md`](../README.md); for release mechanics, [`../RELEASING.md`](../RELEASING.md).
 
 All source links are relative to this `docs/` directory (e.g. [`../packages/core/src/loop.ts`](../packages/core/src/loop.ts)).
 
@@ -10,10 +10,10 @@ All source links are relative to this `docs/` directory (e.g. [`../packages/core
 
 Ralph ships as a pnpm monorepo (Node >= 20, pnpm >= 9, root `packageManager pnpm@9.12.0`) that produces three release components:
 
-| Component             | Path            | Version | What it is                                                                                                                          |
-| --------------------- | --------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `@daonhan/ralph-core` | `packages/core` | 0.6.3   | Library: loop driver, native-sandbox runner, template renderer, stage registry, AFK machinery. ESM, TS → `dist/`.                   |
-| `@daonhan/ralph`      | `apps/cli`      | 0.6.3   | CLI exposing `ralph-afk` and `ralph-ghafk` bin entries. Hand-written JS bins, **no build step**, depends on core via `workspace:^`. |
+| Component                 | Path            | Version | What it is                                                                                                                          |
+| ------------------------- | --------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `@phamvuhoang/ralph-core` | `packages/core` | 0.6.3   | Library: loop driver, native-sandbox runner, template renderer, stage registry, AFK machinery. ESM, TS → `dist/`.                   |
+| `@phamvuhoang/ralph`      | `apps/cli`      | 0.6.3   | CLI exposing `ralph-afk` and `ralph-ghafk` bin entries. Hand-written JS bins, **no build step**, depends on core via `workspace:^`. |
 
 Both packages are **ESM only** (`"type": "module"`). Relative imports inside [`../packages/core/src`](../packages/core/src) end in `.js` (compiled-output extension required by `moduleResolution: NodeNext`).
 
@@ -300,7 +300,7 @@ Everything lands under `<workspace>/.ralph-tmp/` (gitignored):
 
 - **ESM only.** Both packages are `"type": "module"`; relative imports in `packages/core/src` end in `.js` (NodeNext).
 - **First stage is the gate.** Place gating stages at index 0 of any chain. The sentinel `<promise>NO MORE TASKS</promise>` is hardcoded in [`../packages/core/src/loop.ts`](../packages/core/src/loop.ts).
-- **No build step for `apps/cli`.** Bins are hand-written JS that `import { runAfk } from "@daonhan/ralph-core"`. Keep the bin layer flat — don't add TS there.
+- **No build step for `apps/cli`.** Bins are hand-written JS that `import { runAfk } from "@phamvuhoang/ralph-core"`. Keep the bin layer flat — don't add TS there.
 - **`permissionMode` is always `bypassPermissions`** for all stages — AFK requires non-interactive bash/edit approval; blast radius is bounded by the runner sandbox and the workspace is git-recoverable. Never `acceptEdits`.
 - **Templates ship in the core tarball.** `packages/core/package.json` `files` includes `dist` and `templates`.
 - **Adding a stage** = (1) extend `STAGES` in [`../packages/core/src/stages.ts`](../packages/core/src/stages.ts), (2) drop a new `*.md` in [`../packages/core/templates`](../packages/core/templates), (3) wire it into the chain in `main.ts` / `gh-main.ts`.
@@ -322,7 +322,7 @@ pnpm -r typecheck    # tsc --noEmit across the workspace
 Run tests (core: vitest; root: `node --test` over `scripts/*.test.mjs`):
 
 ```bash
-pnpm --filter @daonhan/ralph-core test   # vitest run, src/__tests__/*.test.ts
+pnpm --filter @phamvuhoang/ralph-core test   # vitest run, src/__tests__/*.test.ts
 pnpm test                                # root: node --test scripts/*.test.mjs
 ```
 

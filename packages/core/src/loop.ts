@@ -32,7 +32,7 @@ export type LoopOptions = {
   iterations: number;
   /** Host repo Claude runs against (cwd). */
   workspaceDir: string;
-  /** Installed @daonhan/ralph-core dir; stage templates are read from <packageDir>/templates. */
+  /** Installed @phamvuhoang/ralph-core dir; stage templates are read from <packageDir>/templates. */
   packageDir: string;
   /** When true, skip OS wake-lock acquisition. Default: false. */
   noKeepAlive?: boolean;

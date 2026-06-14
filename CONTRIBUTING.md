@@ -34,17 +34,17 @@ pnpm install
 
 Only `packages/core` has a build step (`tsc -p tsconfig.json` → `dist/`).
 `apps/cli` has **no build** — its bins are hand-written ESM JS that import
-`@daonhan/ralph-core`.
+`@phamvuhoang/ralph-core`.
 
 ```bash
 pnpm -r build                 # compile packages/core/dist
-pnpm --filter @daonhan/ralph-core build   # core only
+pnpm --filter @phamvuhoang/ralph-core build   # core only
 pnpm -r clean                 # wipe dist/ + tsconfig.tsbuildinfo
 ```
 
 ```powershell
 pnpm -r build
-pnpm --filter @daonhan/ralph-core build
+pnpm --filter @phamvuhoang/ralph-core build
 pnpm -r clean
 ```
 
@@ -119,11 +119,11 @@ bypass. If hooks didn't install (e.g. you cloned without `pnpm install`), run
 ## Repo layout
 
 ```
-packages/core/          @daonhan/ralph-core (library; the only built package)
+packages/core/          @phamvuhoang/ralph-core (library; the only built package)
   src/                  12 TS modules + __tests__/  (see docs/ARCHITECTURE.md)
   templates/            prompt.md, ghprompt.md, afk.md, ghafk.md, review.md
   dist/                 tsc output (gitignored)
-apps/cli/               @daonhan/ralph (hand-written JS bins; no build)
+apps/cli/               @phamvuhoang/ralph (hand-written JS bins; no build)
   bin/                  ralph-afk.js, ralph-ghafk.js
 scripts/                *.test.mjs + smoke-*.mjs + update-status-table.mjs
 .github/workflows/      release-please.yml, publish-npm.yml
@@ -212,15 +212,15 @@ ralph-afk          # → prints usage
 
 ```powershell
 pnpm -r build
-pnpm --filter @daonhan/ralph-core pack --pack-destination $env:TEMP\ralph-packs
-pnpm --filter @daonhan/ralph      pack --pack-destination $env:TEMP\ralph-packs
+pnpm --filter @phamvuhoang/ralph-core pack --pack-destination $env:TEMP\ralph-packs
+pnpm --filter @phamvuhoang/ralph      pack --pack-destination $env:TEMP\ralph-packs
 npm i -g (Get-ChildItem $env:TEMP\ralph-packs\daonhan-ralph-core-*.tgz).FullName `
          (Get-ChildItem $env:TEMP\ralph-packs\daonhan-ralph-*.tgz).FullName
 ralph-afk          # -> prints usage
 ```
 
 `pnpm pack` rewrites the CLI's `workspace:^` core dependency to a concrete spec in
-the tarball, so the installed `@daonhan/ralph` resolves a real `@daonhan/ralph-core`.
+the tarball, so the installed `@phamvuhoang/ralph` resolves a real `@phamvuhoang/ralph-core`.
 
 ## Releasing
 
@@ -228,8 +228,8 @@ Releasing is **automated** — you do not bump versions or publish by hand.
 [`./RELEASING.md`](./RELEASING.md) is the single source of truth (it supersedes the
 `docs/PUBLISHING.md` stub); this section is just the shape of the flow.
 
-The repo ships two independently versioned npm components: `@daonhan/ralph-core`
-and `@daonhan/ralph`. Flow:
+The repo ships two independently versioned npm components: `@phamvuhoang/ralph-core`
+and `@phamvuhoang/ralph`. Flow:
 
 1. Land Conventional-Commit work on `main` (see [Conventions](#conventions-to-preserve)).
 2. `release-please.yml` opens **one Release PR per component** with unreleased commits.
@@ -254,7 +254,7 @@ overrides, the rollback runbook, and the compatibility matrix.
 - **First stage is the gate.** Gating stages go at index 0; sentinel is the exact
   literal `<promise>NO MORE TASKS</promise>`.
 - **`bypassPermissions` for every sandbox stage.** Never `acceptEdits`.
-- **Templates ship in the core tarball** (`@daonhan/ralph-core` `files: ["dist",
+- **Templates ship in the core tarball** (`@phamvuhoang/ralph-core` `files: ["dist",
 "templates", "README.md"]`). A new stage means a new `templates/*.md` plus the
   `STAGES` + chain wiring.
 - **Conventional-commit messages drive release-please.** The commit type sets the
