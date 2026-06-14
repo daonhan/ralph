@@ -45,122 +45,122 @@
 
   <!-- title -->
   <text x="40" y="62" class="h1">The Ralph AFK Stack, Explained</text>
-  <text x="40" y="92" class="sub">This diagram shows how Ralph drives the Claude Code CLI against a target repo while you're AFK.</text>
-  <text x="40" y="110" class="sub">Each iteration renders prompt templates, then runs implementer → reviewer stages inside an ephemeral Docker sandbox.</text>
+  <text x="40" y="92" class="sub">This diagram shows how Ralph drives the Claude Code CLI against a target repo while you&#x2019;re AFK.</text>
+  <text x="40" y="110" class="sub">Each iteration renders prompt templates, then runs implementer &#x2192; reviewer stages directly on the host.</text>
   <text x="40" y="128" class="sub">The loop exits early when the gate stage returns &lt;promise&gt;NO MORE TASKS&lt;/promise&gt;.</text>
-  <text x="1250" y="62" class="brand">🛠 daonhan/ralph</text>
+  <text x="1250" y="62" class="brand">&#x1F6E0; daonhan/ralph</text>
 
   <!-- ══════════ Row 1: CLI Layer + Template Layer ══════════ -->
   <!-- CLI Layer -->
   <rect x="32" y="160" width="672" height="270" rx="16" class="layer"/>
   <rect x="298" y="146" width="140" height="30" rx="15" fill="#111"/>
   <text x="368" y="166" text-anchor="middle" class="pill-t">CLI Layer</text>
-  <text x="368" y="200" text-anchor="middle" class="layer-cap">Shims (afk.sh / ghafk.sh) → bins (apps/cli, no build) → @daonhan/ralph-core runAfk / runGhAfk → runBin</text>
+  <text x="368" y="200" text-anchor="middle" class="layer-cap">Shims (afk.sh / ghafk.sh) &#x2192; bins (apps/cli, no build) &#x2192; @daonhan/ralph-core runAfk / runGhAfk &#x2192; runBin</text>
 
   <rect x="56" y="218" width="304" height="84" rx="10" class="card-cli"/>
-  <text x="72" y="244" class="card-t">▶ ralph-afk</text>
+  <text x="72" y="244" class="card-t">&#x25B6; ralph-afk</text>
   <text x="72" y="264" class="card-d">Plan/PRD-driven loop.</text>
-  <text x="72" y="280" class="card-d">Chain: afk.md → review.md</text>
+  <text x="72" y="280" class="card-d">Chain: afk.md &#x2192; review.md</text>
 
   <rect x="376" y="218" width="304" height="84" rx="10" class="card-cli"/>
-  <text x="392" y="244" class="card-t">▶ ralph-ghafk</text>
+  <text x="392" y="244" class="card-t">&#x25B6; ralph-ghafk</text>
   <text x="392" y="264" class="card-d">GitHub-issue-driven loop.</text>
-  <text x="392" y="280" class="card-d">Chain: ghafk.md → review.md</text>
+  <text x="392" y="280" class="card-d">Chain: ghafk.md &#x2192; review.md</text>
 
   <rect x="56" y="316" width="304" height="92" rx="10" class="card-cli"/>
-  <text x="72" y="342" class="card-t">⚑ Flags (cli-help.ts)</text>
-  <text x="72" y="362" class="card-d">--detach · --notify · --max-retries</text>
-  <text x="72" y="378" class="card-d">--no-keep-alive · --log · --print-config</text>
+  <text x="72" y="342" class="card-t">&#x2691; Flags (cli-help.ts)</text>
+  <text x="72" y="362" class="card-d">--detach &#xB7; --notify &#xB7; --max-retries &#xB7; --budget</text>
+  <text x="72" y="378" class="card-d">--cooldown &#xB7; --no-keep-alive &#xB7; --log &#xB7; --print-config</text>
 
   <rect x="376" y="316" width="304" height="92" rx="10" class="card-cli"/>
-  <text x="392" y="342" class="card-t">⚙ Env knobs</text>
-  <text x="392" y="362" class="card-d">RALPH_WORKSPACE · RALPH_IMAGE · RALPH_MODEL</text>
-  <text x="392" y="378" class="card-d">RALPH_DOCKER_SOCK · RALPH_RESULT_GRACE_MS</text>
+  <text x="392" y="342" class="card-t">&#x2699; Env knobs</text>
+  <text x="392" y="362" class="card-d">RALPH_WORKSPACE &#xB7; RALPH_RUNNER &#xB7; RALPH_MODEL</text>
+  <text x="392" y="378" class="card-d">RALPH_SANDBOX_NET &#xB7; RALPH_RESULT_GRACE_MS</text>
 
   <!-- Template Layer -->
   <rect x="736" y="160" width="672" height="270" rx="16" class="layer"/>
   <rect x="982" y="146" width="180" height="30" rx="15" fill="#111"/>
   <text x="1072" y="166" text-anchor="middle" class="pill-t">Template Layer</text>
-  <text x="1072" y="200" text-anchor="middle" class="layer-cap">Prompt assembly before every stage (renderTemplate in render.ts) — expanded in this order</text>
+  <text x="1072" y="200" text-anchor="middle" class="layer-cap">Prompt assembly before every stage (renderTemplate in render.ts) &#x2014; expanded in this order</text>
 
   <rect x="760" y="218" width="304" height="84" rx="10" class="card-tpl"/>
-  <text x="776" y="244" class="card-t">① @include:&lt;path&gt;</text>
+  <text x="776" y="244" class="card-t">&#x2460; @include:&lt;path&gt;</text>
   <text x="776" y="264" class="card-d">Inline agent playbooks into iteration</text>
   <text x="776" y="280" class="card-d">templates (prompt.md, ghprompt.md). No shell.</text>
 
   <rect x="1080" y="218" width="304" height="84" rx="10" class="card-tpl"/>
-  <text x="1096" y="244" class="card-t">② @spill[?]:&lt;name&gt;=cmd</text>
-  <text x="1096" y="264" class="card-d">Big output → file (head.diff for review,</text>
+  <text x="1096" y="244" class="card-t">&#x2461; @spill[?]:&lt;name&gt;=cmd</text>
+  <text x="1096" y="264" class="card-d">Big output &#x2192; file (head.diff for review,</text>
   <text x="1096" y="280" class="card-d">issues.json for ghafk); only the path enters.</text>
 
   <rect x="760" y="316" width="304" height="92" rx="10" class="card-tpl"/>
-  <text x="776" y="342" class="card-t">③ !?`cmd||fb`  ④ !`cmd`</text>
+  <text x="776" y="342" class="card-t">&#x2462; !?`cmd||fb`  &#x2463; !`cmd`</text>
   <text x="776" y="362" class="card-d">Host shell via execSync. !? returns fallback on</text>
   <text x="776" y="378" class="card-d">failure; plain ! throws and aborts the iteration.</text>
 
   <rect x="1080" y="316" width="304" height="92" rx="10" class="card-tpl"/>
-  <text x="1096" y="342" class="card-t">⑤ {{ INPUTS }}</text>
+  <text x="1096" y="342" class="card-t">&#x2464; {{ INPUTS }}</text>
   <text x="1096" y="362" class="card-d">Replaced with the plan/PRD string</text>
   <text x="1096" y="378" class="card-d">passed on the ralph-afk command line.</text>
 
-  <!-- connectors row1 → sandbox -->
+  <!-- connectors row1 → runner -->
   <line x1="368" y1="436" x2="368" y2="464" class="conn" marker-start="url(#arr)" marker-end="url(#arr)"/>
   <line x1="1072" y1="436" x2="1072" y2="464" class="conn" marker-start="url(#arr)" marker-end="url(#arr)"/>
 
-  <!-- ══════════ Row 2: Sandbox Layer ══════════ -->
+  <!-- ══════════ Row 2: Runner Layer ══════════ -->
   <rect x="32" y="470" width="1376" height="300" rx="16" class="layer"/>
-  <rect x="635" y="456" width="170" height="30" rx="15" fill="#111"/>
-  <text x="720" y="476" text-anchor="middle" class="pill-t">Sandbox Layer</text>
-  <text x="720" y="510" text-anchor="middle" class="layer-cap">runStage / streamDocker: write .run prompt → docker run --rm -i → parse stream-json NDJSON · ensureImage: inspect → pull → build fallback</text>
+  <rect x="620" y="456" width="200" height="30" rx="15" fill="#111"/>
+  <text x="720" y="476" text-anchor="middle" class="pill-t">Runner Layer</text>
+  <text x="720" y="510" text-anchor="middle" class="layer-cap">runStage / streamClaude: write .run prompt &#x2192; spawn claude on host &#x2192; parse stream-json NDJSON &#xB7; result event &#x2192; { result, total_cost_usd, is_error }</text>
 
   <rect x="56" y="528" width="432" height="106" rx="10" class="card-sbx"/>
-  <text x="72" y="554" class="card-t">🐳 ralph-sandbox image</text>
-  <text x="72" y="574" class="card-d">Node 22 · .NET SDK 10 · gh · jq · git · Claude Code CLI.</text>
-  <text x="72" y="590" class="card-d">Runs as user agent (UID 1000) with</text>
-  <text x="72" y="606" class="card-d">safe.directory='*' for bind-mount UID mismatch.</text>
+  <text x="72" y="554" class="card-t">&#x1F6E1;&#xFE0F; Native OS sandbox (default)</text>
+  <text x="72" y="574" class="card-d">RALPH_RUNNER=sandbox (default): writes a transient</text>
+  <text x="72" y="590" class="card-d">--settings JSON enabling Claude Code&#x2019;s Seatbelt</text>
+  <text x="72" y="606" class="card-d">sandbox (macOS). Writes confined to workspace.</text>
 
   <rect x="504" y="528" width="432" height="106" rx="10" class="card-sbx"/>
-  <text x="520" y="554" class="card-t">🤖 Claude Code invocation</text>
+  <text x="520" y="554" class="card-t">&#x1F916; Claude Code invocation</text>
   <text x="520" y="574" class="card-d">claude --verbose --print --output-format stream-json</text>
-  <text x="520" y="590" class="card-d">--permission-mode bypassPermissions — AFK requires</text>
-  <text x="520" y="606" class="card-d">non-interactive approval; final result event = stage output.</text>
+  <text x="520" y="590" class="card-d">--permission-mode bypassPermissions [--settings &lt;sbx.json&gt;]</text>
+  <text x="520" y="606" class="card-d">[--model …]  cwd = workspace directory.</text>
 
   <rect x="952" y="528" width="432" height="106" rx="10" class="card-sbx"/>
-  <text x="968" y="554" class="card-t">🧰 In-sandbox tools</text>
-  <text x="968" y="574" class="card-d">Shell, git, gh, repo filesystem —</text>
-  <text x="968" y="590" class="card-d">plus the Docker API for Testcontainers</text>
-  <text x="968" y="606" class="card-d">when the host socket is mounted.</text>
+  <text x="968" y="554" class="card-t">&#x1F9F0; Host tools available to Claude</text>
+  <text x="968" y="574" class="card-d">Shell, git, gh, repo filesystem on the host.</text>
+  <text x="968" y="590" class="card-d">RALPH_RUNNER=host: unsandboxed, full host</text>
+  <text x="968" y="606" class="card-d">access (git-recoverable workspace only).</text>
 
   <rect x="56" y="650" width="432" height="106" rx="10" class="card-sbx"/>
-  <text x="72" y="676" class="card-t">🔑 Credential mounts</text>
-  <text x="72" y="696" class="card-d">~/.claude · ~/.claude.json · ~/.config/gh (read-only).</text>
-  <text x="72" y="712" class="card-d">Same-shell rule: PowerShell and WSL $HOME are</text>
-  <text x="72" y="728" class="card-d">separate stores — log in from the shell you run from.</text>
+  <text x="72" y="676" class="card-t">&#x1F511; Host credentials (no mounts)</text>
+  <text x="72" y="696" class="card-d">~/.claude &#xB7; ~/.claude.json &#xB7; ~/.config/gh read</text>
+  <text x="72" y="712" class="card-d">natively from the host. Same-shell rule: run</text>
+  <text x="72" y="728" class="card-d">ralph from the shell where you logged in.</text>
 
   <rect x="504" y="650" width="432" height="106" rx="10" class="card-sbx"/>
-  <text x="520" y="676" class="card-t">📁 Workspace bind-mount</text>
-  <text x="520" y="696" class="card-d">$RALPH_WORKSPACE (or cwd) mounted as working dir —</text>
-  <text x="520" y="712" class="card-d">the loop's entire blast radius. Git env vars injected</text>
-  <text x="520" y="728" class="card-d">(safe.directory=*) so git trusts the mount.</text>
+  <text x="520" y="676" class="card-t">&#x1F4C1; Workspace (cwd)</text>
+  <text x="520" y="696" class="card-d">$RALPH_WORKSPACE (or cwd) is the working dir</text>
+  <text x="520" y="712" class="card-d">for every claude invocation — the loop&#x2019;s entire</text>
+  <text x="520" y="728" class="card-d">blast radius. Must be a git repo.</text>
 
   <rect x="952" y="650" width="432" height="106" rx="10" class="card-sbx"/>
-  <text x="968" y="676" class="card-t">🔌 Docker socket (default on)</text>
-  <text x="968" y="696" class="card-d">Host socket + --group-add fixup so Testcontainers can</text>
-  <text x="968" y="712" class="card-d">spawn sibling containers. Disable: RALPH_DOCKER_SOCK=0;</text>
-  <text x="968" y="728" class="card-d">explicit path: RALPH_DOCKER_SOCK_PATH.</text>
+  <text x="968" y="676" class="card-t">&#x1F4B5; Budget + cooldown pacing</text>
+  <text x="968" y="696" class="card-d">--budget &lt;usd&gt;: abort if total_cost_usd exceeds</text>
+  <text x="968" y="712" class="card-d">threshold. --cooldown &lt;ms&gt;: pause between</text>
+  <text x="968" y="728" class="card-d">iterations. RALPH_SANDBOX_NET: egress allowlist.</text>
 
-  <!-- connector sandbox → runtime -->
+  <!-- connector runner → runtime -->
   <line x1="720" y1="776" x2="720" y2="804" class="conn" marker-start="url(#arr)" marker-end="url(#arr)"/>
 
   <!-- ══════════ Runtime band ══════════ -->
-  <rect x="400" y="810" width="640" height="40" rx="20" fill="#111"/>
-  <text x="720" y="836" text-anchor="middle" class="pill-t">Ralph Loop Runtime (runBin → runLoop → runStage / streamDocker)</text>
+  <rect x="370" y="810" width="700" height="40" rx="20" fill="#111"/>
+  <text x="720" y="836" text-anchor="middle" class="pill-t">Ralph Loop Runtime (runBin &#x2192; runLoop &#x2192; executeStage &#x2192; runStage / streamClaude)</text>
 
   <rect x="180" y="852" width="1080" height="520" rx="16" class="layer"/>
 
   <!-- sentinel exit branch -->
   <path d="M345,938 L345,880 L1344,880 L1344,968" fill="none" stroke="#ea580c" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrOrange)"/>
-  <text x="1000" y="873" text-anchor="middle" class="branch-l">sentinel hit → loop exits early</text>
+  <text x="1000" y="873" text-anchor="middle" class="branch-l">sentinel hit &#x2192; loop exits early</text>
 
   <!-- Iteration loop -->
   <rect x="210" y="904" width="1020" height="264" rx="12" class="dashed"/>
@@ -170,41 +170,41 @@
   <!-- step 1: Gate -->
   <rect x="234" y="938" width="222" height="210" rx="12" class="gate"/>
   <circle cx="256" cy="960" r="11" fill="#ea580c"/><text x="256" y="965" text-anchor="middle" class="num">1</text>
-  <text x="276" y="966" class="gate-t">🚧 Gate (sentinel?)</text>
+  <text x="276" y="966" class="gate-t">&#x1F6A7; Gate (sentinel?)</text>
   <text x="248" y="996" class="step-d">First stage runs (implementer /</text>
   <text x="248" y="1012" class="step-d">ghafk-implementer per bin) and</text>
   <text x="248" y="1028" class="step-d">returns a result string. runLoop</text>
   <text x="248" y="1044" class="step-d">checks it for</text>
   <text x="248" y="1060" class="step-d">&lt;promise&gt;NO MORE TASKS&lt;/promise&gt;</text>
-  <text x="248" y="1076" class="step-d">— hit exits early, else continue.</text>
+  <text x="248" y="1076" class="step-d">&#x2014; hit exits early, else continue.</text>
 
   <!-- step 2: Implement -->
   <rect x="480" y="938" width="222" height="210" rx="12" class="step"/>
   <circle cx="502" cy="960" r="11" fill="#059669"/><text x="502" y="965" text-anchor="middle" class="num">2</text>
-  <text x="522" y="966" class="step-t">🔨 Implement</text>
+  <text x="522" y="966" class="step-t">&#x1F528; Implement</text>
   <text x="494" y="996" class="step-d">Same gate stage does the work:</text>
   <text x="494" y="1012" class="step-d">picks one task from the plan or</text>
   <text x="494" y="1028" class="step-d">an open GitHub issue, implements</text>
-  <text x="494" y="1044" class="step-d">it inside the sandbox, runs the</text>
-  <text x="494" y="1060" class="step-d">feedback loops, and commits.</text>
+  <text x="494" y="1044" class="step-d">it on the host, runs the feedback</text>
+  <text x="494" y="1060" class="step-d">loops, and commits.</text>
 
   <!-- step 3: Review -->
   <rect x="726" y="938" width="222" height="210" rx="12" class="step"/>
   <circle cx="748" cy="960" r="11" fill="#059669"/><text x="748" y="965" text-anchor="middle" class="num">3</text>
-  <text x="768" y="966" class="step-t">🔍 Review</text>
+  <text x="768" y="966" class="step-t">&#x1F50D; Review</text>
   <text x="740" y="996" class="step-d">reviewer stage (review.md).</text>
   <text x="740" y="1012" class="step-d">Reads the HEAD patch via @spill,</text>
-  <text x="740" y="1028" class="step-d">audits the implementer's work,</text>
+  <text x="740" y="1028" class="step-d">audits the implementer&#x2019;s work,</text>
   <text x="740" y="1044" class="step-d">and fixes findings in follow-up</text>
   <text x="740" y="1060" class="step-d">commits. Never gates the loop.</text>
 
   <!-- step 4: Repeat -->
   <rect x="972" y="938" width="222" height="210" rx="12" class="step"/>
   <circle cx="994" cy="960" r="11" fill="#059669"/><text x="994" y="965" text-anchor="middle" class="num">4</text>
-  <text x="1014" y="966" class="step-t">🔁 Repeat</text>
+  <text x="1014" y="966" class="step-t">&#x1F501; Repeat</text>
   <text x="986" y="996" class="step-d">Next iteration starts clean:</text>
   <text x="986" y="1012" class="step-d">templates re-rendered, fresh</text>
-  <text x="986" y="1028" class="step-d">containers, new spill dirs —</text>
+  <text x="986" y="1028" class="step-d">spill dirs, new scratch files &#x2014;</text>
   <text x="986" y="1044" class="step-d">until the iteration budget or</text>
   <text x="986" y="1060" class="step-d">the sentinel ends the run.</text>
 
@@ -220,51 +220,51 @@
   <text x="720" y="1198" text-anchor="middle" style="font-size:13px;font-weight:700;fill:#fff">AFK Machinery (run management)</text>
 
   <rect x="234" y="1226" width="152" height="92" rx="10" class="card-gray"/>
-  <text x="246" y="1248" class="mini-t">📦 ensureImage</text>
-  <text x="246" y="1266" class="mini-d">inspect → pull →</text>
-  <text x="246" y="1280" class="mini-d">docker build fallback.</text>
-  <text x="246" y="1294" class="mini-d">Once, before the loop.</text>
+  <text x="246" y="1248" class="mini-t">&#x1F50D; reviewer panel</text>
+  <text x="246" y="1266" class="mini-d">--review-panel (opt-in):</text>
+  <text x="246" y="1280" class="mini-d">correctness/security/tests</text>
+  <text x="246" y="1294" class="mini-d">&#x2192; fix(review): commit.</text>
 
   <rect x="402" y="1226" width="152" height="92" rx="10" class="card-gray"/>
-  <text x="414" y="1248" class="mini-t">🔄 withRetries</text>
+  <text x="414" y="1248" class="mini-t">&#x1F504; withRetries</text>
   <text x="414" y="1266" class="mini-d">Default 3 attempts,</text>
   <text x="414" y="1280" class="mini-d">exponential backoff.</text>
   <text x="414" y="1294" class="mini-d">--max-retries &lt;N&gt;.</text>
 
   <rect x="570" y="1226" width="152" height="92" rx="10" class="card-gray"/>
-  <text x="582" y="1248" class="mini-t">☕ keepalive</text>
+  <text x="582" y="1248" class="mini-t">&#x2615; keepalive</text>
   <text x="582" y="1266" class="mini-d">OS wake-lock so the</text>
   <text x="582" y="1280" class="mini-d">machine stays up.</text>
   <text x="582" y="1294" class="mini-d">--no-keep-alive opts out.</text>
 
   <rect x="738" y="1226" width="152" height="92" rx="10" class="card-gray"/>
-  <text x="750" y="1248" class="mini-t">🌙 detach</text>
+  <text x="750" y="1248" class="mini-t">&#x1F319; detach</text>
   <text x="750" y="1266" class="mini-d">Fork-and-exit background</text>
   <text x="750" y="1280" class="mini-d">run; logs to</text>
   <text x="750" y="1294" class="mini-d">detached-&lt;pid&gt;.log.</text>
 
   <rect x="906" y="1226" width="152" height="92" rx="10" class="card-gray"/>
-  <text x="918" y="1248" class="mini-t">🔔 notify</text>
+  <text x="918" y="1248" class="mini-t">&#x1F514; notify</text>
   <text x="918" y="1266" class="mini-d">OS toast + terminal</text>
   <text x="918" y="1280" class="mini-d">bell when the run</text>
   <text x="918" y="1294" class="mini-d">finishes.</text>
 
   <rect x="1074" y="1226" width="152" height="92" rx="10" class="card-gray"/>
-  <text x="1086" y="1248" class="mini-t">🛑 Signals</text>
-  <text x="1086" y="1266" class="mini-d">SIGINT→130 · SIGTERM→143;</text>
+  <text x="1086" y="1248" class="mini-t">&#x1F6D1; Signals</text>
+  <text x="1086" y="1266" class="mini-d">SIGINT&#x2192;130 &#xB7; SIGTERM&#x2192;143;</text>
   <text x="1086" y="1280" class="mini-d">active stage aborted via</text>
   <text x="1086" y="1294" class="mini-d">AbortController.</text>
 
   <!-- user / output -->
   <rect x="30" y="976" width="132" height="134" rx="14" fill="#fff" stroke="#999" stroke-width="1.3"/>
-  <text x="96" y="1018" text-anchor="middle" style="font-size:30px">🧑‍💻</text>
+  <text x="96" y="1018" text-anchor="middle" style="font-size:30px">&#x1F9D1;&#x200D;&#x1F4BB;</text>
   <text x="96" y="1050" text-anchor="middle" class="side-t">User</text>
   <text x="96" y="1070" text-anchor="middle" class="side-d">plan/PRD or</text>
   <text x="96" y="1085" text-anchor="middle" class="side-d">GitHub issues</text>
   <line x1="162" y1="1043" x2="200" y2="1043" class="conn" marker-end="url(#arr)"/>
 
   <rect x="1278" y="976" width="132" height="134" rx="14" fill="#fff" stroke="#999" stroke-width="1.3"/>
-  <text x="1344" y="1018" text-anchor="middle" style="font-size:30px">✅</text>
+  <text x="1344" y="1018" text-anchor="middle" style="font-size:30px">&#x2705;</text>
   <text x="1344" y="1050" text-anchor="middle" class="side-t">Shipped work</text>
   <text x="1344" y="1070" text-anchor="middle" class="side-d">commits &amp; PRs</text>
   <text x="1344" y="1085" text-anchor="middle" class="side-d">in the workspace</text>
@@ -277,42 +277,42 @@
   <rect x="32" y="1410" width="1376" height="272" rx="16" class="layer"/>
   <rect x="530" y="1396" width="380" height="30" rx="15" fill="#111"/>
   <text x="720" y="1416" text-anchor="middle" class="pill-t">Scratch, Observability &amp; Safety Layer</text>
-  <text x="720" y="1450" text-anchor="middle" class="layer-cap">(per-run, host-side — &lt;workspace&gt;/.ralph-tmp/, gitignored — plus the guardrails that bound the blast radius)</text>
+  <text x="720" y="1450" text-anchor="middle" class="layer-cap">(per-run, host-side &#x2014; &lt;workspace&gt;/.ralph-tmp/, gitignored &#x2014; plus the guardrails that bound the blast radius)</text>
 
   <rect x="56" y="1468" width="320" height="92" rx="10" class="card-obs"/>
-  <text x="72" y="1494" class="card-t">📝 Rendered prompts</text>
-  <text x="72" y="1514" class="card-d">.run-&lt;pid&gt;-&lt;iter&gt;-&lt;ts&gt;.md — cleaned in</text>
+  <text x="72" y="1494" class="card-t">&#x1F4DD; Rendered prompts</text>
+  <text x="72" y="1514" class="card-d">.run-&lt;pid&gt;-&lt;iter&gt;-&lt;ts&gt;.md &#x2014; cleaned in</text>
   <text x="72" y="1530" class="card-d">finally; may leak on SIGKILL (safe to delete).</text>
 
   <rect x="392" y="1468" width="320" height="92" rx="10" class="card-obs"/>
-  <text x="408" y="1494" class="card-t">🗂 Spill dirs</text>
-  <text x="408" y="1514" class="card-d">spill-&lt;pid&gt;-&lt;iter&gt;-&lt;stage&gt;-&lt;ts&gt;/ — e.g.</text>
+  <text x="408" y="1494" class="card-t">&#x1F5C2; Spill dirs</text>
+  <text x="408" y="1514" class="card-d">spill-&lt;pid&gt;-&lt;iter&gt;-&lt;stage&gt;-&lt;ts&gt;/ &#x2014; e.g.</text>
   <text x="408" y="1530" class="card-d">head.diff, issues.json the agent Reads.</text>
 
   <rect x="728" y="1468" width="320" height="92" rx="10" class="card-obs"/>
-  <text x="744" y="1494" class="card-t">📜 NDJSON stream logs</text>
-  <text x="744" y="1514" class="card-d">logs/&lt;ts&gt;-iter&lt;N&gt;-&lt;stage&gt;.ndjson — full</text>
+  <text x="744" y="1494" class="card-t">&#x1F4DC; NDJSON stream logs</text>
+  <text x="744" y="1514" class="card-d">logs/&lt;ts&gt;-iter&lt;N&gt;-&lt;stage&gt;.ndjson &#x2014; full</text>
   <text x="744" y="1530" class="card-d">event stream per stage, kept for post-mortems.</text>
 
   <rect x="1064" y="1468" width="320" height="92" rx="10" class="card-obs"/>
-  <text x="1080" y="1494" class="card-t">🖥 stream-render</text>
+  <text x="1080" y="1494" class="card-t">&#x1F5A5; stream-render</text>
   <text x="1080" y="1514" class="card-d">Live console rendering of stream-json events.</text>
   <text x="1080" y="1530" class="card-d">NO_COLOR / TERM=dumb disable ANSI.</text>
 
   <rect x="56" y="1574" width="320" height="92" rx="10" class="card-obs"/>
-  <text x="72" y="1600" class="card-t">🩺 --print-config</text>
-  <text x="72" y="1620" class="card-d">Diagnose resolution: workspace dir, docker</text>
-  <text x="72" y="1636" class="card-d">build context, image — without running the loop.</text>
+  <text x="72" y="1600" class="card-t">&#x1FA7A; --print-config</text>
+  <text x="72" y="1620" class="card-d">Diagnose resolution: workspace dir, runner</text>
+  <text x="72" y="1636" class="card-d">mode, sandbox settings &#x2014; without running.</text>
 
   <rect x="392" y="1574" width="320" height="92" rx="10" class="card-obs"/>
-  <text x="408" y="1600" class="card-t">⏲ Result grace timer</text>
-  <text x="408" y="1620" class="card-d">RALPH_RESULT_GRACE_MS (default 30000) — window</text>
-  <text x="408" y="1636" class="card-d">after the result event before container cut-off.</text>
+  <text x="408" y="1600" class="card-t">&#x23F2; Result grace timer</text>
+  <text x="408" y="1620" class="card-d">RALPH_RESULT_GRACE_MS (default 30000) &#x2014; window</text>
+  <text x="408" y="1636" class="card-d">after the result event before process cut-off.</text>
 
   <rect x="728" y="1574" width="656" height="92" rx="10" class="card-safe"/>
-  <text x="744" y="1600" class="card-t">🛡 Safety boundaries</text>
-  <text x="744" y="1620" class="card-d">Ephemeral --rm container · blast radius = the workspace bind-mount · bypassPermissions confined to it ·</text>
-  <text x="744" y="1636" class="card-d">mounted docker.sock is root-equivalent host access — opt out with RALPH_DOCKER_SOCK=0.</text>
+  <text x="744" y="1600" class="card-t">&#x1F6E1; Safety boundaries</text>
+  <text x="744" y="1620" class="card-d">Default sandbox runner (Seatbelt) confines writes to the workspace (git-recoverable); bypassPermissions</text>
+  <text x="744" y="1636" class="card-d">scoped to workspace &#x2014; RALPH_RUNNER=host runs unsandboxed (git-recoverable workspace only).</text>
 
   <!-- connector observability → release -->
   <line x1="720" y1="1686" x2="720" y2="1714" class="conn" marker-start="url(#arr)" marker-end="url(#arr)"/>
@@ -321,37 +321,37 @@
   <rect x="32" y="1720" width="1376" height="180" rx="16" class="layer"/>
   <rect x="560" y="1706" width="320" height="30" rx="15" fill="#111"/>
   <text x="720" y="1726" text-anchor="middle" class="pill-t">Build, Test &amp; Release Layer</text>
-  <text x="720" y="1760" text-anchor="middle" class="layer-cap">(cross-cutting — how Ralph itself ships; release-please automates npm + image versions)</text>
+  <text x="720" y="1760" text-anchor="middle" class="layer-cap">(cross-cutting &#x2014; how Ralph itself ships; release-please automates npm versions)</text>
 
   <rect x="56" y="1778" width="300" height="100" rx="10" class="card-rel"/>
-  <text x="72" y="1804" class="card-t">📦 pnpm monorepo</text>
-  <text x="72" y="1824" class="card-d">apps/cli (@daonhan/ralph) ·</text>
+  <text x="72" y="1804" class="card-t">&#x1F4E6; pnpm monorepo</text>
+  <text x="72" y="1824" class="card-d">apps/cli (@daonhan/ralph) &#xB7;</text>
   <text x="72" y="1840" class="card-d">packages/core (@daonhan/ralph-core),</text>
   <text x="72" y="1856" class="card-d">linked via workspace:^.</text>
 
   <rect x="396" y="1778" width="300" height="100" rx="10" class="card-rel"/>
-  <text x="412" y="1804" class="card-t">✅ Verification</text>
-  <text x="412" y="1824" class="card-d">pnpm -r typecheck · vitest ·</text>
-  <text x="412" y="1840" class="card-d">node --test scripts/*.test.mjs ·</text>
+  <text x="412" y="1804" class="card-t">&#x2705; Verification</text>
+  <text x="412" y="1824" class="card-d">pnpm -r typecheck &#xB7; vitest &#xB7;</text>
+  <text x="412" y="1840" class="card-d">node --test scripts/*.test.mjs &#xB7;</text>
   <text x="412" y="1856" class="card-d">husky pre-commit (lint-staged).</text>
 
   <rect x="736" y="1778" width="300" height="100" rx="10" class="card-rel"/>
-  <text x="752" y="1804" class="card-t">🚀 GitHub Actions</text>
-  <text x="752" y="1824" class="card-d">CI · release-please · publish-npm ·</text>
-  <text x="752" y="1840" class="card-d">publish-image (sha256 digest,</text>
-  <text x="752" y="1856" class="card-d">SBOM, cosign attestation).</text>
+  <text x="752" y="1804" class="card-t">&#x1F680; GitHub Actions</text>
+  <text x="752" y="1824" class="card-d">CI &#xB7; release-please &#xB7; publish-npm &#xB7;</text>
+  <text x="752" y="1840" class="card-d">conventional-commits changelog</text>
+  <text x="752" y="1856" class="card-d">automation.</text>
 
   <rect x="1076" y="1778" width="300" height="100" rx="10" class="card-rel"/>
-  <text x="1092" y="1804" class="card-t">🏷 Artifacts</text>
-  <text x="1092" y="1824" class="card-d">npm: @daonhan/ralph + ralph-core ·</text>
-  <text x="1092" y="1840" class="card-d">docker.io/daonhan/ralph-sandbox</text>
-  <text x="1092" y="1856" class="card-d">(linux/amd64).</text>
+  <text x="1092" y="1804" class="card-t">&#x1F3F7; Artifacts</text>
+  <text x="1092" y="1824" class="card-d">npm: @daonhan/ralph + ralph-core &#xB7;</text>
+  <text x="1092" y="1840" class="card-d">install globally, run ralph-afk or</text>
+  <text x="1092" y="1856" class="card-d">ralph-ghafk on any git repo.</text>
 
   <line x1="356" y1="1828" x2="392" y2="1828" class="conn" marker-end="url(#arr)"/>
   <line x1="696" y1="1828" x2="732" y2="1828" class="conn" marker-end="url(#arr)"/>
   <line x1="1036" y1="1828" x2="1072" y2="1828" class="conn" marker-end="url(#arr)"/>
 
   <!-- footer -->
-  <text x="720" y="1940" text-anchor="middle" class="foot">Each iteration loops Gate → Implement → Review with freshly rendered prompts and fresh containers —</text>
+  <text x="720" y="1940" text-anchor="middle" class="foot">Each iteration loops Gate &#x2192; Implement &#x2192; Review with freshly rendered prompts, running claude directly on the host &#x2014;</text>
   <text x="720" y="1960" text-anchor="middle" class="foot">the sentinel &lt;promise&gt;NO MORE TASKS&lt;/promise&gt; exits early, otherwise the iteration budget runs out.</text>
 </svg>
