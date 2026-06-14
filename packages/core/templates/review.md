@@ -52,6 +52,8 @@ If defects found:
 
 If clean: output `<review>OK</review>` and stop. Do NOT commit.
 
+If the review surfaced a durable, reusable learning (e.g. a recurring defect class worth remembering), append it tersely to the right section of `./.ralph/LEARNINGS.md` as part of your `fix(review):` commit — never as a separate commit, and only when you are already committing a fix.
+
 # RULES
 
 - Only review the latest commit. Do not touch unrelated code.

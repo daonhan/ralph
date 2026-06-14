@@ -36,5 +36,6 @@ List concrete findings for the **{{ LENS }}** lens only, each as `- <file>:<line
 
 # RULES
 
-- READ-ONLY. Do **not** edit files. Do **not** commit. Do **not** run feedback loops.
+- READ-ONLY. Do **not** edit files (including `./.ralph/LEARNINGS.md`). Do **not** commit. Do **not** run feedback loops.
+- Use the `<learnings>` block only to avoid flagging an already-accepted decision — never write to it.
 - Only the {{ LENS }} lens — ignore issues another lens owns.
