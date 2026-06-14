@@ -23,12 +23,12 @@ export const COMPONENTS = [
   {
     path: "packages/core",
     component: "ralph-core",
-    artifact: "npm `@daonhan/ralph-core`",
+    artifact: "npm `@phamvuhoang/ralph-core`",
   },
   {
     path: "apps/cli",
     component: "ralph",
-    artifact: "npm `@daonhan/ralph`",
+    artifact: "npm `@phamvuhoang/ralph`",
   },
 ];
 

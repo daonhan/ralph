@@ -23,13 +23,13 @@ export const COMPONENTS = [
     component: "ralph-core",
     tagPrefix: "ralph-core-v",
     registry: "npm",
-    artifact: "@daonhan/ralph-core",
+    artifact: "@phamvuhoang/ralph-core",
   },
   {
     component: "ralph",
     tagPrefix: "ralph-v",
     registry: "npm",
-    artifact: "@daonhan/ralph",
+    artifact: "@phamvuhoang/ralph",
   },
 ];
 

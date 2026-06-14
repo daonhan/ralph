@@ -1,8 +1,8 @@
 # Ralph — Autonomous Claude Code Loop
 
-[![@daonhan/ralph](https://img.shields.io/npm/v/@daonhan/ralph?label=%40daonhan%2Fralph)](https://www.npmjs.com/package/@daonhan/ralph)
-[![@daonhan/ralph-core](https://img.shields.io/npm/v/@daonhan/ralph-core?label=%40daonhan%2Fralph-core)](https://www.npmjs.com/package/@daonhan/ralph-core)
-[![CI](https://github.com/daonhan/ralph/actions/workflows/ci.yml/badge.svg)](https://github.com/daonhan/ralph/actions/workflows/ci.yml)
+[![@phamvuhoang/ralph](https://img.shields.io/npm/v/@phamvuhoang/ralph?label=%40phamvuhoang%2Fralph)](https://www.npmjs.com/package/@phamvuhoang/ralph)
+[![@phamvuhoang/ralph-core](https://img.shields.io/npm/v/@phamvuhoang/ralph-core?label=%40phamvuhoang%2Fralph-core)](https://www.npmjs.com/package/@phamvuhoang/ralph-core)
+[![CI](https://github.com/phamvuhoang/ralph/actions/workflows/ci.yml/badge.svg)](https://github.com/phamvuhoang/ralph/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 Ralph drives [Claude Code](https://docs.anthropic.com/claude/docs/claude-code) against a target repository in an iterating implementer → reviewer pipeline, running `claude` directly on the host. The harness ships as two npm packages. Docker is not required.
@@ -11,30 +11,30 @@ Ralph drives [Claude Code](https://docs.anthropic.com/claude/docs/claude-code) a
 
 > **New here?** Start with **[QUICKSTART.md](./QUICKSTART.md)** (zero-to-first-loop). Hacking on Ralph itself → **[CONTRIBUTING.md](./CONTRIBUTING.md)**. Internals → **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**.
 
-- **[`@daonhan/ralph-core`](./packages/core)** — library: iteration loop, native-sandbox runner, template renderer, stage registry. Importable from any Node project.
-- **[`@daonhan/ralph`](./apps/cli)** — CLI: exposes `ralph-afk` and `ralph-ghafk` bin entries. Depends on `@daonhan/ralph-core`.
+- **[`@phamvuhoang/ralph-core`](./packages/core)** — library: iteration loop, native-sandbox runner, template renderer, stage registry. Importable from any Node project.
+- **[`@phamvuhoang/ralph`](./apps/cli)** — CLI: exposes `ralph-afk` and `ralph-ghafk` bin entries. Depends on `@phamvuhoang/ralph-core`.
 
-Two AFK entry points (both installed globally after `npm i -g @daonhan/ralph`):
+Two AFK entry points (both installed globally after `npm i -g @phamvuhoang/ralph`):
 
 - **`ralph-afk`** — plan/PRD-driven loop. Hand it a plan + PRD string; iterates until the agent emits the sentinel `<promise>NO MORE TASKS</promise>`.
 - **`ralph-ghafk`** — GitHub-issue-driven loop. Pulls open issues with `gh issue list` and lets the agent pick the next AFK task.
 
-Convenience shims live at [`apps/cli/scripts/afk.sh`](./apps/cli/scripts/afk.sh) and [`apps/cli/scripts/ghafk.sh`](./apps/cli/scripts/ghafk.sh) — thin wrappers that fall back to `npx @daonhan/ralph` if not installed.
+Convenience shims live at [`apps/cli/scripts/afk.sh`](./apps/cli/scripts/afk.sh) and [`apps/cli/scripts/ghafk.sh`](./apps/cli/scripts/ghafk.sh) — thin wrappers that fall back to `npx @phamvuhoang/ralph` if not installed.
 
-Agent playbooks: [`packages/core/templates/prompt.md`](./packages/core/templates/prompt.md) (for `ralph-afk`) and [`packages/core/templates/ghprompt.md`](./packages/core/templates/ghprompt.md) (for `ralph-ghafk`). Reviewer instructions: [`packages/core/templates/review.md`](./packages/core/templates/review.md). All three ship inside `@daonhan/ralph-core`.
+Agent playbooks: [`packages/core/templates/prompt.md`](./packages/core/templates/prompt.md) (for `ralph-afk`) and [`packages/core/templates/ghprompt.md`](./packages/core/templates/ghprompt.md) (for `ralph-ghafk`). Reviewer instructions: [`packages/core/templates/review.md`](./packages/core/templates/review.md). All three ship inside `@phamvuhoang/ralph-core`.
 
 ---
 
 ## Architecture (AFK loops)
 
 ```
-ralph-afk / ralph-ghafk               (bin entries from @daonhan/ralph, on PATH after `npm i -g`)
+ralph-afk / ralph-ghafk               (bin entries from @phamvuhoang/ralph, on PATH after `npm i -g`)
    │
    ▼
-@daonhan/ralph (CLI, apps/cli)        bin: ralph-afk, ralph-ghafk; scripts: afk.sh, ghafk.sh shims
+@phamvuhoang/ralph (CLI, apps/cli)        bin: ralph-afk, ralph-ghafk; scripts: afk.sh, ghafk.sh shims
    │ imports
    ▼
-@daonhan/ralph-core (packages/core)
+@phamvuhoang/ralph-core (packages/core)
    ├── runAfk / runGhAfk              (env-driven entry: argv → runLoop)
    ├── runLoop                        (drives stage chain per iteration; checks sentinel)
    ├── render                         (renderer: @include / @spill / !? / !`cmd` / {{ INPUTS }})
@@ -60,7 +60,7 @@ ralph/
 ├── tsconfig.base.json           shared TS compiler options
 ├── .npmrc                       link-workspace-packages, prefer-workspace-packages
 ├── apps/
-│   └── cli/                     @daonhan/ralph
+│   └── cli/                     @phamvuhoang/ralph
 │       ├── package.json
 │       ├── bin/
 │       │   ├── ralph-afk.js
@@ -69,7 +69,7 @@ ralph/
 │           ├── afk.sh
 │           └── ghafk.sh
 ├── packages/
-│   └── core/                    @daonhan/ralph-core
+│   └── core/                    @phamvuhoang/ralph-core
 │       ├── package.json
 │       ├── tsconfig.json
 │       ├── src/                 main.ts, gh-main.ts, loop.ts, runner.ts, render.ts, stages.ts, index.ts, cli-help.ts, retry.ts, keepalive.ts, detach.ts, notify.ts + __tests__/
@@ -128,7 +128,7 @@ gh auth status
 ralph-afk "<plan-and-prd>" <iterations>
 ```
 
-(Or via the shim: `./node_modules/@daonhan/ralph/scripts/afk.sh "<plan-and-prd>" <iterations>`.)
+(Or via the shim: `./node_modules/@phamvuhoang/ralph/scripts/afk.sh "<plan-and-prd>" <iterations>`.)
 
 Also supports:
 
@@ -236,7 +236,7 @@ The trigger label defaults to `ralph` (`RALPH_WATCH_LABEL` to change it). Under 
 ### Global install (recommended — run from anywhere)
 
 ```bash
-npm i -g @daonhan/ralph
+npm i -g @phamvuhoang/ralph
 ```
 
 After install, both bins are on your `$PATH`:
@@ -251,14 +251,14 @@ ralph-ghafk 5
 
 ```bash
 # in your workspace repo
-npm i -D @daonhan/ralph         # or: pnpm add -D @daonhan/ralph
+npm i -D @phamvuhoang/ralph         # or: pnpm add -D @phamvuhoang/ralph
 ./node_modules/.bin/ralph-afk "<plan-and-prd>" 5
 ```
 
 ### Bootstrap on demand (no install)
 
 ```bash
-npx -y @daonhan/ralph ralph-afk "<plan-and-prd>" 5
+npx -y @phamvuhoang/ralph ralph-afk "<plan-and-prd>" 5
 ```
 
 ### Environment variables
@@ -321,7 +321,7 @@ npm i -g /tmp/ralph-packs/daonhan-ralph-core-*.tgz \
 ralph-afk          # → Usage: ralph-afk <plan-and-prd> <iterations>
 ```
 
-Re-run after each source change. To uninstall: `npm uninstall -g @daonhan/ralph @daonhan/ralph-core`.
+Re-run after each source change. To uninstall: `npm uninstall -g @phamvuhoang/ralph @phamvuhoang/ralph-core`.
 
 ### Publish
 
@@ -385,7 +385,7 @@ The agent playbooks are self-contained: `packages/core/templates/prompt.md` (pla
 
 ## Troubleshooting
 
-- **`Cannot find module '@daonhan/ralph-core'`** — `@daonhan/ralph` was installed but its dep didn't resolve. Re-run `npm install` (or `pnpm install`) in the workspace, or use `npx -y @daonhan/ralph` to let npx fetch a clean copy.
+- **`Cannot find module '@phamvuhoang/ralph-core'`** — `@phamvuhoang/ralph` was installed but its dep didn't resolve. Re-run `npm install` (or `pnpm install`) in the workspace, or use `npx -y @phamvuhoang/ralph` to let npx fetch a clean copy.
 - **`Not logged in · Please run /login`** — Claude credentials missing. Run `claude /login` on the host (see "First-run setup").
 - **`gh issue list` fails with `not a git repository`** — the workspace has no `.git`. The `ghafk.md` template uses `|| echo "[]"` fallback so the iteration still proceeds, but `gh` cannot detect the target repo. Initialize the repo, or push first.
 - **Loop hangs after a stage's final assistant message (no next iteration, no error)** — the `claude` CLI emitted its final NDJSON `result` event but failed to exit. The runner self-recovers within `RALPH_RESULT_GRACE_MS` (default 30000ms) — bump or disable via env var. Work already committed in prior iterations is preserved.
@@ -394,37 +394,37 @@ The agent playbooks are self-contained: `packages/core/templates/prompt.md` (pla
 
 ## Files in this folder
 
-| File / dir                                                                       | Purpose                                                                                                                                                                      |
-| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`apps/cli/scripts/afk.sh`](./apps/cli/scripts/afk.sh)                           | Optional shim — plan/PRD loop. Falls back to `npx @daonhan/ralph ralph-afk`. Shipped in the npm tarball.                                                                     |
-| [`apps/cli/scripts/ghafk.sh`](./apps/cli/scripts/ghafk.sh)                       | Optional shim — GitHub-issue loop. Calls `ralph-ghafk`.                                                                                                                      |
-| [`packages/core/templates/prompt.md`](./packages/core/templates/prompt.md)       | Agent playbook for `ralph-afk`. Shipped in core tarball.                                                                                                                     |
-| [`packages/core/templates/ghprompt.md`](./packages/core/templates/ghprompt.md)   | Agent playbook for `ralph-ghafk`. Shipped in core tarball.                                                                                                                   |
-| [`package.json`](./package.json)                                                 | Monorepo root (private). Shared devDeps + pnpm workspace scripts.                                                                                                            |
-| [`pnpm-workspace.yaml`](./pnpm-workspace.yaml)                                   | Declares `apps/*` and `packages/*` as workspace members.                                                                                                                     |
-| [`tsconfig.base.json`](./tsconfig.base.json)                                     | Shared TS compiler options inherited by every package.                                                                                                                       |
-| [`apps/cli/`](./apps/cli)                                                        | `@daonhan/ralph` — CLI bin entries (`ralph-afk`, `ralph-ghafk`).                                                                                                             |
-| [`packages/core/src/main.ts`](./packages/core/src/main.ts)                       | Exports `runAfk(argv)`.                                                                                                                                                      |
-| [`packages/core/src/gh-main.ts`](./packages/core/src/gh-main.ts)                 | Exports `runGhAfk(argv)`.                                                                                                                                                    |
-| [`packages/core/src/loop.ts`](./packages/core/src/loop.ts)                       | Iteration driver. Runs stage chain; first stage is the gate.                                                                                                                 |
-| [`packages/core/src/render.ts`](./packages/core/src/render.ts)                   | Template renderer (`` !`cmd` `` + `{{ INPUTS }}`).                                                                                                                           |
-| [`packages/core/src/runner.ts`](./packages/core/src/runner.ts)                   | Native-sandbox runner: spawn `claude` + NDJSON stream + sandbox settings. Reads `RALPH_RUNNER`.                                                                              |
-| [`.github/workflows/publish-npm.yml`](./.github/workflows/publish-npm.yml)       | CI: publish `@daonhan/ralph-core` / `@daonhan/ralph` to npm on `ralph-core-v*` / `ralph-v*` tags; enriches the GitHub Release with the `.tgz`, SBOM, and cosign attestation. |
-| [`.github/workflows/release-please.yml`](./.github/workflows/release-please.yml) | CI: on push to `main`, opens a per-component Release PR; merging it cuts the tag that triggers the publish workflows.                                                        |
-| [`RELEASING.md`](./RELEASING.md)                                                 | Single source of truth for releasing the npm packages: release-please flow, version policy, secrets, rollback runbook.                                                       |
-| [`CONTRIBUTING.md`](./CONTRIBUTING.md)                                           | Maintainer / contributor guide: dev loop, tests, adding a stage, release pipeline.                                                                                           |
-| [`QUICKSTART.md`](./QUICKSTART.md)                                               | Zero-to-first-loop getting-started guide for new users.                                                                                                                      |
-| [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)                                 | Internals / runtime data-flow reference for library extenders and core contributors.                                                                                         |
-| [`packages/core/src/cli-help.ts`](./packages/core/src/cli-help.ts)               | Flag parsing (`parseFlags`); `--help` / `--version` / `--print-config` output.                                                                                               |
-| [`packages/core/src/retry.ts`](./packages/core/src/retry.ts)                     | `withRetries` — per-stage retry with exponential backoff (default 3).                                                                                                        |
-| [`packages/core/src/keepalive.ts`](./packages/core/src/keepalive.ts)             | OS wake-lock acquire/release for the loop's lifetime (`--no-keep-alive` to skip).                                                                                            |
-| [`packages/core/src/detach.ts`](./packages/core/src/detach.ts)                   | `--detach` fork-and-exit into a background process.                                                                                                                          |
-| [`packages/core/src/notify.ts`](./packages/core/src/notify.ts)                   | `--notify` OS toast + terminal bell on loop terminal events.                                                                                                                 |
-| [`packages/core/src/stages.ts`](./packages/core/src/stages.ts)                   | Stage registry — `implementer`, `ghafkImplementer`, `reviewer`.                                                                                                              |
-| [`packages/core/src/index.ts`](./packages/core/src/index.ts)                     | Barrel re-export — `runAfk`, `runGhAfk`, `runLoop`, `STAGES`, `renderTemplate`, …                                                                                            |
-| [`packages/core/templates/afk.md`](./packages/core/templates/afk.md)             | `ralph-afk` prompt template.                                                                                                                                                 |
-| [`packages/core/templates/ghafk.md`](./packages/core/templates/ghafk.md)         | `ralph-ghafk` prompt template.                                                                                                                                               |
-| [`packages/core/templates/review.md`](./packages/core/templates/review.md)       | Reviewer prompt template.                                                                                                                                                    |
+| File / dir                                                                       | Purpose                                                                                                                                                                              |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`apps/cli/scripts/afk.sh`](./apps/cli/scripts/afk.sh)                           | Optional shim — plan/PRD loop. Falls back to `npx @phamvuhoang/ralph ralph-afk`. Shipped in the npm tarball.                                                                         |
+| [`apps/cli/scripts/ghafk.sh`](./apps/cli/scripts/ghafk.sh)                       | Optional shim — GitHub-issue loop. Calls `ralph-ghafk`.                                                                                                                              |
+| [`packages/core/templates/prompt.md`](./packages/core/templates/prompt.md)       | Agent playbook for `ralph-afk`. Shipped in core tarball.                                                                                                                             |
+| [`packages/core/templates/ghprompt.md`](./packages/core/templates/ghprompt.md)   | Agent playbook for `ralph-ghafk`. Shipped in core tarball.                                                                                                                           |
+| [`package.json`](./package.json)                                                 | Monorepo root (private). Shared devDeps + pnpm workspace scripts.                                                                                                                    |
+| [`pnpm-workspace.yaml`](./pnpm-workspace.yaml)                                   | Declares `apps/*` and `packages/*` as workspace members.                                                                                                                             |
+| [`tsconfig.base.json`](./tsconfig.base.json)                                     | Shared TS compiler options inherited by every package.                                                                                                                               |
+| [`apps/cli/`](./apps/cli)                                                        | `@phamvuhoang/ralph` — CLI bin entries (`ralph-afk`, `ralph-ghafk`).                                                                                                                 |
+| [`packages/core/src/main.ts`](./packages/core/src/main.ts)                       | Exports `runAfk(argv)`.                                                                                                                                                              |
+| [`packages/core/src/gh-main.ts`](./packages/core/src/gh-main.ts)                 | Exports `runGhAfk(argv)`.                                                                                                                                                            |
+| [`packages/core/src/loop.ts`](./packages/core/src/loop.ts)                       | Iteration driver. Runs stage chain; first stage is the gate.                                                                                                                         |
+| [`packages/core/src/render.ts`](./packages/core/src/render.ts)                   | Template renderer (`` !`cmd` `` + `{{ INPUTS }}`).                                                                                                                                   |
+| [`packages/core/src/runner.ts`](./packages/core/src/runner.ts)                   | Native-sandbox runner: spawn `claude` + NDJSON stream + sandbox settings. Reads `RALPH_RUNNER`.                                                                                      |
+| [`.github/workflows/publish-npm.yml`](./.github/workflows/publish-npm.yml)       | CI: publish `@phamvuhoang/ralph-core` / `@phamvuhoang/ralph` to npm on `ralph-core-v*` / `ralph-v*` tags; enriches the GitHub Release with the `.tgz`, SBOM, and cosign attestation. |
+| [`.github/workflows/release-please.yml`](./.github/workflows/release-please.yml) | CI: on push to `main`, opens a per-component Release PR; merging it cuts the tag that triggers the publish workflows.                                                                |
+| [`RELEASING.md`](./RELEASING.md)                                                 | Single source of truth for releasing the npm packages: release-please flow, version policy, secrets, rollback runbook.                                                               |
+| [`CONTRIBUTING.md`](./CONTRIBUTING.md)                                           | Maintainer / contributor guide: dev loop, tests, adding a stage, release pipeline.                                                                                                   |
+| [`QUICKSTART.md`](./QUICKSTART.md)                                               | Zero-to-first-loop getting-started guide for new users.                                                                                                                              |
+| [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)                                 | Internals / runtime data-flow reference for library extenders and core contributors.                                                                                                 |
+| [`packages/core/src/cli-help.ts`](./packages/core/src/cli-help.ts)               | Flag parsing (`parseFlags`); `--help` / `--version` / `--print-config` output.                                                                                                       |
+| [`packages/core/src/retry.ts`](./packages/core/src/retry.ts)                     | `withRetries` — per-stage retry with exponential backoff (default 3).                                                                                                                |
+| [`packages/core/src/keepalive.ts`](./packages/core/src/keepalive.ts)             | OS wake-lock acquire/release for the loop's lifetime (`--no-keep-alive` to skip).                                                                                                    |
+| [`packages/core/src/detach.ts`](./packages/core/src/detach.ts)                   | `--detach` fork-and-exit into a background process.                                                                                                                                  |
+| [`packages/core/src/notify.ts`](./packages/core/src/notify.ts)                   | `--notify` OS toast + terminal bell on loop terminal events.                                                                                                                         |
+| [`packages/core/src/stages.ts`](./packages/core/src/stages.ts)                   | Stage registry — `implementer`, `ghafkImplementer`, `reviewer`.                                                                                                                      |
+| [`packages/core/src/index.ts`](./packages/core/src/index.ts)                     | Barrel re-export — `runAfk`, `runGhAfk`, `runLoop`, `STAGES`, `renderTemplate`, …                                                                                                    |
+| [`packages/core/templates/afk.md`](./packages/core/templates/afk.md)             | `ralph-afk` prompt template.                                                                                                                                                         |
+| [`packages/core/templates/ghafk.md`](./packages/core/templates/ghafk.md)         | `ralph-ghafk` prompt template.                                                                                                                                                       |
+| [`packages/core/templates/review.md`](./packages/core/templates/review.md)       | Reviewer prompt template.                                                                                                                                                            |
 
 ---
 

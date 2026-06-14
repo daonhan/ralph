@@ -6,8 +6,8 @@ name: Publish to npm
 # there is exactly one source of truth for when a publish happens.
 #
 # Tag schema (see RELEASING.md):
-#   ralph-core-vX.Y.Z  -> publishes packages/core (@daonhan/ralph-core)
-#   ralph-vX.Y.Z       -> publishes apps/cli      (@daonhan/ralph)
+#   ralph-core-vX.Y.Z  -> publishes packages/core (@phamvuhoang/ralph-core)
+#   ralph-vX.Y.Z       -> publishes apps/cli      (@phamvuhoang/ralph)
 #
 # After a successful publish the matching GitHub Release is enriched with the
 # pnpm-packed .tgz, an SBOM (syft, SPDX-JSON), and a keyless cosign attestation
@@ -61,12 +61,12 @@ jobs:
           case "$TAG" in
             ralph-core-v*)
               echo "dir=packages/core"        >> "$GITHUB_OUTPUT"
-              echo "name=@daonhan/ralph-core" >> "$GITHUB_OUTPUT"
+              echo "name=@phamvuhoang/ralph-core" >> "$GITHUB_OUTPUT"
               echo "is_cli=false"             >> "$GITHUB_OUTPUT"
               ;;
             ralph-v*)
               echo "dir=apps/cli"             >> "$GITHUB_OUTPUT"
-              echo "name=@daonhan/ralph"      >> "$GITHUB_OUTPUT"
+              echo "name=@phamvuhoang/ralph"      >> "$GITHUB_OUTPUT"
               echo "is_cli=true"              >> "$GITHUB_OUTPUT"
               ;;
             *)
@@ -75,7 +75,7 @@ jobs:
               ;;
           esac
 
-      # apps/cli depends on @daonhan/ralph-core via `workspace:^`. This repo uses
+      # apps/cli depends on @phamvuhoang/ralph-core via `workspace:^`. This repo uses
       # pnpm workspaces (not npm workspaces), so `npm publish` would ship the literal
       # "workspace:^" spec and break installs. Rewrite it to the concrete core version
       # before publishing the CLI. ralph-core has no workspace deps, so the step is

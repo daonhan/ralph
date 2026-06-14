@@ -16,7 +16,7 @@ Ralph drives [Claude Code](https://docs.anthropic.com/claude/docs/claude-code) a
 ## 2. Install
 
 ```bash
-npm i -g @daonhan/ralph
+npm i -g @phamvuhoang/ralph
 ```
 
 Both bins — `ralph-afk` and `ralph-ghafk` — land on your `PATH`.

@@ -140,7 +140,7 @@ export function parseFlags(argv: string[]): CliFlags {
 }
 
 /**
- * Resolve the @daonhan/ralph-core version by reading the package.json that
+ * Resolve the @phamvuhoang/ralph-core version by reading the package.json that
  * sits two levels up from the compiled cli-help.js (packages/core/dist/ →
  * packages/core/package.json). Returns "?" if unreadable so version reporting
  * never crashes the bin.

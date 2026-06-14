@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Ralph is a Node/TypeScript harness that drives the Claude Code CLI against a target repository in an iterating implementer → reviewer loop, running `claude` directly on the host. It ships as a pnpm monorepo with two npm packages:
 
-- `@daonhan/ralph-core` (`packages/core`) — library: loop driver, native-sandbox runner, template renderer, stage registry. ESM, TS-compiled to `dist/`.
-- `@daonhan/ralph` (`apps/cli`) — CLI exposing `ralph-afk` (plan/PRD loop) and `ralph-ghafk` (GitHub-issue loop) bin entries. Hand-written JS bins, no build step. Depends on `@daonhan/ralph-core` via `workspace:^`.
+- `@phamvuhoang/ralph-core` (`packages/core`) — library: loop driver, native-sandbox runner, template renderer, stage registry. ESM, TS-compiled to `dist/`.
+- `@phamvuhoang/ralph` (`apps/cli`) — CLI exposing `ralph-afk` (plan/PRD loop) and `ralph-ghafk` (GitHub-issue loop) bin entries. Hand-written JS bins, no build step. Depends on `@phamvuhoang/ralph-core` via `workspace:^`.
 
 ## Commands
 
@@ -23,7 +23,7 @@ pnpm publish-all             # pnpm -r publish --access public --no-git-checks
 
 Verification = `pnpm -r typecheck` + `pnpm -r test` (`packages/core` runs `vitest run`; `apps/cli` has no tests) + root `pnpm test` (`node --test` over `scripts/*.test.mjs`). A husky pre-commit hook runs `lint-staged` (`prettier --ignore-unknown --write` on staged files) then `pnpm typecheck`. Full contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Per-package: `pnpm --filter @daonhan/ralph-core build` (only core has a build).
+Per-package: `pnpm --filter @phamvuhoang/ralph-core build` (only core has a build).
 
 ### Smoke-test the published artifacts locally
 
@@ -96,7 +96,7 @@ Every run writes to `<workspaceDir>/.ralph-tmp/` on the host (gitignored): the r
 
 - **ESM only.** Both packages are `"type": "module"`. Relative imports in `packages/core/src/` end in `.js` (compiled output extension, required by `moduleResolution: NodeNext`).
 - **First stage is always the gate.** If you add stages via `STAGES` and wire them into a chain, place gating stages at index 0. The sentinel string `<promise>NO MORE TASKS</promise>` is hardcoded in `loop.ts`.
-- **No build step for `apps/cli`.** Bins are hand-written JS that `import { runAfk } from "@daonhan/ralph-core"`. Don't add TS to `apps/cli` — keep the bin layer flat.
+- **No build step for `apps/cli`.** Bins are hand-written JS that `import { runAfk } from "@phamvuhoang/ralph-core"`. Don't add TS to `apps/cli` — keep the bin layer flat.
 - **Templates ship in the npm tarball.** `packages/core/package.json` `files` includes `templates/`. Adding a new stage means: (1) extend `STAGES` in `stages.ts`, (2) drop a new `*.md` in `packages/core/templates/`, (3) reference it from the chain in `main.ts` / `gh-main.ts`.
 - **Permission mode is always `bypassPermissions`** for all stages — AFK requires it. Comment in `stages.ts` explains the blast-radius reasoning.
 
