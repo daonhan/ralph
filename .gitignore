@@ -6,3 +6,6 @@ dist/
 .pnpm-store/
 .ralph-*.mjs
 .claude/scheduled_tasks.lock
+
+# macOS Finder metadata
+.DS_Store
