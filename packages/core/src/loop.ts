@@ -1,18 +1,12 @@
-import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname, join, posix } from "node:path";
+import { appendFileSync } from "node:fs";
 
 import { readCoreVersion } from "./cli-help.js";
 import { acquire, type Releaser } from "./keepalive.js";
 import { notifyComplete, notifyError } from "./notify.js";
 import { sleep, isThrottle, nextCooldownFactor } from "./pacing.js";
-import { renderTemplate } from "./render.js";
-import {
-  DEFAULT_BACKOFF_MS,
-  DEFAULT_MAX_RETRIES,
-  backoffFor,
-  withRetries,
-} from "./retry.js";
-import { runStage, stageLogPath, type StageResult } from "./runner.js";
+import { DEFAULT_MAX_RETRIES } from "./retry.js";
+import { stageLogPath, type StageResult } from "./runner.js";
+import { executeStage } from "./stage-exec.js";
 import {
   USE_COLOR,
   dim,
@@ -54,6 +48,8 @@ export type LoopOptions = {
   budgetUsd?: number;
   /** Milliseconds to wait between iterations. 0 = no cooldown. */
   cooldownMs?: number;
+  /** Opt-in reviewer panel: replace the single reviewer stage with K read-only lens reviewers + one synth commit. */
+  reviewLenses?: string[];
 };
 
 export async function runLoop(opts: LoopOptions): Promise<void> {
@@ -70,6 +66,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     cliVersion = "?",
     budgetUsd,
     cooldownMs = 0,
+    reviewLenses,
   } = opts;
 
   const versionLine = `${bin} ${cliVersion} (core ${readCoreVersion()})`;
@@ -130,55 +127,41 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
           ? `${dim("━━━")} ${bold(`iteration ${i}/${iterations}`)} ${dim("·")} ${bold(stage.name)} ${dim(`(stage ${s + 1}/${stages.length})`)} ${dim("━━━")}`
           : `== iteration ${i}/${iterations} · ${stage.name} (stage ${s + 1}/${stages.length}) ==`;
         process.stderr.write(`\n${banner}\n`);
-        const templatePath = join(packageDir, "templates", stage.template);
-        const spillRel = `spill-${process.pid}-${i}-${s}-${Date.now()}`;
-        const spillHostDir = join(workspaceDir, ".ralph-tmp", spillRel);
-        const spillRefPath = posix.join(".ralph-tmp", spillRel);
 
-        const stageLog = stageLogPath(workspaceDir, i, stage.name);
-        mkdirSync(dirname(stageLog), { recursive: true });
+        const usePanel =
+          reviewLenses && reviewLenses.length > 0 && stage.name === "reviewer";
 
         let sr: StageResult;
         try {
-          sr = await withRetries(
-            () => {
-              // Render inside the retry: a failing template shell/@spill tag
-              // (e.g. a flaky `gh issue list`) is retried with backoff instead
-              // of crashing the loop — and a hard failure surfaces as a terminal
-              // stage failure rather than a degraded prompt that false-completes.
-              const prompt = renderTemplate(
-                templatePath,
-                { INPUTS: inputs },
-                { cwd: workspaceDir, spillHostDir, spillRefPath }
-              );
-              return runStage(
-                stage,
-                prompt,
-                workspaceDir,
-                i,
-                spillHostDir,
-                stageLog,
-                { signal: stageAbort.signal }
-              );
-            },
-            {
-              max: maxRetries,
-              backoffMs: DEFAULT_BACKOFF_MS,
-              onAttempt: (attempt, err) => {
-                const wait = backoffFor(DEFAULT_BACKOFF_MS, attempt);
-                const marker = `[retry] attempt ${attempt} of ${maxRetries} after ${wait} ms`;
-                process.stderr.write(
-                  `${USE_COLOR ? dim(marker) : marker} ${dim("(" + (err as Error).message + ")")}\n`
-                );
-                try {
-                  appendFileSync(stageLog, marker + "\n");
-                } catch {
-                  // log file may be unwritable; never crash the loop on the marker.
-                }
+          if (usePanel) {
+            // Lazy import to avoid circular dep and keep the panel opt-in.
+            const { runPanel } = await import("./panel.js");
+            sr = await runPanel({
+              lenses: reviewLenses!,
+              workspaceDir,
+              packageDir,
+              iteration: i,
+              maxRetries,
+              cooldownMs,
+              signal: stageAbort.signal,
+              onCost: (c: number) => {
+                runCostUsd += c;
               },
-            }
-          );
+            });
+          } else {
+            sr = await executeStage({
+              stage,
+              vars: { INPUTS: inputs },
+              workspaceDir,
+              packageDir,
+              iteration: i,
+              maxRetries,
+              signal: stageAbort.signal,
+            });
+          }
         } catch (err) {
+          // terminal failure marker — write to the same log path executeStage used.
+          const stageLog = stageLogPath(workspaceDir, i, stage.name);
           const failureMarker = `[failure] iteration ${i} stage ${stage.name} failed after ${maxRetries} retries: ${(err as Error).message}`;
           try {
             appendFileSync(stageLog, failureMarker + "\n");
@@ -191,7 +174,8 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         }
 
         // Accumulate cost and report.
-        runCostUsd += sr.costUsd;
+        // Panel branch: cost was already accumulated via onCost; avoid double-counting.
+        runCostUsd += usePanel ? 0 : sr.costUsd;
         process.stderr.write(
           `${dim(`· $${sr.costUsd.toFixed(2)} (run $${runCostUsd.toFixed(2)})`)}\n`
         );
