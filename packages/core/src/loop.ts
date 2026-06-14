@@ -11,7 +11,7 @@ import {
   backoffFor,
   withRetries,
 } from "./retry.js";
-import { ensureImage, runStage, stageLogPath } from "./runner.js";
+import { runStage, stageLogPath } from "./runner.js";
 import {
   USE_COLOR,
   dim,
@@ -35,8 +35,6 @@ export type LoopOptions = {
   stages: [Stage, ...Stage[]];
   inputs: string;
   iterations: number;
-  /** Docker `build` fallback context (must contain a Dockerfile). */
-  ralphDir: string;
   /** Host repo bind-mounted into the sandbox at /home/agent/workspace. */
   workspaceDir: string;
   /** Installed @daonhan/ralph-core dir; stage templates are read from <packageDir>/templates. */
@@ -58,7 +56,6 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     stages,
     inputs,
     iterations,
-    ralphDir,
     workspaceDir,
     packageDir,
     noKeepAlive = false,
@@ -108,8 +105,6 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
   let completedIterations = 0;
   let sentinelHit = false;
   try {
-    await ensureImage(ralphDir, { signal: stageAbort.signal });
-
     for (let i = 1; i <= iterations; i++) {
       for (let s = 0; s < stages.length; s++) {
         const stage = stages[s];

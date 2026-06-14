@@ -13,7 +13,6 @@ import type { Stage } from "../stages.js";
 
 const mocks = vi.hoisted(() => ({
   acquire: vi.fn(),
-  ensureImage: vi.fn(),
   notifyComplete: vi.fn(),
   notifyError: vi.fn(),
   release: vi.fn(),
@@ -30,7 +29,6 @@ vi.mock("../notify.js", () => ({
 }));
 
 vi.mock("../runner.js", () => ({
-  ensureImage: mocks.ensureImage,
   runStage: mocks.runStage,
   stageLogPath: (workspaceDir: string, iteration: number, stageName: string) =>
     join(
@@ -60,19 +58,16 @@ const sentinel = "<promise>NO MORE TASKS</promise>";
 
 type LoopDirs = {
   root: string;
-  ralphDir: string;
   packageDir: string;
   workspaceDir: string;
 };
 
 function makeDirs(): LoopDirs {
   const root = mkdtempSync(join(tmpdir(), "ralph-loop-"));
-  const ralphDir = join(root, "ralph");
   const packageDir = join(root, "sandcastle");
   const workspaceDir = join(root, "workspace");
 
   mkdirSync(join(packageDir, "templates"), { recursive: true });
-  mkdirSync(ralphDir, { recursive: true });
   mkdirSync(workspaceDir, { recursive: true });
   writeFileSync(
     join(packageDir, "templates", stage.template),
@@ -80,7 +75,7 @@ function makeDirs(): LoopDirs {
     "utf8"
   );
 
-  return { root, ralphDir, packageDir, workspaceDir };
+  return { root, packageDir, workspaceDir };
 }
 
 function loopOptions(dirs: LoopDirs, overrides = {}) {
@@ -88,7 +83,6 @@ function loopOptions(dirs: LoopDirs, overrides = {}) {
     stages: [stage] as [Stage],
     inputs: "plan",
     iterations: 1,
-    ralphDir: dirs.ralphDir,
     workspaceDir: dirs.workspaceDir,
     packageDir: dirs.packageDir,
     ...overrides,
@@ -114,22 +108,15 @@ describe("runLoop", () => {
     }
   });
 
-  it("acquires the wake-lock before image setup and releases on completion", async () => {
+  it("acquires the wake-lock and releases on completion", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
-    const order: string[] = [];
-    mocks.acquire.mockImplementation(() => {
-      order.push("acquire");
-      return { release: mocks.release };
-    });
-    mocks.ensureImage.mockImplementation(() => {
-      order.push("ensureImage");
-    });
     mocks.runStage.mockResolvedValue(sentinel);
 
     await runLoop(loopOptions(dirs, { notify: true }));
 
-    expect(order).toEqual(["acquire", "ensureImage"]);
+    expect(mocks.acquire).toHaveBeenCalledTimes(1);
+    expect(mocks.runStage).toHaveBeenCalledTimes(1);
     expect(mocks.release).toHaveBeenCalledTimes(1);
     expect(mocks.notifyComplete).toHaveBeenCalledWith(1, true);
   });
@@ -262,7 +249,7 @@ describe("runLoop", () => {
     expect(exit).toHaveBeenCalledWith(130);
   });
 
-  it("aborts image setup and releases the wake-lock on SIGTERM", async () => {
+  it("aborts the active stage and releases the wake-lock on SIGTERM", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
     const exit = vi.spyOn(process, "exit").mockImplementation(((
@@ -271,25 +258,25 @@ describe("runLoop", () => {
       throw new Error(`exit ${code}`);
     }) as never);
     let capturedSignal: AbortSignal | undefined;
-    mocks.ensureImage.mockImplementation((_ralphDir, options) => {
-      capturedSignal = options.signal;
-      return new Promise((_resolve, reject) => {
-        capturedSignal!.addEventListener("abort", () =>
-          reject(new Error("image aborted"))
-        );
-      });
-    });
+    mocks.runStage.mockImplementation(
+      (_stage, _prompt, _workspace, _iteration, _spill, _log, options) => {
+        capturedSignal = options.signal;
+        return new Promise((_resolve, reject) => {
+          capturedSignal!.addEventListener("abort", () =>
+            reject(new Error("aborted"))
+          );
+        });
+      }
+    );
 
-    const loop = runLoop(loopOptions(dirs));
+    const loop = runLoop(loopOptions(dirs, { maxRetries: 0 }));
     await Promise.resolve();
     await Promise.resolve();
 
     expect(capturedSignal?.aborted).toBe(false);
     expect(() => process.emit("SIGTERM")).toThrow("exit 143");
-
     expect(capturedSignal?.aborted).toBe(true);
-    await expect(loop).rejects.toThrow("image aborted");
-    expect(mocks.runStage).not.toHaveBeenCalled();
+    await loop;
     expect(mocks.release).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledWith(143);
   });

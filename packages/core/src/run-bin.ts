@@ -51,7 +51,6 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
   const here = dirname(fileURLToPath(import.meta.url));
   const packageDir = resolve(here, "..");
   const workspaceDir = resolve(process.env.RALPH_WORKSPACE ?? process.cwd());
-  const ralphDir = resolve(process.env.RALPH_DOCKER_CONTEXT ?? packageDir);
 
   const detachLogPath = flags.detach
     ? (flags.log ??
@@ -59,7 +58,7 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
     : undefined;
 
   if (flags.printConfig) {
-    printConfig(cfg.bin, workspaceDir, ralphDir, packageDir, {
+    printConfig(cfg.bin, workspaceDir, packageDir, {
       cliVersion: cfg.cliVersion,
       noKeepAlive: flags.noKeepAlive,
       maxRetries: flags.maxRetries,
@@ -95,7 +94,6 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
     stages: cfg.stages,
     inputs: inputs ?? "",
     iterations,
-    ralphDir,
     workspaceDir,
     packageDir,
     noKeepAlive: flags.noKeepAlive,
