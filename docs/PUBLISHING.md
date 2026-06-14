@@ -1,5 +1,4 @@
 # Publishing
 
-Moved. Releasing and publishing for all three components (`@daonhan/ralph-core`,
-`@daonhan/ralph`, and the `ralph-sandbox` image) is now documented in
-[`RELEASING.md`](../RELEASING.md) at the repo root.
+Moved. Releasing and publishing for both npm packages (`@daonhan/ralph-core` and
+`@daonhan/ralph`) is now documented in [`RELEASING.md`](../RELEASING.md) at the repo root.

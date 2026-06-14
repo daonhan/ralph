@@ -8,11 +8,10 @@ import {
   compareVersions,
 } from "./registries-not-behind-git.mjs";
 
-// All three components: tag == published. Nothing lags.
+// Both npm components: tag == published. Nothing lags.
 const IN_SYNC = {
   "ralph-core": { tag: "ralph-core-v0.6.3", published: "0.6.3" },
   ralph: { tag: "ralph-v0.6.3", published: "0.6.3" },
-  "ralph-sandbox": { tag: "ralph-sandbox-v0.2.3", published: "0.2.3" },
 };
 
 test("all in sync -> no lagging components", () => {
@@ -26,20 +25,6 @@ test("npm behind tag -> flagged", () => {
   });
   assert.deepEqual(lagging, [
     { component: "ralph", tag: "ralph-v0.6.3", published: "0.6.2" },
-  ]);
-});
-
-test("image behind tag -> flagged", () => {
-  const lagging = findLaggingComponents({
-    ...IN_SYNC,
-    "ralph-sandbox": { tag: "ralph-sandbox-v0.2.3", published: "0.2.2" },
-  });
-  assert.deepEqual(lagging, [
-    {
-      component: "ralph-sandbox",
-      tag: "ralph-sandbox-v0.2.3",
-      published: "0.2.2",
-    },
   ]);
 });
 
@@ -71,7 +56,6 @@ test("multiple components can lag at once", () => {
   const lagging = findLaggingComponents({
     "ralph-core": { tag: "ralph-core-v0.6.3", published: "0.6.2" },
     ralph: { tag: "ralph-v0.6.3", published: "0.6.2" },
-    "ralph-sandbox": { tag: "ralph-sandbox-v0.2.3", published: "0.2.3" },
   });
   assert.deepEqual(
     lagging.map((l) => l.component),

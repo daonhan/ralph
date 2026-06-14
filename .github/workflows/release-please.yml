@@ -4,7 +4,7 @@ name: release-please
 # On each push to main, release-please reads the conventional-commit history,
 # opens (or updates) one Release PR per component, and on merge of that PR
 # creates the component's Git tag + GitHub Release. The per-component publish
-# workflows (publish-npm.yml, publish-image.yml) hang off those tags.
+# workflow (publish-npm.yml) hangs off those tags.
 #
 # Config lives at the repo root:
 #   - release-please-config.json     (component declarations)
@@ -34,11 +34,11 @@ jobs:
         with:
           # IMPORTANT: a tag created with the default GITHUB_TOKEN does NOT raise
           # a `push: tags` event in other workflows (GitHub's "a workflow cannot
-          # trigger another workflow" rule). Our publish-npm.yml / publish-image.yml
-          # trigger on tag pushes, so release-please MUST create those tags with a
-          # Personal Access Token (repo scope), stored as the RELEASE_PLEASE_TOKEN
-          # secret. Falls back to GITHUB_TOKEN for opening PRs in forks / dry setups,
-          # in which case publishing must be kicked off manually (see RELEASING.md).
+          # trigger another workflow" rule). Our publish-npm.yml triggers on tag
+          # pushes, so release-please MUST create those tags with a Personal Access
+          # Token (repo scope), stored as the RELEASE_PLEASE_TOKEN secret. Falls back
+          # to GITHUB_TOKEN for opening PRs in forks / dry setups, in which case
+          # publishing must be kicked off manually (see RELEASING.md).
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
@@ -87,30 +87,3 @@ jobs:
             git checkout -
             echo "::endgroup::"
           done
-
-      - name: Publish released sandbox image
-        if: steps.release.outputs.releases_created == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
-          RELEASE_OUTPUTS: ${{ toJson(steps.release.outputs) }}
-        run: |
-          set -euo pipefail
-          TAG="$(node -e '
-            const outputs = JSON.parse(process.env.RELEASE_OUTPUTS || "{}");
-            const tag = Object.values(outputs).find((value) =>
-              typeof value === "string" && /^ralph-sandbox-v/.test(value)
-            );
-            process.stdout.write(tag || "");
-          ')"
-          if [ -z "$TAG" ]; then
-            echo "no ralph-sandbox release tag in release-please outputs"
-            exit 0
-          fi
-
-          IMAGE_TAG="${TAG#ralph-sandbox-}"
-          echo "Dispatching publish-image.yml for ${TAG} (${IMAGE_TAG})"
-          gh workflow run publish-image.yml \
-            --ref "$TAG" \
-            -f tag="$IMAGE_TAG" \
-            -f also_latest=true \
-            -f release_tag="$TAG"
