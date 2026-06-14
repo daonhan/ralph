@@ -26,10 +26,6 @@
     "apps/cli": {
       "component": "ralph",
       "exclude-paths": ["apps/cli/CHANGELOG.md"]
-    },
-    "packages/core/templates": {
-      "component": "ralph-sandbox",
-      "release-type": "simple"
     }
   }
 }
