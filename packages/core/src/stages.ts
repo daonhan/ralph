@@ -4,15 +4,11 @@ export type Stage = {
   permissionMode?: string;
 };
 
-// All stages run inside the ephemeral ralph-sandbox container (--rm). Bash +
-// edits must auto-approve for AFK to work non-interactively, so every stage
-// uses bypassPermissions.
-//
-// Blast radius depends on the docker.sock mount (on by default — see
-// resolveDockerSocketMount in runner.ts): with the socket mounted the agent
-// has root-equivalent access to the host Docker daemon (effectively the whole
-// host); with RALPH_DOCKER_SOCK=0 it is bounded to the bind-mounted workspace
-// tree, which is git-recoverable. See SECURITY.md.
+// Every stage runs `claude --permission-mode bypassPermissions` so bash + edits
+// auto-approve for non-interactive AFK. Blast radius is bounded by the runner
+// (see resolveRunner in runner.ts): the default `sandbox` runner confines writes
+// to the workspace via the native OS sandbox; `RALPH_RUNNER=host` runs unsandboxed
+// (git-recoverable workspace only). See the spec under docs/superpowers/specs/.
 export const STAGES = {
   implementer: {
     name: "implementer",

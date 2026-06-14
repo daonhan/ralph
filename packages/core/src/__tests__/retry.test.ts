@@ -95,6 +95,18 @@ describe("withRetries", () => {
     expect(onAttempt.mock.calls[1][0]).toBe(2);
     expect((onAttempt.mock.calls[1][1] as Error).message).toBe("e2");
   });
+
+  it("does not retry an AbortError — rethrows immediately", async () => {
+    const fn = vi.fn(async () => {
+      const e = new Error("aborted");
+      e.name = "AbortError";
+      throw e;
+    });
+    await expect(
+      withRetries(fn, { max: 3, backoffMs: [1] })
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fn).toHaveBeenCalledTimes(1); // no retries
+  });
 });
 
 describe("backoffFor", () => {

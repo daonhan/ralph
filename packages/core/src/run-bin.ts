@@ -27,11 +27,13 @@ export type RunBinConfig = {
    */
   takesInputArg: boolean;
   cliVersion?: string;
+  /** Whether this bin supports --watch. Only ralph-ghafk sets this. */
+  supportsWatch?: boolean;
 };
 
 /**
  * Shared entry for the AFK bins: parse flags, handle --version/--help/--print-config,
- * resolve the workspace / docker-context / package dirs, validate the positional args,
+ * resolve the workspace / package dirs, validate the positional args,
  * optionally fork into the background (--detach), then drive runLoop.
  */
 export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
@@ -51,21 +53,37 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
   const here = dirname(fileURLToPath(import.meta.url));
   const packageDir = resolve(here, "..");
   const workspaceDir = resolve(process.env.RALPH_WORKSPACE ?? process.cwd());
-  const ralphDir = resolve(process.env.RALPH_DOCKER_CONTEXT ?? packageDir);
 
   const detachLogPath = flags.detach
     ? (flags.log ??
       join(workspaceDir, ".ralph-tmp", "logs", `detached-${process.pid}.log`))
     : undefined;
 
+  const DEFAULT_LENSES = ["correctness", "security", "tests"];
+  const envLenses = (process.env.RALPH_REVIEW_LENSES ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const reviewLenses =
+    envLenses.length > 0
+      ? envLenses
+      : flags.reviewPanel
+        ? DEFAULT_LENSES
+        : undefined;
+
   if (flags.printConfig) {
-    printConfig(cfg.bin, workspaceDir, ralphDir, packageDir, {
+    printConfig(cfg.bin, workspaceDir, packageDir, {
       cliVersion: cfg.cliVersion,
       noKeepAlive: flags.noKeepAlive,
       maxRetries: flags.maxRetries,
       detach: flags.detach,
       detachLogPath,
       notify: flags.notify,
+      budget: flags.budget,
+      cooldownMs: flags.cooldownMs,
+      reviewLenses: reviewLenses ?? [],
+      watch: flags.watch,
+      watchIntervalSec: flags.watchIntervalSec,
     });
     return;
   }
@@ -91,11 +109,34 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
     });
   }
 
+  if (flags.watch) {
+    if (!cfg.supportsWatch) {
+      console.error("--watch is only supported by ralph-ghafk");
+      process.exit(1);
+    }
+    const { runWatch } = await import("./watch.js");
+    await runWatch({
+      stages: cfg.stages,
+      iterations,
+      workspaceDir,
+      packageDir,
+      watchIntervalSec: flags.watchIntervalSec ?? 300,
+      watchLabel: process.env.RALPH_WATCH_LABEL?.trim() || "ralph",
+      budgetUsd: flags.budget,
+      cooldownMs: flags.cooldownMs,
+      maxRetries: flags.maxRetries,
+      reviewLenses,
+      notify: flags.notify,
+      bin: cfg.bin,
+      cliVersion: cfg.cliVersion,
+    });
+    return;
+  }
+
   await runLoop({
     stages: cfg.stages,
     inputs: inputs ?? "",
     iterations,
-    ralphDir,
     workspaceDir,
     packageDir,
     noKeepAlive: flags.noKeepAlive,
@@ -103,5 +144,8 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
     notify: flags.notify,
     bin: cfg.bin,
     cliVersion: cfg.cliVersion,
+    budgetUsd: flags.budget,
+    cooldownMs: flags.cooldownMs,
+    reviewLenses,
   });
 }

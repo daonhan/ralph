@@ -30,11 +30,6 @@ export const COMPONENTS = [
     component: "ralph",
     artifact: "npm `@daonhan/ralph`",
   },
-  {
-    path: "packages/core/templates",
-    component: "ralph-sandbox",
-    artifact: "Docker `daonhan/ralph-sandbox`",
-  },
 ];
 
 export function expectedReleaseTag(component, version) {

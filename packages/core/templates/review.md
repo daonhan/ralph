@@ -41,7 +41,7 @@ If defects found:
 - Fix them directly in the working tree.
 - Run feedback loops:
   - Frontend / Node: `pnpm run test`, `pnpm run typecheck`
-  - Backend / Dotnet: `dotnet test`, `dotnet build` (apply MSB3248 workaround from the implementer playbook if it triggers)
+  - Backend / Dotnet: `dotnet test`, `dotnet build`
 - Commit with `git commit -am "fix(review): <short reason>"`. Subject ≤72 chars. No `Co-Authored-By` line. No file lists.
 
 If clean: output `<review>OK</review>` and stop. Do NOT commit.

@@ -21,15 +21,11 @@
   "packages": {
     "packages/core": {
       "component": "ralph-core",
-      "exclude-paths": ["packages/core/templates", "packages/core/CHANGELOG.md"]
+      "exclude-paths": ["packages/core/CHANGELOG.md"]
     },
     "apps/cli": {
       "component": "ralph",
       "exclude-paths": ["apps/cli/CHANGELOG.md"]
-    },
-    "packages/core/templates": {
-      "component": "ralph-sandbox",
-      "release-type": "simple"
     }
   }
 }

@@ -14,5 +14,6 @@ export async function runGhAfk(
     stages: [STAGES.ghafkImplementer, STAGES.reviewer],
     takesInputArg: false,
     cliVersion: opts.cliVersion,
+    supportsWatch: true,
   });
 }

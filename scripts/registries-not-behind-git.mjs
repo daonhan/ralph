@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Guard against a half-completed release: flag any component whose newest
 // release tag in git is ahead of the version actually published to its
-// registry (npm / Docker Hub). This is the regression guard for the
-// 0.6.3 episode, where git/GitHub held the tags but npm and the sandbox
-// image lagged behind because the publish workflows never fired.
+// registry (npm). This is the regression guard for the 0.6.3 episode,
+// where git/GitHub held the tags but npm lagged behind because the publish
+// workflows never fired.
 //
 // The comparison core, `findLaggingComponents(state)`, is a pure function
 // (per-component { tag, published } in -> list of lagging components out, no
@@ -30,12 +30,6 @@ export const COMPONENTS = [
     tagPrefix: "ralph-v",
     registry: "npm",
     artifact: "@daonhan/ralph",
-  },
-  {
-    component: "ralph-sandbox",
-    tagPrefix: "ralph-sandbox-v",
-    registry: "image",
-    artifact: "daonhan/ralph-sandbox",
   },
 ];
 
@@ -122,19 +116,6 @@ function npmVersion(pkg) {
     .trim();
 }
 
-async function imageVersion(repo) {
-  const res = await fetch(
-    `https://hub.docker.com/v2/repositories/${repo}/tags?page_size=100`
-  );
-  if (!res.ok) throw new Error(`Docker Hub ${res.status}`);
-  const body = await res.json();
-  const versions = (body.results || [])
-    .map((t) => t.name)
-    .filter((n) => /^v?\d+\.\d+\.\d+$/.test(n)) // image tags publish as vX.Y.Z
-    .sort(compareVersions);
-  return versions.length ? versions[versions.length - 1] : null;
-}
-
 async function collectState() {
   const state = {};
   const skipped = [];
@@ -142,10 +123,7 @@ async function collectState() {
     const tag = latestTag(c.tagPrefix);
     if (!tag) continue; // no release yet
     try {
-      const published =
-        c.registry === "npm"
-          ? npmVersion(c.artifact)
-          : await imageVersion(c.artifact);
+      const published = npmVersion(c.artifact);
       state[c.component] = { tag, published };
     } catch {
       // Couldn't determine the published version (e.g. transient registry

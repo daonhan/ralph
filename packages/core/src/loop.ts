@@ -1,17 +1,12 @@
-import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname, join, posix } from "node:path";
+import { appendFileSync } from "node:fs";
 
 import { readCoreVersion } from "./cli-help.js";
 import { acquire, type Releaser } from "./keepalive.js";
 import { notifyComplete, notifyError } from "./notify.js";
-import { renderTemplate } from "./render.js";
-import {
-  DEFAULT_BACKOFF_MS,
-  DEFAULT_MAX_RETRIES,
-  backoffFor,
-  withRetries,
-} from "./retry.js";
-import { ensureImage, runStage, stageLogPath } from "./runner.js";
+import { sleep, isThrottle, nextCooldownFactor } from "./pacing.js";
+import { DEFAULT_MAX_RETRIES } from "./retry.js";
+import { stageLogPath, type StageResult } from "./runner.js";
+import { executeStage } from "./stage-exec.js";
 import {
   USE_COLOR,
   dim,
@@ -35,9 +30,7 @@ export type LoopOptions = {
   stages: [Stage, ...Stage[]];
   inputs: string;
   iterations: number;
-  /** Docker `build` fallback context (must contain a Dockerfile). */
-  ralphDir: string;
-  /** Host repo bind-mounted into the sandbox at /home/agent/workspace. */
+  /** Host repo Claude runs against (cwd). */
   workspaceDir: string;
   /** Installed @daonhan/ralph-core dir; stage templates are read from <packageDir>/templates. */
   packageDir: string;
@@ -51,14 +44,25 @@ export type LoopOptions = {
   bin?: string;
   /** CLI version for the init-time version banner. */
   cliVersion?: string;
+  /** Stop the loop when cumulative stage cost reaches this USD ceiling. */
+  budgetUsd?: number;
+  /** Milliseconds to wait between iterations. 0 = no cooldown. */
+  cooldownMs?: number;
+  /** Opt-in reviewer panel: replace the single reviewer stage with K read-only lens reviewers + one synth commit. */
+  reviewLenses?: string[];
+  /** Injected AbortSignal for daemon callers (e.g. watch mode). When provided,
+   *  runLoop skips wake-lock acquisition and process signal handler installation;
+   *  the caller owns both. */
+  signal?: AbortSignal;
 };
 
-export async function runLoop(opts: LoopOptions): Promise<void> {
+export type LoopOutcome = { costUsd: number; sentinelHit: boolean };
+
+export async function runLoop(opts: LoopOptions): Promise<LoopOutcome> {
   const {
     stages,
     inputs,
     iterations,
-    ralphDir,
     workspaceDir,
     packageDir,
     noKeepAlive = false,
@@ -66,6 +70,10 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     notify = false,
     bin = "ralph",
     cliVersion = "?",
+    budgetUsd,
+    cooldownMs = 0,
+    reviewLenses,
+    signal: externalSignal,
   } = opts;
 
   const versionLine = `${bin} ${cliVersion} (core ${readCoreVersion()})`;
@@ -73,10 +81,14 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     `${USE_COLOR ? `${dim("━━━")} ${bold(versionLine)} ${dim("━━━")}` : `== ${versionLine} ==`}\n`
   );
 
-  const releaser: Releaser = noKeepAlive
-    ? { release: () => {} }
-    : acquire({ reason: `${bin} loop` });
-  const stageAbort = new AbortController();
+  // When an external signal is injected (daemon/watch mode), the caller owns
+  // wake-lock + process signal handlers. Skip both here.
+  const releaser: Releaser =
+    externalSignal || noKeepAlive
+      ? { release: () => {} }
+      : acquire({ reason: `${bin} loop` });
+  const stageAbort = externalSignal ? undefined : new AbortController();
+  const activeSignal = externalSignal ?? stageAbort!.signal;
 
   // Single release path: signal handlers and the finally below all funnel
   // through releaseOnce so the wake-lock child is killed exactly once.
@@ -86,86 +98,110 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     released = true;
     releaser.release();
   };
-  const abortActiveStage = (): void => {
-    if (!stageAbort.signal.aborted) stageAbort.abort();
-  };
 
-  const onSigint = (): void => {
-    abortActiveStage();
-    if (notify) notifyError("interrupted (SIGINT)");
-    releaseOnce();
-    process.exit(130);
-  };
-  const onSigterm = (): void => {
-    abortActiveStage();
-    if (notify) notifyError("terminated (SIGTERM)");
-    releaseOnce();
-    process.exit(143);
-  };
-  process.on("SIGINT", onSigint);
-  process.on("SIGTERM", onSigterm);
+  let onSigint: (() => void) | undefined;
+  let onSigterm: (() => void) | undefined;
+  if (!externalSignal) {
+    const abortActiveStage = (): void => {
+      if (!stageAbort!.signal.aborted) stageAbort!.abort();
+    };
+    onSigint = (): void => {
+      abortActiveStage();
+      if (notify) notifyError("interrupted (SIGINT)");
+      releaseOnce();
+      process.exit(130);
+    };
+    onSigterm = (): void => {
+      abortActiveStage();
+      if (notify) notifyError("terminated (SIGTERM)");
+      releaseOnce();
+      process.exit(143);
+    };
+    process.on("SIGINT", onSigint);
+    process.on("SIGTERM", onSigterm);
+  }
 
   let completedIterations = 0;
   let sentinelHit = false;
-  try {
-    await ensureImage(ralphDir, { signal: stageAbort.signal });
+  let runCostUsd = 0;
+  let cooldownFactor = 1;
 
+  // Single source of truth for per-stage accounting: tally cost, report it,
+  // advance the adaptive cooldown factor on throttle, and report whether the
+  // budget is now exhausted. Used once per non-panel stage AND once per panel
+  // sub-agent (passed to runPanel as onStage), so budget + adaptive pacing
+  // apply uniformly to lenses, synth, and ordinary stages alike.
+  const accountStage = (
+    sr: StageResult
+  ): { stop: boolean; cooldownFactor: number } => {
+    runCostUsd += sr.costUsd;
+    process.stderr.write(
+      `${dim(`· $${sr.costUsd.toFixed(2)} (run $${runCostUsd.toFixed(2)})`)}\n`
+    );
+    cooldownFactor = nextCooldownFactor(
+      cooldownFactor,
+      isThrottle(sr.apiErrorStatus)
+    );
+    return {
+      stop: budgetUsd != null && runCostUsd >= budgetUsd,
+      cooldownFactor,
+    };
+  };
+
+  try {
     for (let i = 1; i <= iterations; i++) {
       for (let s = 0; s < stages.length; s++) {
         const stage = stages[s];
-        const banner = USE_COLOR
-          ? `${dim("\u2501\u2501\u2501")} ${bold(`iteration ${i}/${iterations}`)} ${dim("\u00b7")} ${bold(stage.name)} ${dim(`(stage ${s + 1}/${stages.length})`)} ${dim("\u2501\u2501\u2501")}`
-          : `== iteration ${i}/${iterations} \u00b7 ${stage.name} (stage ${s + 1}/${stages.length}) ==`;
-        process.stderr.write(`\n${banner}\n`);
-        const templatePath = join(packageDir, "templates", stage.template);
-        const spillRel = `spill-${process.pid}-${i}-${s}-${Date.now()}`;
-        const spillHostDir = join(workspaceDir, ".ralph-tmp", spillRel);
-        const spillRefPath = posix.join(".ralph-tmp", spillRel);
 
-        const stageLog = stageLogPath(workspaceDir, i, stage.name);
-        mkdirSync(dirname(stageLog), { recursive: true });
-
-        let result: string;
-        try {
-          result = await withRetries(
-            () => {
-              // Render inside the retry: a failing template shell/@spill tag
-              // (e.g. a flaky `gh issue list`) is retried with backoff instead
-              // of crashing the loop — and a hard failure surfaces as a terminal
-              // stage failure rather than a degraded prompt that false-completes.
-              const prompt = renderTemplate(
-                templatePath,
-                { INPUTS: inputs },
-                { cwd: workspaceDir, spillHostDir, spillRefPath }
-              );
-              return runStage(
-                stage,
-                prompt,
-                workspaceDir,
-                i,
-                spillHostDir,
-                stageLog,
-                { signal: stageAbort.signal }
-              );
-            },
-            {
-              max: maxRetries,
-              backoffMs: DEFAULT_BACKOFF_MS,
-              onAttempt: (attempt, err) => {
-                const wait = backoffFor(DEFAULT_BACKOFF_MS, attempt);
-                const marker = `[retry] attempt ${attempt} of ${maxRetries} after ${wait} ms`;
-                process.stderr.write(
-                  `${USE_COLOR ? dim(marker) : marker} ${dim("(" + (err as Error).message + ")")}\n`
-                );
-                try {
-                  appendFileSync(stageLog, marker + "\n");
-                } catch {
-                  // log file may be unwritable; never crash the loop on the marker.
-                }
-              },
-            }
+        // Budget gate: check before running each stage.
+        if (budgetUsd != null && runCostUsd >= budgetUsd) {
+          process.stdout.write(
+            `${greenOut(SYM_OUT.bullet)} ${boldOut("budget reached")}${dimOut(` $${runCostUsd.toFixed(2)} ≥ $${budgetUsd.toFixed(2)} after ${i - 1} iterations`)}\n`
           );
+          return { costUsd: runCostUsd, sentinelHit };
+        }
+
+        const banner = USE_COLOR
+          ? `${dim("━━━")} ${bold(`iteration ${i}/${iterations}`)} ${dim("·")} ${bold(stage.name)} ${dim(`(stage ${s + 1}/${stages.length})`)} ${dim("━━━")}`
+          : `== iteration ${i}/${iterations} · ${stage.name} (stage ${s + 1}/${stages.length}) ==`;
+        process.stderr.write(`\n${banner}\n`);
+
+        const usePanel =
+          reviewLenses && reviewLenses.length > 0 && stage.name === "reviewer";
+
+        let sr: StageResult;
+        try {
+          if (usePanel) {
+            // Lazy import to avoid circular dep and keep the panel opt-in.
+            const { runPanel } = await import("./panel.js");
+            sr = await runPanel({
+              lenses: reviewLenses!,
+              workspaceDir,
+              packageDir,
+              iteration: i,
+              maxRetries,
+              cooldownMs,
+              signal: activeSignal,
+              onStage: accountStage,
+            });
+          } else {
+            sr = await executeStage({
+              stage,
+              vars: { INPUTS: inputs },
+              workspaceDir,
+              packageDir,
+              iteration: i,
+              maxRetries,
+              signal: activeSignal,
+            });
+            accountStage(sr);
+          }
         } catch (err) {
+          if (activeSignal.aborted) {
+            return { costUsd: runCostUsd, sentinelHit };
+          }
+          // terminal failure marker — write to the same log path executeStage used.
+          const stageLog = stageLogPath(workspaceDir, i, stage.name);
           const failureMarker = `[failure] iteration ${i} stage ${stage.name} failed after ${maxRetries} retries: ${(err as Error).message}`;
           try {
             appendFileSync(stageLog, failureMarker + "\n");
@@ -177,8 +213,11 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
           break;
         }
 
+        // Cost/pacing accounting is handled by accountStage — called once per
+        // non-panel stage above, and once per sub-agent inside runPanel.
+
         if (s === 0) {
-          if (result.includes(SENTINEL)) {
+          if (sr.result.includes(SENTINEL)) {
             const msg =
               greenOut(SYM_OUT.bullet) +
               " " +
@@ -187,21 +226,33 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
             process.stdout.write(msg + "\n");
             sentinelHit = true;
             completedIterations = i;
-            return;
+            return { costUsd: runCostUsd, sentinelHit };
           }
         }
       }
       completedIterations = i;
+
+      // Cooldown between iterations.
+      if (cooldownMs > 0 && i < iterations) {
+        const wait = cooldownMs * cooldownFactor;
+        if (cooldownFactor > 1) {
+          process.stderr.write(
+            `${dim(`cooldown ×${cooldownFactor} → ${wait}ms (throttle backoff)`)}\n`
+          );
+        }
+        await sleep(wait, activeSignal);
+      }
     }
   } catch (err) {
     if (notify) notifyError((err as Error).message);
     throw err;
   } finally {
-    process.off("SIGINT", onSigint);
-    process.off("SIGTERM", onSigterm);
+    if (onSigint) process.off("SIGINT", onSigint);
+    if (onSigterm) process.off("SIGTERM", onSigterm);
     releaseOnce();
     if (notify && (sentinelHit || completedIterations === iterations)) {
       notifyComplete(completedIterations, sentinelHit);
     }
   }
+  return { costUsd: runCostUsd, sentinelHit };
 }

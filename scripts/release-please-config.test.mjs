@@ -8,8 +8,7 @@
 // (drop a package from a commit when every file relevant to that package is matched
 // by one of its `exclude-paths`). It then asserts which component(s) a synthetic
 // commit would bump. This catches config drift (wrong path, wrong component name,
-// missing exclude) at PR time, which is exactly where the synthetic `ralph-sandbox`
-// component is most likely to break.
+// missing exclude) at PR time.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -63,7 +62,7 @@ const expectOnly = (files, component) => {
     got.has(component),
     `expected ${component} to bump for ${JSON.stringify(files)}, got ${[...got].join(", ") || "(none)"}`
   );
-  for (const other of ["ralph-core", "ralph", "ralph-sandbox"]) {
+  for (const other of ["ralph-core", "ralph"]) {
     if (other === component) continue;
     assert.ok(
       !got.has(other),
@@ -72,19 +71,16 @@ const expectOnly = (files, component) => {
   }
 };
 
-test("config declares the three expected components", () => {
+test("config declares the two expected components", () => {
   const components = Object.values(config.packages).map((p) => p.component);
-  assert.deepEqual(
-    new Set(components),
-    new Set(["ralph-core", "ralph", "ralph-sandbox"])
-  );
+  assert.deepEqual(new Set(components), new Set(["ralph-core", "ralph"]));
   assert.deepEqual(
     new Set(Object.keys(config.packages)),
     new Set(Object.keys(manifest))
   );
 });
 
-test("feat touching only packages/core/src/** bumps ralph-core, not ralph-sandbox", () => {
+test("feat touching only packages/core/src/** bumps ralph-core", () => {
   expectOnly(["packages/core/src/loop.ts"], "ralph-core");
   expectOnly(
     ["packages/core/src/runner.ts", "packages/core/package.json"],
@@ -104,12 +100,10 @@ test("component changelog-only changes do not trigger release PRs", () => {
   );
 });
 
-test("change touching only packages/core/templates/Dockerfile bumps ralph-sandbox, not ralph-core", () => {
-  expectOnly(["packages/core/templates/Dockerfile"], "ralph-sandbox");
-});
-
-test("change touching packages/core/templates/** (playbooks) bumps ralph-sandbox only", () => {
-  expectOnly(["packages/core/templates/prompt.md"], "ralph-sandbox");
+test("change touching packages/core/templates/** (playbooks) bumps ralph-core", () => {
+  // Templates ship inside the @daonhan/ralph-core npm tarball, so a playbook
+  // edit must release a new ralph-core (no separate image component anymore).
+  expectOnly(["packages/core/templates/prompt.md"], "ralph-core");
 });
 
 test("feat touching only apps/cli/** bumps ralph, not the others", () => {

@@ -1,10 +1,10 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. See [.claude/CLAUDE.md](.claude/CLAUDE.md) (behavioral rules).
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository. See [.Codex/AGENTS.md](.Codex/AGENTS.md) (behavioral rules).
 
 ## What this repo is
 
-Ralph is a Node/TypeScript harness that drives the Claude Code CLI against a target repository in an iterating implementer → reviewer loop, running `claude` directly on the host. It ships as a pnpm monorepo with two npm packages:
+Ralph is a Node/TypeScript harness that drives the Codex CLI against a target repository in an iterating implementer → reviewer loop, running `Codex` directly on the host. It ships as a pnpm monorepo with two npm packages:
 
 - `@daonhan/ralph-core` (`packages/core`) — library: loop driver, native-sandbox runner, template renderer, stage registry. ESM, TS-compiled to `dist/`.
 - `@daonhan/ralph` (`apps/cli`) — CLI exposing `ralph-afk` (plan/PRD loop) and `ralph-ghafk` (GitHub-issue loop) bin entries. Hand-written JS bins, no build step. Depends on `@daonhan/ralph-core` via `workspace:^`.
@@ -45,7 +45,7 @@ ralph-ghafk <iterations>                          # GitHub-issue-driven loop
 ralph-afk --print-config                          # diagnose: print workspace / runner / sandbox config
 ```
 
-Bins also accept `--help` / `-h`. `$RALPH_WORKSPACE` overrides cwd as the target workspace; `$RALPH_RUNNER` selects `sandbox` (default — native OS sandbox, writes confined to the workspace) or `host` (unsandboxed); `$RALPH_SANDBOX_NET` is an optional comma-separated egress domain allowlist for the sandbox. Other env knobs: `$RALPH_RESULT_GRACE_MS` (post-result grace timer, default `30000`, `0` disables), `$RALPH_MODEL` (pass-through `--model <value>` to the claude CLI; unset = CLI default), `$NO_COLOR` / `$TERM=dumb` (disable ANSI). Bins also accept `--version`/`-V`, `--no-keep-alive`, `--max-retries <N>`, `--detach`, `--log <path>`, `--notify` (see README "Running AFK"). Docker is no longer required. npm releases are automated via release-please — see [RELEASING.md](RELEASING.md).
+Bins also accept `--help` / `-h`. `$RALPH_WORKSPACE` overrides cwd as the target workspace; `$RALPH_RUNNER` selects `sandbox` (default — native OS sandbox, writes confined to the workspace) or `host` (unsandboxed); `$RALPH_SANDBOX_NET` is an optional comma-separated egress domain allowlist for the sandbox. Other env knobs: `$RALPH_RESULT_GRACE_MS` (post-result grace timer, default `30000`, `0` disables), `$RALPH_MODEL` (pass-through `--model <value>` to the Codex CLI; unset = CLI default), `$NO_COLOR` / `$TERM=dumb` (disable ANSI). Bins also accept `--version`/`-V`, `--no-keep-alive`, `--max-retries <N>`, `--detach`, `--log <path>`, `--notify` (see README "Running AFK"). Docker is no longer required. npm releases are automated via release-please — see [RELEASING.md](RELEASING.md).
 
 ## Architecture
 
@@ -55,8 +55,8 @@ The core library is ~12 source files in `packages/core/src/` (plus a `__tests__/
 2. **`loop.ts`** (`runLoop`) — drives the iteration. For each iteration, walks the stage chain. **First stage is the gate**: its `result` string is sentinel-checked for `<promise>NO MORE TASKS</promise>` and the loop exits early on hit. Subsequent stages always run after a non-sentinel gate.
 3. **`render.ts`** (`renderTemplate`) — expands the five template tags below before each stage runs. Synchronous, uses host `execSync` for shell tags.
 4. **`runner.ts`** (`runStage`) — host runner plumbing.
-   - `runStage`: writes the rendered prompt to `<workspaceDir>/.ralph-tmp/.run-<pid>-<iter>-<ts>.md`, spawns `claude --verbose --print --output-format stream-json --permission-mode <mode> "Read the full instructions from ./.ralph-tmp/<file> …"` with `cwd = workspaceDir`. When `RALPH_RUNNER=sandbox` (default), writes a transient `--settings` JSON enabling the native OS sandbox with writes confined to the workspace. Streams NDJSON from stdout, captures the `result` event's payload as the stage return value. Tempfiles cleaned in `finally`.
-5. **`stages.ts`** — three named stages (`implementer`, `ghafkImplementer`, `reviewer`), each pairing a template filename with a Claude `permissionMode` (always `bypassPermissions` — AFK requires non-interactive bash/edit approval; blast radius bounded by the runner sandbox).
+   - `runStage`: writes the rendered prompt to `<workspaceDir>/.ralph-tmp/.run-<pid>-<iter>-<ts>.md`, spawns `Codex --verbose --print --output-format stream-json --permission-mode <mode> "Read the full instructions from ./.ralph-tmp/<file> …"` with `cwd = workspaceDir`. When `RALPH_RUNNER=sandbox` (default), writes a transient `--settings` JSON enabling the native OS sandbox with writes confined to the workspace. Streams NDJSON from stdout, captures the `result` event's payload as the stage return value. Tempfiles cleaned in `finally`.
+5. **`stages.ts`** — three named stages (`implementer`, `ghafkImplementer`, `reviewer`), each pairing a template filename with a Codex `permissionMode` (always `bypassPermissions` — AFK requires non-interactive bash/edit approval; blast radius bounded by the runner sandbox).
 6. **AFK machinery** — `cli-help.ts` (flag parsing: `--detach` / `--notify` / `--max-retries` / `--no-keep-alive` / `--log` / `--version` / `--print-config`), `retry.ts` (`withRetries`, default 3 + exponential backoff), `keepalive.ts` (OS wake-lock acquire/release), `detach.ts` (fork-and-exit background run), `notify.ts` (OS toast + bell). `loop.ts` wires these in and handles `SIGINT`→exit 130 / `SIGTERM`→exit 143 by aborting the active stage via an `AbortController`. Full runtime model: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ### Loop topology
@@ -88,7 +88,7 @@ Every run writes to `<workspaceDir>/.ralph-tmp/` on the host (gitignored): the r
 
 ### Credentials
 
-`claude` and `gh` on the host read `~/.claude`, `~/.claude.json`, and `~/.config/gh` natively — no mounts needed. Run `claude /login` and `gh auth login` once in the shell you use to invoke the bins.
+`Codex` and `gh` on the host read `~/.Codex`, `~/.Codex.json`, and `~/.config/gh` natively — no mounts needed. Run `Codex /login` and `gh auth login` once in the shell you use to invoke the bins.
 
 ## Conventions to preserve
 
@@ -108,4 +108,4 @@ Every run writes to `<workspaceDir>/.ralph-tmp/` on the host (gitignored): the r
 
 ## Behavioral
 
-Apply `.claude/CLAUDE.md` (think first, simplicity, surgical changes, goal-driven). Make only changes the user asked for; match existing style; prefer smallest correct change; push back on over-engineering; state a brief plan + success criteria for non-trivial work.
+Apply `.Codex/AGENTS.md` (think first, simplicity, surgical changes, goal-driven). Make only changes the user asked for; match existing style; prefer smallest correct change; push back on over-engineering; state a brief plan + success criteria for non-trivial work.

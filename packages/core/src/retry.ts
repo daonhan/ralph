@@ -28,6 +28,7 @@ export async function withRetries<T>(
       return await fn();
     } catch (err) {
       lastErr = err;
+      if ((err as Error)?.name === "AbortError") throw err;
       if (attempt === opts.max) break;
       opts.onAttempt?.(attempt + 1, err);
       const backoff =

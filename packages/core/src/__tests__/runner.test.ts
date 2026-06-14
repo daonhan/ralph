@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { buildClaudeArgs, parseGraceMs, resolveModelArgs } from "../runner.js";
+import {
+  buildClaudeArgs,
+  buildSandboxSettings,
+  parseGraceMs,
+  resolveModelArgs,
+  resolveRunner,
+  resolveSandboxNet,
+  resultFromEvent,
+} from "../runner.js";
 
 describe("parseGraceMs", () => {
   it("returns the default when unset", () => {
@@ -70,6 +78,90 @@ describe("resolveModelArgs", () => {
   });
 });
 
+describe("resolveRunner", () => {
+  it("defaults to sandbox when unset", () => {
+    expect(resolveRunner(undefined)).toBe("sandbox");
+  });
+  it("defaults to sandbox for empty / unknown values", () => {
+    expect(resolveRunner("")).toBe("sandbox");
+    expect(resolveRunner("docker")).toBe("sandbox");
+  });
+  it("selects host only for the literal 'host'", () => {
+    expect(resolveRunner("host")).toBe("host");
+    expect(resolveRunner("  host  ")).toBe("host");
+  });
+});
+
+describe("resolveSandboxNet", () => {
+  it("returns [] when unset or empty", () => {
+    expect(resolveSandboxNet(undefined)).toEqual([]);
+    expect(resolveSandboxNet("   ")).toEqual([]);
+  });
+  it("splits, trims, and drops empties", () => {
+    expect(resolveSandboxNet("github.com, api.anthropic.com,")).toEqual([
+      "github.com",
+      "api.anthropic.com",
+    ]);
+  });
+});
+
+describe("buildSandboxSettings", () => {
+  it("confines writes to the workspace, excludes Go-TLS CLIs, omits network when no domains", () => {
+    expect(buildSandboxSettings("/ws", [])).toEqual({
+      sandbox: {
+        enabled: true,
+        filesystem: { allowWrite: ["/ws"] },
+        excludedCommands: ["gh *", "gcloud *", "terraform *"],
+      },
+    });
+  });
+  it("adds an allowedDomains network block when domains are given", () => {
+    expect(buildSandboxSettings("/ws", ["github.com"])).toEqual({
+      sandbox: {
+        enabled: true,
+        filesystem: { allowWrite: ["/ws"] },
+        excludedCommands: ["gh *", "gcloud *", "terraform *"],
+        network: { allowedDomains: ["github.com"] },
+      },
+    });
+  });
+});
+
+describe("resultFromEvent", () => {
+  it("extracts result/cost/error fields from a result event", () => {
+    expect(
+      resultFromEvent({
+        type: "result",
+        result: "done",
+        total_cost_usd: 0.39,
+        is_error: false,
+        api_error_status: null,
+      })
+    ).toEqual({
+      result: "done",
+      costUsd: 0.39,
+      isError: false,
+      apiErrorStatus: null,
+    });
+  });
+  it("defaults missing fields safely", () => {
+    expect(resultFromEvent({})).toEqual({
+      result: "",
+      costUsd: 0,
+      isError: false,
+      apiErrorStatus: null,
+    });
+  });
+  it("captures an error status string", () => {
+    expect(
+      resultFromEvent({ is_error: true, api_error_status: "429" })
+    ).toMatchObject({
+      isError: true,
+      apiErrorStatus: "429",
+    });
+  });
+});
+
 describe("buildClaudeArgs", () => {
   const stage = { name: "test", template: "test.md" };
   const stageWithPermissionMode = {
@@ -117,5 +209,24 @@ describe("buildClaudeArgs", () => {
     const promptIdx = args.findIndex((a) => a.includes(promptPath));
     expect(modelIdx).toBeGreaterThan(-1);
     expect(modelIdx).toBeLessThan(promptIdx);
+  });
+
+  it("injects --settings before the prompt when a settings path is given", () => {
+    const args = buildClaudeArgs(
+      stage,
+      promptPath,
+      [],
+      "/ws/.ralph-tmp/s.json"
+    );
+    const sIdx = args.indexOf("--settings");
+    expect(sIdx).toBeGreaterThan(-1);
+    expect(args[sIdx + 1]).toBe("/ws/.ralph-tmp/s.json");
+    const promptIdx = args.findIndex((a) => a.includes(promptPath));
+    expect(sIdx).toBeLessThan(promptIdx);
+  });
+
+  it("omits --settings when no settings path is given", () => {
+    const args = buildClaudeArgs(stage, promptPath, []);
+    expect(args).not.toContain("--settings");
   });
 });

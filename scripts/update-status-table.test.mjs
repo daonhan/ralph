@@ -9,12 +9,11 @@ import {
   END,
 } from "./update-status-table.mjs";
 
-// Fixture: three components, mixed release state (one fully released with a
-// dated tag + URL, one released without a URL, one never released).
+// Fixture: two npm components, mixed release state (one fully released with a
+// dated tag + URL, one never released).
 const manifest = {
   "packages/core": "0.2.0",
   "apps/cli": "0.1.0",
-  "packages/core/templates": "0.1.1",
 };
 
 const tagInfo = {
@@ -22,11 +21,6 @@ const tagInfo = {
     tag: "ralph-core-v0.2.0",
     date: "2026-05-20",
     url: "https://github.com/daonhan/ralph/releases/tag/ralph-core-v0.2.0",
-  },
-  "ralph-sandbox": {
-    tag: "ralph-sandbox-v0.1.1",
-    date: "2026-04-02",
-    // no url -> bare code-formatted tag
   },
   // "ralph" intentionally absent -> "—" date and tag
 };
@@ -36,7 +30,6 @@ const EXPECTED = [
   "| --- | --- | --- | --- | --- |",
   "| `ralph-core` | npm `@daonhan/ralph-core` | `0.2.0` | 2026-05-20 | [`ralph-core-v0.2.0`](https://github.com/daonhan/ralph/releases/tag/ralph-core-v0.2.0) |",
   "| `ralph` | npm `@daonhan/ralph` | `0.1.0` | — | — |",
-  "| `ralph-sandbox` | Docker `daonhan/ralph-sandbox` | `0.1.1` | 2026-04-02 | `ralph-sandbox-v0.1.1` |",
 ].join("\n");
 
 test("renderStatusTable snapshots the expected markdown block", () => {

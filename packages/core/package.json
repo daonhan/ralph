@@ -1,7 +1,7 @@
 {
   "name": "@daonhan/ralph-core",
   "version": "0.6.3",
-  "description": "Claude Code AFK orchestration: iteration loop, docker runner, template renderer.",
+  "description": "Claude Code AFK orchestration: iteration loop, native-sandbox runner, template renderer.",
   "type": "module",
   "license": "MIT",
   "author": "Paul Nguyen <daonhan@gmail.com>",
@@ -19,7 +19,6 @@
     "claude",
     "ai-agent",
     "afk",
-    "docker",
     "automation",
     "code-review",
     "orchestration"

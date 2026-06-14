@@ -1,10 +1,10 @@
 # Contributing to Ralph
 
 This guide is for **maintainers and contributors hacking on the monorepo itself** —
-the loop driver, docker runner, template renderer, CLI bins, and release pipeline.
+the loop driver, host runner, template renderer, CLI bins, and release pipeline.
 If you just want to _run_ Ralph against your own repo, see [`./README.md`](./README.md)
 (and [`./QUICKSTART.md`](./QUICKSTART.md) for the short path). For the runtime model
-(loop topology, stages, the docker run line), read [`./docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
+(loop topology, stages, the claude run line), read [`./docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ If you just want to _run_ Ralph against your own repo, see [`./README.md`](./REA
 | ------ | ------- | ------------------------------------------------------------- |
 | Node   | ≥ 20    | ESM, `node --test`, `tsc`.                                    |
 | pnpm   | ≥ 9     | Workspace linking. Root pins `packageManager: pnpm@9.12.0`.   |
-| Docker | any     | Running the loop and the `ensure-image` / spill smoke checks. |
+| claude | latest  | Running the loop on the host (logged in via `claude /login`). |
 
 `corepack enable` will activate the pinned pnpm automatically.
 
@@ -62,19 +62,6 @@ node scripts/smoke-render.mjs
 node scripts/smoke-templates.mjs
 node scripts/smoke-spill-size.mjs
 node scripts/smoke-spill-large.mjs
-node scripts/ensure-image-integration.mjs   # needs Docker + the real CLI
-```
-
-```powershell
-pnpm -r typecheck
-pnpm -r build
-pnpm -r test
-pnpm test
-node scripts/smoke-render.mjs
-node scripts/smoke-templates.mjs
-node scripts/smoke-spill-size.mjs
-node scripts/smoke-spill-large.mjs
-node scripts/ensure-image-integration.mjs
 ```
 
 Note the layered meaning of "test" in this monorepo:
@@ -98,21 +85,20 @@ Vitest unit tests, `packages/core/src/__tests__/` (pure logic, mocked I/O):
 
 Root `node --test`, `scripts/*.test.mjs` (contract + pure-render tests):
 
-| File                             | Covers                                                                       |
-| -------------------------------- | ---------------------------------------------------------------------------- |
-| `release-please-config.test.mjs` | Reproduces release-please path attribution; catches component-scoping drift. |
-| `runner-floating-ref.test.mjs`   | `isFloatingRef` — when `ensureImage` must re-pull vs. short-circuit.         |
-| `update-status-table.test.mjs`   | `renderStatusTable` / `replaceBlock` for the RELEASING.md status block.      |
+| File                                 | Covers                                                                       |
+| ------------------------------------ | ---------------------------------------------------------------------------- |
+| `release-please-config.test.mjs`     | Reproduces release-please path attribution; catches component-scoping drift. |
+| `registries-not-behind-git.test.mjs` | Guards that published npm versions don't lag their git release tags.         |
+| `update-status-table.test.mjs`       | `renderStatusTable` / `replaceBlock` for the RELEASING.md status block.      |
 
 Smoke scripts in `scripts/` (import the built `dist/`, so run after `pnpm -r build`):
 
-| Script                         | Checks                                                                                                            |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `smoke-render.mjs`             | Four of the five `renderTemplate` tag forms (`@include`, `@spill`, `!?`, `{{ INPUTS }}`) on a synthetic template. |
-| `smoke-templates.mjs`          | The real shipped `afk.md` / `ghafk.md` / `review.md` render and stay small.                                       |
-| `smoke-spill-size.mjs`         | Heavy `@spill` output lands in the spill file, not the prompt.                                                    |
-| `smoke-spill-large.mjs`        | A ~200 KB `@spill` payload spills while the prompt keeps only a short ref path.                                   |
-| `ensure-image-integration.mjs` | `ensureImage` against the real `docker` CLI (re-pull / fallback / pinned).                                        |
+| Script                  | Checks                                                                                                            |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `smoke-render.mjs`      | Four of the five `renderTemplate` tag forms (`@include`, `@spill`, `!?`, `{{ INPUTS }}`) on a synthetic template. |
+| `smoke-templates.mjs`   | The real shipped `afk.md` / `ghafk.md` / `review.md` render and stay small.                                       |
+| `smoke-spill-size.mjs`  | Heavy `@spill` output lands in the spill file, not the prompt.                                                    |
+| `smoke-spill-large.mjs` | A ~200 KB `@spill` payload spills while the prompt keeps only a short ref path.                                   |
 
 ## Pre-commit hook
 
@@ -135,12 +121,12 @@ bypass. If hooks didn't install (e.g. you cloned without `pnpm install`), run
 ```
 packages/core/          @daonhan/ralph-core (library; the only built package)
   src/                  12 TS modules + __tests__/  (see docs/ARCHITECTURE.md)
-  templates/            prompt.md, ghprompt.md, afk.md, ghafk.md, review.md, Dockerfile
+  templates/            prompt.md, ghprompt.md, afk.md, ghafk.md, review.md
   dist/                 tsc output (gitignored)
 apps/cli/               @daonhan/ralph (hand-written JS bins; no build)
   bin/                  ralph-afk.js, ralph-ghafk.js
 scripts/                *.test.mjs + smoke-*.mjs + update-status-table.mjs
-.github/workflows/      release-please.yml, publish-npm.yml, publish-image.yml
+.github/workflows/      release-please.yml, publish-npm.yml
 RELEASING.md            release/publish source of truth
 ```
 
@@ -165,8 +151,8 @@ Three steps:
 Hard invariants:
 
 - **`permissionMode` must be `"bypassPermissions"`** — never `acceptEdits`. AFK
-  requires non-interactive bash/edit approval; blast radius is bounded to the
-  bind-mounted workspace tree and is git-recoverable.
+  requires non-interactive bash/edit approval; under the default `sandbox` runner
+  the blast radius is bounded to the workspace tree and is git-recoverable.
 - **The first stage of a chain is the gate.** Only index 0 is sentinel-checked for
   the exact literal `<promise>NO MORE TASKS</promise>`; the reviewer never gates.
   Place any gating stage at index 0.
@@ -197,8 +183,7 @@ The agent playbooks are plain Markdown, each self-contained:
 
 - [`packages/core/templates/prompt.md`](./packages/core/templates/prompt.md) — the
   `ralph-afk` (plan/PRD) playbook: where the work comes from (`<inputs>`) + progress recording,
-  plus the task-priority ladder, feedback loops (incl. the dotnet MSB3248 workaround), commit
-  rules, and final rules.
+  plus the task-priority ladder, feedback loops, commit rules, and final rules.
 - [`packages/core/templates/ghprompt.md`](./packages/core/templates/ghprompt.md) — the
   `ralph-ghafk` (GitHub-issue) playbook: issue triage + close/comment the issue, plus the same
   shared task ladder / feedback loops / commit rules / final rules.
@@ -243,9 +228,8 @@ Releasing is **automated** — you do not bump versions or publish by hand.
 [`./RELEASING.md`](./RELEASING.md) is the single source of truth (it supersedes the
 `docs/PUBLISHING.md` stub); this section is just the shape of the flow.
 
-The repo ships three independently versioned components: `@daonhan/ralph-core`
-(0.6.1), `@daonhan/ralph` (0.6.1), and the synthetic `ralph-sandbox` Docker image
-(0.2.1). Flow:
+The repo ships two independently versioned npm components: `@daonhan/ralph-core`
+and `@daonhan/ralph`. Flow:
 
 1. Land Conventional-Commit work on `main` (see [Conventions](#conventions-to-preserve)).
 2. `release-please.yml` opens **one Release PR per component** with unreleased commits.
@@ -254,13 +238,9 @@ The repo ships three independently versioned components: `@daonhan/ralph-core`
    - `ralph-core-v*` / `ralph-v*` → `publish-npm.yml` (publishes to npm; rewrites the
      CLI's `workspace:^` to the concrete core version; attaches `.tgz` + SBOM + cosign
      attestation to the Release).
-   - `ralph-sandbox-v*` (plus a legacy `image-v*` shim) → `publish-image.yml` (builds a
-     **single-arch `linux/amd64`** image, pushes to Docker Hub, pins the `sha256:` digest
-     - SBOM + attestation into the Release).
 
 Required secrets: `RELEASE_PLEASE_TOKEN` (a PAT — a tag made with the default
-`GITHUB_TOKEN` will **not** trigger the downstream publish workflows), `NPM_TOKEN`,
-`DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
+`GITHUB_TOKEN` will **not** trigger the downstream publish workflows), `NPM_TOKEN`.
 
 See [`./RELEASING.md`](./RELEASING.md) for the version policy, `Release-As:`
 overrides, the rollback runbook, and the compatibility matrix.
@@ -284,5 +264,5 @@ overrides, the rollback runbook, and the compatibility matrix.
   `@spill` tags run their command body on the **host shell**. Only ever put static
   command strings in a tag body — never interpolate runtime or untrusted data (INPUTS,
   issue/commit text, branch names) into one. `{{ INPUTS }}` is substituted last and is
-  read by the agent inside the container, never re-shelled on the host. Breaking this
+  read by the agent from the prompt file, never re-shelled on the host. Breaking this
   invariant is direct host RCE — see [`./SECURITY.md`](./SECURITY.md).
