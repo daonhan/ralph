@@ -39,13 +39,13 @@ claude --help 2>&1 | grep -iE "settings|sandbox|permission-mode" || echo "no mat
 claude --version
 ```
 
-- [ ] **Step 2: Record the decision rules**
+- [x] **Step 2: Record the decision rules** — RESOLVED 2026-06-14 (claude 2.1.177)
 
-Confirm and note in the PR description:
-1. `--settings <file>` is accepted (a JSON file path). If only `--settings <json>` inline is supported, `runStage` will pass inline JSON instead of a temp-file path — the rest of the plan is unchanged except `buildSandboxSettings` output is `JSON.stringify`'d straight into the arg.
-2. Default network behavior when the settings JSON has **no** `sandbox.network` block. Expected/desired: network unrestricted. If the installed version instead **prompts** on first domain (which would stall a non-interactive run), set the `RALPH_SANDBOX_NET` default in Task 2's `resolveSandboxNet` to a baked-in allowlist `["api.anthropic.com", "github.com", "registry.npmjs.org", "*.nuget.org"]` rather than `[]`. Otherwise keep `[]` (truly unrestricted).
-
-Expected: both confirmed before writing code. This task gates the network default chosen in Task 2.
+Findings (from `claude --help` + https://code.claude.com/docs/en/sandboxing.md):
+1. **`--settings <file-or-json>` accepts a file path.** Use a temp-file path (plan unchanged).
+2. **Network default = no block.** No domains are pre-allowed; a sandboxed command needing a non-allowed host **falls back to the regular permission flow**, which under `--permission-mode bypassPermissions` auto-approves and runs the command **unsandboxed** (the `allowUnsandboxedCommands` escape hatch is ON by default). So `npm install`/`dotnet restore` do **not** hang — they run unsandboxed. Filesystem confinement is the blast-radius control. → `resolveSandboxNet` keeps `[]` default (no `network` block); `RALPH_SANDBOX_NET` is the opt-in allowlist. Do **not** set `allowUnsandboxedCommands: false` (would break network commands).
+3. **macOS Go-TLS gotcha:** `gh`/`gcloud`/`terraform` fail TLS under Seatbelt → bake `excludedCommands: ["gh *","gcloud *","terraform *"]` into the default settings (Task 2 updated).
+4. **`bypassPermissions` stays required** — Read/Edit/Write use the permission system, not the sandbox.
 
 ---
 
@@ -94,9 +94,13 @@ describe("resolveSandboxNet", () => {
 });
 
 describe("buildSandboxSettings", () => {
-  it("confines writes to the workspace and omits network when no domains", () => {
+  it("confines writes to the workspace, excludes Go-TLS CLIs, omits network when no domains", () => {
     expect(buildSandboxSettings("/ws", [])).toEqual({
-      sandbox: { enabled: true, filesystem: { allowWrite: ["/ws"] } },
+      sandbox: {
+        enabled: true,
+        filesystem: { allowWrite: ["/ws"] },
+        excludedCommands: ["gh *", "gcloud *", "terraform *"],
+      },
     });
   });
   it("adds an allowedDomains network block when domains are given", () => {
@@ -104,6 +108,7 @@ describe("buildSandboxSettings", () => {
       sandbox: {
         enabled: true,
         filesystem: { allowWrite: ["/ws"] },
+        excludedCommands: ["gh *", "gcloud *", "terraform *"],
         network: { allowedDomains: ["github.com"] },
       },
     });
@@ -137,10 +142,16 @@ export function resolveSandboxNet(raw: string | undefined): string[] {
     .filter(Boolean);
 }
 
+// Go-based CLIs fail TLS verification under macOS Seatbelt; run them outside the
+// sandbox so `gh`/`gcloud`/`terraform` keep working (ralph-ghafk relies on gh).
+const SANDBOX_EXCLUDED_COMMANDS = ["gh *", "gcloud *", "terraform *"];
+
 /**
- * Claude Code native-sandbox settings: confine writes to the workspace. When
- * `allowedDomains` is non-empty, also restrict network egress to that list;
- * otherwise leave network unrestricted (filesystem is the blast-radius control).
+ * Claude Code native-sandbox settings: confine writes to the workspace and run
+ * the Go-TLS CLIs unsandboxed. When `allowedDomains` is non-empty, also restrict
+ * network egress to that list; otherwise leave network unrestricted (filesystem
+ * is the blast-radius control; network commands fall back to the bypass-approved
+ * escape hatch).
  */
 export function buildSandboxSettings(
   workspaceDir: string,
@@ -149,6 +160,7 @@ export function buildSandboxSettings(
   const sandbox: Record<string, unknown> = {
     enabled: true,
     filesystem: { allowWrite: [workspaceDir] },
+    excludedCommands: SANDBOX_EXCLUDED_COMMANDS,
   };
   if (allowedDomains.length > 0) {
     sandbox.network = { allowedDomains };
@@ -156,8 +168,6 @@ export function buildSandboxSettings(
   return { sandbox };
 }
 ```
-
-> If Task 1 found that an absent network block causes prompts, change `resolveSandboxNet`'s `if (!raw) return [];` to `return ["api.anthropic.com", "github.com", "registry.npmjs.org", "*.nuget.org"];`.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
