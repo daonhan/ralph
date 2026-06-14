@@ -17,15 +17,13 @@ const INCLUDE_TAG = /@include:([^\s`)]+)/g;
 // substitutes the container-relative file path in the prompt. The `?` form treats
 // non-zero exits as success and writes the fallback string instead of throwing.
 const SPILL_TAG = /@spill(\??):([^\s=]+)=`([^`]+)`/g;
-const INPUTS_TAG = /\{\{\s*INPUTS\s*\}\}/g;
+const GENERIC_TAG = /\{\{\s*([A-Z0-9_]+)\s*\}\}/g;
 const TRY_SEP = "|||";
 // Cap on captured stdout for every shell/@spill tag (64 MiB). Large outputs are
 // meant to go through @spill (written to a file), not be inlined into the prompt.
 const SPILL_MAX_BUFFER = 64 * 1024 * 1024;
 
-export type RenderVars = {
-  INPUTS: string;
-};
+export type RenderVars = Record<string, string>;
 
 export type RenderOptions = {
   cwd?: string;
@@ -143,5 +141,10 @@ export function renderTemplate(
     });
     return out.replace(/\r?\n$/, "");
   });
-  return afterShell.replace(INPUTS_TAG, vars.INPUTS);
+  // SECURITY: generic substitution is the last pass and never re-shelled.
+  // INPUTS, LENS, FINDINGS_DIR, etc. are harness constants — no new injection surface.
+  // Unknown {{ TAG }} are left untouched.
+  return afterShell.replace(GENERIC_TAG, (match, key: string) =>
+    Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : match
+  );
 }
