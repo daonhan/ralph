@@ -7,6 +7,7 @@ import {
   resolveModelArgs,
   resolveRunner,
   resolveSandboxNet,
+  resultFromEvent,
 } from "../runner.js";
 
 describe("parseGraceMs", () => {
@@ -122,6 +123,41 @@ describe("buildSandboxSettings", () => {
         excludedCommands: ["gh *", "gcloud *", "terraform *"],
         network: { allowedDomains: ["github.com"] },
       },
+    });
+  });
+});
+
+describe("resultFromEvent", () => {
+  it("extracts result/cost/error fields from a result event", () => {
+    expect(
+      resultFromEvent({
+        type: "result",
+        result: "done",
+        total_cost_usd: 0.39,
+        is_error: false,
+        api_error_status: null,
+      })
+    ).toEqual({
+      result: "done",
+      costUsd: 0.39,
+      isError: false,
+      apiErrorStatus: null,
+    });
+  });
+  it("defaults missing fields safely", () => {
+    expect(resultFromEvent({})).toEqual({
+      result: "",
+      costUsd: 0,
+      isError: false,
+      apiErrorStatus: null,
+    });
+  });
+  it("captures an error status string", () => {
+    expect(
+      resultFromEvent({ is_error: true, api_error_status: "429" })
+    ).toMatchObject({
+      isError: true,
+      apiErrorStatus: "429",
     });
   });
 });

@@ -7,4 +7,4 @@ export {
   type RenderOptions,
   type RenderVars,
 } from "./render.js";
-export { runStage } from "./runner.js";
+export { runStage, type StageResult } from "./runner.js";

@@ -4,6 +4,7 @@ import { dirname, join, posix } from "node:path";
 import { readCoreVersion } from "./cli-help.js";
 import { acquire, type Releaser } from "./keepalive.js";
 import { notifyComplete, notifyError } from "./notify.js";
+import { sleep, isThrottle, nextCooldownFactor } from "./pacing.js";
 import { renderTemplate } from "./render.js";
 import {
   DEFAULT_BACKOFF_MS,
@@ -11,7 +12,7 @@ import {
   backoffFor,
   withRetries,
 } from "./retry.js";
-import { runStage, stageLogPath } from "./runner.js";
+import { runStage, stageLogPath, type StageResult } from "./runner.js";
 import {
   USE_COLOR,
   dim,
@@ -49,6 +50,10 @@ export type LoopOptions = {
   bin?: string;
   /** CLI version for the init-time version banner. */
   cliVersion?: string;
+  /** Stop the loop when cumulative stage cost reaches this USD ceiling. */
+  budgetUsd?: number;
+  /** Milliseconds to wait between iterations. 0 = no cooldown. */
+  cooldownMs?: number;
 };
 
 export async function runLoop(opts: LoopOptions): Promise<void> {
@@ -63,6 +68,8 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     notify = false,
     bin = "ralph",
     cliVersion = "?",
+    budgetUsd,
+    cooldownMs = 0,
   } = opts;
 
   const versionLine = `${bin} ${cliVersion} (core ${readCoreVersion()})`;
@@ -104,13 +111,24 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
 
   let completedIterations = 0;
   let sentinelHit = false;
+  let runCostUsd = 0;
+  let cooldownFactor = 1;
   try {
     for (let i = 1; i <= iterations; i++) {
       for (let s = 0; s < stages.length; s++) {
         const stage = stages[s];
+
+        // Budget gate: check before running each stage.
+        if (budgetUsd != null && runCostUsd >= budgetUsd) {
+          process.stdout.write(
+            `${greenOut(SYM_OUT.bullet)} ${boldOut("budget reached")}${dimOut(` $${runCostUsd.toFixed(2)} ≥ $${budgetUsd.toFixed(2)} after ${i - 1} iterations`)}\n`
+          );
+          return;
+        }
+
         const banner = USE_COLOR
-          ? `${dim("\u2501\u2501\u2501")} ${bold(`iteration ${i}/${iterations}`)} ${dim("\u00b7")} ${bold(stage.name)} ${dim(`(stage ${s + 1}/${stages.length})`)} ${dim("\u2501\u2501\u2501")}`
-          : `== iteration ${i}/${iterations} \u00b7 ${stage.name} (stage ${s + 1}/${stages.length}) ==`;
+          ? `${dim("━━━")} ${bold(`iteration ${i}/${iterations}`)} ${dim("·")} ${bold(stage.name)} ${dim(`(stage ${s + 1}/${stages.length})`)} ${dim("━━━")}`
+          : `== iteration ${i}/${iterations} · ${stage.name} (stage ${s + 1}/${stages.length}) ==`;
         process.stderr.write(`\n${banner}\n`);
         const templatePath = join(packageDir, "templates", stage.template);
         const spillRel = `spill-${process.pid}-${i}-${s}-${Date.now()}`;
@@ -120,9 +138,9 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         const stageLog = stageLogPath(workspaceDir, i, stage.name);
         mkdirSync(dirname(stageLog), { recursive: true });
 
-        let result: string;
+        let sr: StageResult;
         try {
-          result = await withRetries(
+          sr = await withRetries(
             () => {
               // Render inside the retry: a failing template shell/@spill tag
               // (e.g. a flaky `gh issue list`) is retried with backoff instead
@@ -172,8 +190,18 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
           break;
         }
 
+        // Accumulate cost and report.
+        runCostUsd += sr.costUsd;
+        process.stderr.write(
+          `${dim(`· $${sr.costUsd.toFixed(2)} (run $${runCostUsd.toFixed(2)})`)}\n`
+        );
+        cooldownFactor = nextCooldownFactor(
+          cooldownFactor,
+          isThrottle(sr.apiErrorStatus)
+        );
+
         if (s === 0) {
-          if (result.includes(SENTINEL)) {
+          if (sr.result.includes(SENTINEL)) {
             const msg =
               greenOut(SYM_OUT.bullet) +
               " " +
@@ -187,6 +215,17 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         }
       }
       completedIterations = i;
+
+      // Cooldown between iterations.
+      if (cooldownMs > 0 && i < iterations) {
+        const wait = cooldownMs * cooldownFactor;
+        if (cooldownFactor > 1) {
+          process.stderr.write(
+            `${dim(`cooldown ×${cooldownFactor} → ${wait}ms (throttle backoff)`)}\n`
+          );
+        }
+        await sleep(wait, stageAbort.signal);
+      }
     }
   } catch (err) {
     if (notify) notifyError((err as Error).message);

@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   notifyError: vi.fn(),
   release: vi.fn(),
   runStage: vi.fn(),
+  sleep: vi.fn(),
 }));
 
 vi.mock("../keepalive.js", () => ({
@@ -39,6 +40,14 @@ vi.mock("../runner.js", () => ({
     ),
 }));
 
+vi.mock("../pacing.js", () => ({
+  sleep: mocks.sleep,
+  isThrottle: (s: string | null) =>
+    s != null && /429|overload|rate.?limit/i.test(s),
+  nextCooldownFactor: (prev: number, throttled: boolean, cap = 8) =>
+    throttled ? Math.min(prev * 2, cap) : 1,
+}));
+
 vi.mock("../stream-render.js", () => ({
   USE_COLOR: false,
   dim: (s: string) => s,
@@ -55,6 +64,18 @@ import { runLoop } from "../loop.js";
 
 const stage: Stage = { name: "implementer", template: "stage.md" };
 const sentinel = "<promise>NO MORE TASKS</promise>";
+
+// Helper to build a StageResult-shaped object.
+const ok = (
+  result: string,
+  costUsd = 0,
+  apiErrorStatus: string | null = null
+) => ({
+  result,
+  costUsd,
+  isError: apiErrorStatus != null,
+  apiErrorStatus,
+});
 
 type LoopDirs = {
   root: string;
@@ -96,6 +117,7 @@ describe("runLoop", () => {
     vi.useRealTimers();
     for (const mock of Object.values(mocks)) mock.mockReset();
     mocks.acquire.mockReturnValue({ release: mocks.release });
+    mocks.sleep.mockResolvedValue(undefined);
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   });
@@ -111,7 +133,7 @@ describe("runLoop", () => {
   it("acquires the wake-lock and releases on completion", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
-    mocks.runStage.mockResolvedValue(sentinel);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
 
     await runLoop(loopOptions(dirs, { notify: true }));
 
@@ -124,7 +146,7 @@ describe("runLoop", () => {
   it("prints the cli + core version banner at loop init", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
-    mocks.runStage.mockResolvedValue(sentinel);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
 
     await runLoop(loopOptions(dirs, { bin: "ralph-afk", cliVersion: "9.9.9" }));
 
@@ -139,7 +161,7 @@ describe("runLoop", () => {
   it("uses the bin name in the wake-lock reason", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
-    mocks.runStage.mockResolvedValue(sentinel);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
 
     await runLoop(loopOptions(dirs, { bin: "ralph-ghafk" }));
 
@@ -151,7 +173,7 @@ describe("runLoop", () => {
     roots.push(dirs.root);
     mocks.runStage
       .mockRejectedValueOnce(new Error("boom"))
-      .mockResolvedValueOnce(sentinel);
+      .mockResolvedValueOnce(ok(sentinel));
 
     await runLoop(loopOptions(dirs, { iterations: 2, maxRetries: 0 }));
 
@@ -171,7 +193,7 @@ describe("runLoop", () => {
     roots.push(dirs.root);
     mocks.runStage
       .mockRejectedValueOnce(new Error("flaky"))
-      .mockResolvedValueOnce(sentinel);
+      .mockResolvedValueOnce(ok(sentinel));
 
     const loop = runLoop(loopOptions(dirs, { maxRetries: 1 }));
     await Promise.resolve();
@@ -279,5 +301,55 @@ describe("runLoop", () => {
     await loop;
     expect(mocks.release).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledWith(143);
+  });
+
+  it("stops cleanly once cumulative cost reaches the budget", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const reviewer: Stage = { name: "reviewer", template: "stage.md" };
+    // Each implementer stage costs $0.60; reviewer $0; never emits the sentinel.
+    mocks.runStage.mockImplementation((s) =>
+      Promise.resolve(
+        ok(
+          s.name === "implementer" ? "keep going" : "ok",
+          s.name === "implementer" ? 0.6 : 0
+        )
+      )
+    );
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [stage, reviewer] as [Stage, Stage],
+        iterations: 5,
+        budgetUsd: 1.0,
+        maxRetries: 0,
+      })
+    );
+    // iter1: impl(0.6)+rev(0) = 0.6 < 1.0 → iter2 impl pushes to 1.2; budget halts before iter2 reviewer or iter3.
+    // implementer ran twice, reviewer ran once.
+    const implCalls = mocks.runStage.mock.calls.filter(
+      (c) => c[0].name === "implementer"
+    ).length;
+    expect(implCalls).toBe(2);
+  });
+
+  it("sleeps between iterations when a cooldown is set", async () => {
+    vi.useFakeTimers();
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(ok("keep going")); // never sentinel
+    // Override the sleep mock to actually resolve after fake timer advances.
+    mocks.sleep.mockImplementation(
+      (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+    );
+    const loop = runLoop(
+      loopOptions(dirs, { iterations: 2, cooldownMs: 3000, maxRetries: 0 })
+    );
+    // Let iter1 run to completion (runStage mock resolves immediately).
+    await vi.advanceTimersByTimeAsync(0);
+    // After iter1, the loop should be parked in sleep(3000).
+    // Advance past the cooldown to let iter2 run.
+    await vi.advanceTimersByTimeAsync(3000);
+    await loop;
+    expect(mocks.runStage).toHaveBeenCalledTimes(2);
   });
 });

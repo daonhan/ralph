@@ -22,6 +22,25 @@ export type RunStageOptions = {
   signal?: AbortSignal;
 };
 
+export type StageResult = {
+  result: string;
+  costUsd: number;
+  isError: boolean;
+  apiErrorStatus: string | null;
+};
+
+/** Pure extraction of the fields Ralph tracks from a stream-json `result` event. */
+export function resultFromEvent(ev: unknown): StageResult {
+  const e = (ev ?? {}) as Record<string, unknown>;
+  return {
+    result: typeof e.result === "string" ? e.result : "",
+    costUsd: typeof e.total_cost_usd === "number" ? e.total_cost_usd : 0,
+    isError: e.is_error === true,
+    apiErrorStatus:
+      typeof e.api_error_status === "string" ? e.api_error_status : null,
+  };
+}
+
 const STDERR_TAIL_LINES = 40;
 const DEFAULT_RESULT_GRACE_MS = 30_000;
 
@@ -165,7 +184,7 @@ export async function runStage(
   spillHostDir?: string,
   logPathOverride?: string,
   options: RunStageOptions = {}
-): Promise<string> {
+): Promise<StageResult> {
   const tmpHostDir = join(workspaceDir, ".ralph-tmp");
   mkdirSync(tmpHostDir, { recursive: true });
 
@@ -214,7 +233,7 @@ function streamClaude(
   cwd: string,
   logPath: string,
   options: RunStageOptions = {}
-): Promise<string> {
+): Promise<StageResult> {
   if (options.signal?.aborted) {
     return Promise.reject(abortError());
   }
@@ -230,7 +249,12 @@ function streamClaude(
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    let finalResult = "";
+    let final: StageResult = {
+      result: "",
+      costUsd: 0,
+      isError: false,
+      apiErrorStatus: null,
+    };
     const stderrTail: string[] = [];
     let settled = false;
     let onAbort = (): void => {};
@@ -265,7 +289,8 @@ function streamClaude(
     };
 
     const rejectOnce = (err: unknown): void => finish(() => reject(err));
-    const resolveOnce = (value: string): void => finish(() => resolve(value));
+    const resolveOnce = (value: StageResult): void =>
+      finish(() => resolve(value));
 
     onAbort = (): void => {
       try {
@@ -291,8 +316,7 @@ function streamClaude(
       }
       renderEvent(parsed, toolMap);
       if (parsed.type === "result") {
-        const r = (parsed as { result?: string }).result;
-        if (typeof r === "string") finalResult = r;
+        final = resultFromEvent(parsed);
         // Arm one-shot post-result grace timer to recover from claude-CLI
         // self-deadlocks where the child emits its final NDJSON but never
         // exits. See docs/prd/result-grace-timer.md.
@@ -307,7 +331,7 @@ function streamClaude(
             } catch {
               // Already dead; close handler will be a no-op via settle guard.
             }
-            resolveOnce(finalResult);
+            resolveOnce(final);
           }, graceMs);
           graceTimer.unref?.();
         }
@@ -338,7 +362,7 @@ function streamClaude(
         );
         return;
       }
-      resolveOnce(finalResult);
+      resolveOnce(final);
     });
   });
 }
