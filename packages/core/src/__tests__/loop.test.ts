@@ -332,6 +332,25 @@ describe("runLoop", () => {
     expect(implCalls).toBe(2);
   });
 
+  it("returns a LoopOutcome with accumulated cost and sentinel flag", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(ok(sentinel, 0.25));
+    const outcome = await runLoop(loopOptions(dirs));
+    expect(outcome).toMatchObject({ sentinelHit: true });
+    expect(outcome.costUsd).toBeCloseTo(0.25);
+  });
+
+  it("uses an injected signal and installs no process signal handlers", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+    const before = process.listenerCount("SIGINT");
+    const ac = new AbortController();
+    await runLoop(loopOptions(dirs, { signal: ac.signal }));
+    expect(process.listenerCount("SIGINT")).toBe(before); // none added/left behind
+  });
+
   it("sleeps between iterations when a cooldown is set", async () => {
     vi.useFakeTimers();
     const dirs = makeDirs();

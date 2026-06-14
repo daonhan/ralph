@@ -1,6 +1,6 @@
 export { runAfk } from "./main.js";
 export { runGhAfk } from "./gh-main.js";
-export { runLoop, type LoopOptions } from "./loop.js";
+export { runLoop, type LoopOptions, type LoopOutcome } from "./loop.js";
 export { STAGES, type Stage } from "./stages.js";
 export {
   renderTemplate,

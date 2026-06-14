@@ -50,9 +50,15 @@ export type LoopOptions = {
   cooldownMs?: number;
   /** Opt-in reviewer panel: replace the single reviewer stage with K read-only lens reviewers + one synth commit. */
   reviewLenses?: string[];
+  /** Injected AbortSignal for daemon callers (e.g. watch mode). When provided,
+   *  runLoop skips wake-lock acquisition and process signal handler installation;
+   *  the caller owns both. */
+  signal?: AbortSignal;
 };
 
-export async function runLoop(opts: LoopOptions): Promise<void> {
+export type LoopOutcome = { costUsd: number; sentinelHit: boolean };
+
+export async function runLoop(opts: LoopOptions): Promise<LoopOutcome> {
   const {
     stages,
     inputs,
@@ -67,6 +73,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     budgetUsd,
     cooldownMs = 0,
     reviewLenses,
+    signal: externalSignal,
   } = opts;
 
   const versionLine = `${bin} ${cliVersion} (core ${readCoreVersion()})`;
@@ -74,10 +81,14 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     `${USE_COLOR ? `${dim("━━━")} ${bold(versionLine)} ${dim("━━━")}` : `== ${versionLine} ==`}\n`
   );
 
-  const releaser: Releaser = noKeepAlive
-    ? { release: () => {} }
-    : acquire({ reason: `${bin} loop` });
-  const stageAbort = new AbortController();
+  // When an external signal is injected (daemon/watch mode), the caller owns
+  // wake-lock + process signal handlers. Skip both here.
+  const releaser: Releaser =
+    externalSignal || noKeepAlive
+      ? { release: () => {} }
+      : acquire({ reason: `${bin} loop` });
+  const stageAbort = externalSignal ? undefined : new AbortController();
+  const activeSignal = externalSignal ?? stageAbort!.signal;
 
   // Single release path: signal handlers and the finally below all funnel
   // through releaseOnce so the wake-lock child is killed exactly once.
@@ -87,24 +98,28 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     released = true;
     releaser.release();
   };
-  const abortActiveStage = (): void => {
-    if (!stageAbort.signal.aborted) stageAbort.abort();
-  };
 
-  const onSigint = (): void => {
-    abortActiveStage();
-    if (notify) notifyError("interrupted (SIGINT)");
-    releaseOnce();
-    process.exit(130);
-  };
-  const onSigterm = (): void => {
-    abortActiveStage();
-    if (notify) notifyError("terminated (SIGTERM)");
-    releaseOnce();
-    process.exit(143);
-  };
-  process.on("SIGINT", onSigint);
-  process.on("SIGTERM", onSigterm);
+  let onSigint: (() => void) | undefined;
+  let onSigterm: (() => void) | undefined;
+  if (!externalSignal) {
+    const abortActiveStage = (): void => {
+      if (!stageAbort!.signal.aborted) stageAbort!.abort();
+    };
+    onSigint = (): void => {
+      abortActiveStage();
+      if (notify) notifyError("interrupted (SIGINT)");
+      releaseOnce();
+      process.exit(130);
+    };
+    onSigterm = (): void => {
+      abortActiveStage();
+      if (notify) notifyError("terminated (SIGTERM)");
+      releaseOnce();
+      process.exit(143);
+    };
+    process.on("SIGINT", onSigint);
+    process.on("SIGTERM", onSigterm);
+  }
 
   let completedIterations = 0;
   let sentinelHit = false;
@@ -120,7 +135,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
           process.stdout.write(
             `${greenOut(SYM_OUT.bullet)} ${boldOut("budget reached")}${dimOut(` $${runCostUsd.toFixed(2)} ≥ $${budgetUsd.toFixed(2)} after ${i - 1} iterations`)}\n`
           );
-          return;
+          return { costUsd: runCostUsd, sentinelHit };
         }
 
         const banner = USE_COLOR
@@ -143,7 +158,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
               iteration: i,
               maxRetries,
               cooldownMs,
-              signal: stageAbort.signal,
+              signal: activeSignal,
               onCost: (c: number) => {
                 runCostUsd += c;
               },
@@ -156,10 +171,13 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
               packageDir,
               iteration: i,
               maxRetries,
-              signal: stageAbort.signal,
+              signal: activeSignal,
             });
           }
         } catch (err) {
+          if (activeSignal.aborted) {
+            return { costUsd: runCostUsd, sentinelHit };
+          }
           // terminal failure marker — write to the same log path executeStage used.
           const stageLog = stageLogPath(workspaceDir, i, stage.name);
           const failureMarker = `[failure] iteration ${i} stage ${stage.name} failed after ${maxRetries} retries: ${(err as Error).message}`;
@@ -194,7 +212,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
             process.stdout.write(msg + "\n");
             sentinelHit = true;
             completedIterations = i;
-            return;
+            return { costUsd: runCostUsd, sentinelHit };
           }
         }
       }
@@ -208,18 +226,19 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
             `${dim(`cooldown ×${cooldownFactor} → ${wait}ms (throttle backoff)`)}\n`
           );
         }
-        await sleep(wait, stageAbort.signal);
+        await sleep(wait, activeSignal);
       }
     }
   } catch (err) {
     if (notify) notifyError((err as Error).message);
     throw err;
   } finally {
-    process.off("SIGINT", onSigint);
-    process.off("SIGTERM", onSigterm);
+    if (onSigint) process.off("SIGINT", onSigint);
+    if (onSigterm) process.off("SIGTERM", onSigterm);
     releaseOnce();
     if (notify && (sentinelHit || completedIterations === iterations)) {
       notifyComplete(completedIterations, sentinelHit);
     }
   }
+  return { costUsd: runCostUsd, sentinelHit };
 }
