@@ -88,6 +88,8 @@ Shell resolution lives in `resolveShell()` in `render.ts`: Linux/macOS → `/bin
 
 Every run writes to `<workspaceDir>/.ralph-tmp/` on the host (gitignored): the rendered prompt as `.run-<pid>-<iter>-<ts>.md` (cleaned in `finally`, may leak on SIGKILL — safe to delete) a per-stage spill dir `spill-<pid>-<iter>-<stageIdx>-<ts>/` holding `@spill` output (also cleaned in `finally`), and the NDJSON stream log as `logs/<ts>-iter<N>-<stageName>.ndjson` (kept; `--detach` adds `logs/detached-<pid>.log`).
 
+Separately, `<workspaceDir>/.ralph/LEARNINGS.md` (note: `.ralph/`, **not** `.ralph-tmp/`) is a **git-tracked** memory file: the implementer playbooks (`prompt.md` / `ghprompt.md`) read it via the `<learnings>` block injected into every stage prompt and append durable, reusable learnings (conventions, gotchas, decisions, dead ends) to it as part of their work commit. Created lazily by the agent on the first learning; absent-file safe via the `!?` fallback.
+
 ### Credentials
 
 `claude` and `gh` on the host read `~/.claude`, `~/.claude.json`, and `~/.config/gh` natively — no mounts needed. Run `claude /login` and `gh auth login` once in the shell you use to invoke the bins.

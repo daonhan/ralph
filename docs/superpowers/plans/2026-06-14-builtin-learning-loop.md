@@ -368,7 +368,7 @@ The reviewer/synth stages commit, so they may append a review-derived learning t
 - Modify: `packages/core/templates/review-synth.md`
 - Modify: `packages/core/templates/review-lens.md`
 
-- [ ] **Step 1: Allow capture in `review.md` (single-reviewer mode)**
+- [x] **Step 1: Allow capture in `review.md` (single-reviewer mode)**
 
 In `packages/core/templates/review.md`, the `# ACTION` block ends with the `If clean:` line. Replace:
 
@@ -384,7 +384,7 @@ If clean: output `<review>OK</review>` and stop. Do NOT commit.
 If the review surfaced a durable, reusable learning (e.g. a recurring defect class worth remembering), append it tersely to the right section of `./.ralph/LEARNINGS.md` as part of your `fix(review):` commit — never as a separate commit, and only when you are already committing a fix.
 ```
 
-- [ ] **Step 2: Allow capture in `review-synth.md`**
+- [x] **Step 2: Allow capture in `review-synth.md`**
 
 In `packages/core/templates/review-synth.md`, extend ACTION step 2. Replace:
 
@@ -398,7 +398,7 @@ with:
      then make a SINGLE commit: `git commit -am "fix(review): <short reason>"` (subject ≤72 chars, no `Co-Authored-By`, no file lists). If a finding reflects a durable, reusable learning (e.g. a recurring defect class), you may also append it tersely to `./.ralph/LEARNINGS.md` so it rides in this same commit.
 ```
 
-- [ ] **Step 3: Reinforce read-only in `review-lens.md`**
+- [x] **Step 3: Reinforce read-only in `review-lens.md`**
 
 In `packages/core/templates/review-lens.md`, extend the `# RULES` block. Replace:
 
@@ -415,12 +415,12 @@ with:
 - Only the {{ LENS }} lens — ignore issues another lens owns.
 ```
 
-- [ ] **Step 4: Verify the render suite still passes**
+- [x] **Step 4: Verify the render suite still passes**
 
 Run: `pnpm --filter @daonhan/ralph-core test -- render learnings`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/core/templates/review.md packages/core/templates/review-synth.md packages/core/templates/review-lens.md
@@ -436,7 +436,7 @@ git commit -m "feat(learnings): let reviewer/synth record learnings; keep lenses
 - Modify: `CLAUDE.md`
 - Modify: `README.md`
 
-- [ ] **Step 1: Note the learnings file in `CLAUDE.md`**
+- [x] **Step 1: Note the learnings file in `CLAUDE.md`**
 
 In `CLAUDE.md`, the `### Per-iteration scratch dir` section documents the gitignored `.ralph-tmp/`. Immediately after that paragraph (the one ending `… --detach adds logs/detached-<pid>.log).`), add a new paragraph:
 
@@ -444,7 +444,7 @@ In `CLAUDE.md`, the `### Per-iteration scratch dir` section documents the gitign
 Separately, `<workspaceDir>/.ralph/LEARNINGS.md` (note: `.ralph/`, **not** `.ralph-tmp/`) is a **git-tracked** memory file: the implementer playbooks (`prompt.md` / `ghprompt.md`) read it via the `<learnings>` block injected into every stage prompt and append durable, reusable learnings (conventions, gotchas, decisions, dead ends) to it as part of their work commit. Created lazily by the agent on the first learning; absent-file safe via the `!?` fallback.
 ```
 
-- [ ] **Step 2: Note the learnings file in `README.md`**
+- [x] **Step 2: Note the learnings file in `README.md`**
 
 In `README.md`, under the `## Architecture` section, add a short bullet/paragraph describing the learning loop. Locate the architecture description and append:
 
@@ -452,12 +452,12 @@ In `README.md`, under the `## Architecture` section, add a short bullet/paragrap
 **Learning loop.** Ralph keeps a git-tracked `.ralph/LEARNINGS.md` in the target repo. Its contents are injected into every implementer/reviewer prompt, and the agent appends durable, reusable learnings (repo conventions, gotchas, decisions, dead ends) to it as it works — so knowledge accumulates across iterations instead of being relearned each run. The file is committed alongside the work; delete it to reset Ralph's memory.
 ```
 
-- [ ] **Step 3: Run the full verification suite**
+- [x] **Step 3: Run the full verification suite**
 
 Run: `pnpm -r typecheck && pnpm -r test && pnpm test`
 Expected: all green. (No TypeScript changed; the new vitest passes; root `node --test` over `scripts/*.test.mjs` unaffected.)
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add CLAUDE.md README.md

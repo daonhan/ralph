@@ -49,6 +49,8 @@ Each iteration runs the stage chain `[implementer, reviewer]`. The implementer i
 
 Prompt templates expand five tag forms before each stage runs, in order — `@include:` (inline a file, no shell), `@spill[?]:` (run a command, write its output to a side file the agent `Read`s), `` !?`cmd|||fallback` `` (try-shell), `` !`cmd` `` (host shell), and `{{ INPUTS }}` (the entry CLI's input arg — the plan/PRD string for `ralph-afk`, empty for `ralph-ghafk`). Full semantics under [Change the template syntax](#change-the-template-syntax); the runtime model lives in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
+**Learning loop.** Ralph keeps a git-tracked `.ralph/LEARNINGS.md` in the target repo. Its contents are injected into every implementer/reviewer prompt, and the agent appends durable, reusable learnings (repo conventions, gotchas, decisions, dead ends) to it as it works — so knowledge accumulates across iterations instead of being relearned each run. The file is committed alongside the work; delete it to reset Ralph's memory.
+
 ---
 
 ## Repo layout
