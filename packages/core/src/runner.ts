@@ -68,6 +68,48 @@ export function resolveModelArgs(raw: string | undefined): string[] {
   return ["--model", trimmed];
 }
 
+export type Runner = "sandbox" | "host";
+
+/** `RALPH_RUNNER=host` → bare host run; anything else (incl. unset) → sandbox. */
+export function resolveRunner(raw: string | undefined): Runner {
+  return raw?.trim() === "host" ? "host" : "sandbox";
+}
+
+/** Parse `RALPH_SANDBOX_NET` into a domain allowlist. Empty = unrestricted. */
+export function resolveSandboxNet(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// Go-based CLIs fail TLS verification under macOS Seatbelt; run them outside the
+// sandbox so `gh`/`gcloud`/`terraform` keep working (ralph-ghafk relies on gh).
+const SANDBOX_EXCLUDED_COMMANDS = ["gh *", "gcloud *", "terraform *"];
+
+/**
+ * Claude Code native-sandbox settings: confine writes to the workspace and run
+ * the Go-TLS CLIs unsandboxed. When `allowedDomains` is non-empty, also restrict
+ * network egress to that list; otherwise leave network unrestricted (filesystem
+ * is the blast-radius control; network commands fall back to the bypass-approved
+ * escape hatch).
+ */
+export function buildSandboxSettings(
+  workspaceDir: string,
+  allowedDomains: string[]
+): Record<string, unknown> {
+  const sandbox: Record<string, unknown> = {
+    enabled: true,
+    filesystem: { allowWrite: [workspaceDir] },
+    excludedCommands: SANDBOX_EXCLUDED_COMMANDS,
+  };
+  if (allowedDomains.length > 0) {
+    sandbox.network = { allowedDomains };
+  }
+  return { sandbox };
+}
+
 /**
  * Locate the sandbox Dockerfile within a build context. The Dockerfile lives at
  * `templates/Dockerfile` so the release-please `ralph-sandbox` component can be

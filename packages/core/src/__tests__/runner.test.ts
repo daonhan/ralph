@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { buildClaudeArgs, parseGraceMs, resolveModelArgs } from "../runner.js";
+import {
+  buildClaudeArgs,
+  buildSandboxSettings,
+  parseGraceMs,
+  resolveModelArgs,
+  resolveRunner,
+  resolveSandboxNet,
+} from "../runner.js";
 
 describe("parseGraceMs", () => {
   it("returns the default when unset", () => {
@@ -67,6 +74,55 @@ describe("resolveModelArgs", () => {
 
   it("trims surrounding whitespace", () => {
     expect(resolveModelArgs("  opus  ")).toEqual(["--model", "opus"]);
+  });
+});
+
+describe("resolveRunner", () => {
+  it("defaults to sandbox when unset", () => {
+    expect(resolveRunner(undefined)).toBe("sandbox");
+  });
+  it("defaults to sandbox for empty / unknown values", () => {
+    expect(resolveRunner("")).toBe("sandbox");
+    expect(resolveRunner("docker")).toBe("sandbox");
+  });
+  it("selects host only for the literal 'host'", () => {
+    expect(resolveRunner("host")).toBe("host");
+    expect(resolveRunner("  host  ")).toBe("host");
+  });
+});
+
+describe("resolveSandboxNet", () => {
+  it("returns [] when unset or empty", () => {
+    expect(resolveSandboxNet(undefined)).toEqual([]);
+    expect(resolveSandboxNet("   ")).toEqual([]);
+  });
+  it("splits, trims, and drops empties", () => {
+    expect(resolveSandboxNet("github.com, api.anthropic.com,")).toEqual([
+      "github.com",
+      "api.anthropic.com",
+    ]);
+  });
+});
+
+describe("buildSandboxSettings", () => {
+  it("confines writes to the workspace, excludes Go-TLS CLIs, omits network when no domains", () => {
+    expect(buildSandboxSettings("/ws", [])).toEqual({
+      sandbox: {
+        enabled: true,
+        filesystem: { allowWrite: ["/ws"] },
+        excludedCommands: ["gh *", "gcloud *", "terraform *"],
+      },
+    });
+  });
+  it("adds an allowedDomains network block when domains are given", () => {
+    expect(buildSandboxSettings("/ws", ["github.com"])).toEqual({
+      sandbox: {
+        enabled: true,
+        filesystem: { allowWrite: ["/ws"] },
+        excludedCommands: ["gh *", "gcloud *", "terraform *"],
+        network: { allowedDomains: ["github.com"] },
+      },
+    });
   });
 });
 
