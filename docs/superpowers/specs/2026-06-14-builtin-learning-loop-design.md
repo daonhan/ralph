@@ -70,10 +70,11 @@ render  → next iteration picks up the updated file
 ## Component 1 — Feedback (read-back), render-time injection
 
 Add one line to each template that renders a prompt, injecting the file via the existing
-try-shell tag with a missing-file fallback:
+try-shell tag with a missing-file fallback (the `|||` fallback separator goes INSIDE the
+backticks, matching the git-log block in `afk.md`):
 
 ```
-!?`cat ./.ralph/LEARNINGS.md` | _No learnings recorded yet._
+!?`cat ./.ralph/LEARNINGS.md|||_No learnings recorded yet._`
 ```
 
 Templates that get the block:
@@ -89,7 +90,7 @@ Placed under a clear heading, e.g.:
 ```markdown
 ## Learnings (accumulated knowledge about this repo)
 
-!?`cat ./.ralph/LEARNINGS.md` | _No learnings recorded yet._
+!?`cat ./.ralph/LEARNINGS.md|||_No learnings recorded yet._`
 ```
 
 ## Component 2 — Capture (write), inline playbook instructions
