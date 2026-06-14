@@ -124,6 +124,8 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
       watchLabel: process.env.RALPH_WATCH_LABEL?.trim() || "ralph",
       budgetUsd: flags.budget,
       cooldownMs: flags.cooldownMs,
+      maxRetries: flags.maxRetries,
+      reviewLenses,
       notify: flags.notify,
       bin: cfg.bin,
       cliVersion: cfg.cliVersion,

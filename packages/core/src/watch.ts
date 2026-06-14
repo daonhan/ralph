@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { acquire, type Releaser } from "./keepalive.js";
 import { runLoop } from "./loop.js";
 import { notifyComplete, notifyError } from "./notify.js";
@@ -17,8 +17,20 @@ import type { Stage } from "./stages.js";
 /** Count open issues carrying `label`, via gh. Returns 0 on any failure (keep polling). */
 export function openIssueCount(label: string, cwd: string): number {
   try {
-    const out = execSync(
-      `gh issue list --state open --label ${JSON.stringify(label)} --json number`,
+    // execFileSync (no shell) so `label` is passed as a literal argv entry — a
+    // value like `$(rm -rf ~)` can never be shell-evaluated. See SECURITY.md.
+    const out = execFileSync(
+      "gh",
+      [
+        "issue",
+        "list",
+        "--state",
+        "open",
+        "--label",
+        label,
+        "--json",
+        "number",
+      ],
       { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
     );
     const arr = JSON.parse(out) as unknown[];
@@ -40,6 +52,8 @@ export type RunWatchOptions = {
   watchLabel: string;
   budgetUsd?: number;
   cooldownMs?: number;
+  maxRetries?: number;
+  reviewLenses?: string[];
   notify?: boolean;
   bin?: string;
   cliVersion?: string;
@@ -57,6 +71,8 @@ export async function runWatch(opts: RunWatchOptions): Promise<void> {
     watchLabel,
     budgetUsd,
     cooldownMs,
+    maxRetries,
+    reviewLenses,
     notify = false,
     bin = "ralph-ghafk",
     countIssues = openIssueCount,
@@ -112,6 +128,8 @@ export async function runWatch(opts: RunWatchOptions): Promise<void> {
           packageDir,
           budgetUsd: remaining,
           cooldownMs,
+          maxRetries,
+          reviewLenses,
           noKeepAlive: true,
           signal: daemonAbort.signal,
           bin,

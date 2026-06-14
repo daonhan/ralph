@@ -47,6 +47,30 @@ describe("runWatch", () => {
     expect(mocks.release).toHaveBeenCalledTimes(1);
   });
 
+  it("forwards maxRetries + reviewLenses (and remaining budget) into runLoop", async () => {
+    const countIssues = vi.fn(() => 1);
+    mocks.runLoop.mockResolvedValue({ costUsd: 3, sentinelHit: true });
+    mocks.sleep.mockResolvedValue(undefined);
+    await runWatch(
+      baseOpts({
+        countIssues,
+        budgetUsd: 5,
+        maxRetries: 0,
+        reviewLenses: ["correctness"],
+      })
+    );
+    // first run gets the full budget remaining + the loop flags that --watch must honor
+    expect(mocks.runLoop).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        maxRetries: 0,
+        reviewLenses: ["correctness"],
+        budgetUsd: 5,
+        noKeepAlive: true,
+      })
+    );
+  });
+
   it("skips the loop and keeps polling when no issues / gh fails", async () => {
     let polls = 0;
     const countIssues = vi.fn(() => {
