@@ -57,6 +57,18 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
       join(workspaceDir, ".ralph-tmp", "logs", `detached-${process.pid}.log`))
     : undefined;
 
+  const DEFAULT_LENSES = ["correctness", "security", "tests"];
+  const envLenses = (process.env.RALPH_REVIEW_LENSES ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const reviewLenses =
+    envLenses.length > 0
+      ? envLenses
+      : flags.reviewPanel
+        ? DEFAULT_LENSES
+        : undefined;
+
   if (flags.printConfig) {
     printConfig(cfg.bin, workspaceDir, packageDir, {
       cliVersion: cfg.cliVersion,
@@ -67,6 +79,7 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
       notify: flags.notify,
       budget: flags.budget,
       cooldownMs: flags.cooldownMs,
+      reviewLenses: reviewLenses ?? [],
     });
     return;
   }
@@ -105,5 +118,6 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
     cliVersion: cfg.cliVersion,
     budgetUsd: flags.budget,
     cooldownMs: flags.cooldownMs,
+    reviewLenses,
   });
 }

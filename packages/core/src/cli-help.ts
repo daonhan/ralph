@@ -15,6 +15,7 @@ export type CliFlags = {
   notify: boolean;
   budget?: number;
   cooldownMs?: number;
+  reviewPanel: boolean;
   rest: string[];
 };
 
@@ -33,6 +34,7 @@ export function parseFlags(argv: string[]): CliFlags {
   let expectingBudget = false;
   let cooldownMs: number | undefined;
   let expectingCooldown = false;
+  let reviewPanel = false;
   const rest: string[] = [];
   for (const a of argv) {
     if (expectingMaxRetries) {
@@ -81,6 +83,7 @@ export function parseFlags(argv: string[]): CliFlags {
     else if (a === "--notify") notify = true;
     else if (a === "--budget") expectingBudget = true;
     else if (a === "--cooldown") expectingCooldown = true;
+    else if (a === "--review-panel") reviewPanel = true;
     else rest.push(a);
   }
   if (expectingMaxRetries) {
@@ -109,6 +112,7 @@ export function parseFlags(argv: string[]): CliFlags {
     notify,
     budget,
     cooldownMs,
+    reviewPanel,
     rest,
   };
 }
@@ -162,6 +166,7 @@ Flags:
   --notify            emit OS notification + terminal bell on loop completion or unrecoverable failure (default: off)
   --budget <usd>      stop the loop when cumulative stage cost reaches this USD ceiling (default: off)
   --cooldown <ms>     wait this many milliseconds between iterations; adaptive backoff doubles on throttle (default: 0)
+  --review-panel      replace the single reviewer stage with correctness/security/tests lens reviewers + one synth commit (default: off)
 
 Environment variables:
   RALPH_WORKSPACE   host dir Claude runs against (default: cwd)
@@ -173,6 +178,7 @@ Environment variables:
   RALPH_MODEL       pin the claude model ("--model <value>" pass-through). Unset =
                     claude CLI default. The claude CLI validates the value.
   RALPH_RESULT_GRACE_MS  post-result grace timer ms (default 30000; 0 disables).
+  RALPH_REVIEW_LENSES   comma-separated lens list for --review-panel (default: correctness,security,tests).
 `);
 }
 
@@ -185,6 +191,8 @@ export type PrintConfigOptions = {
   notify?: boolean;
   budget?: number;
   cooldownMs?: number;
+  /** Resolved review lenses (empty array = single reviewer). */
+  reviewLenses?: string[];
 };
 
 export function printConfig(
@@ -202,6 +210,7 @@ export function printConfig(
     notify = false,
     budget,
     cooldownMs,
+    reviewLenses = [],
   } = opts;
   const core = readCoreVersion();
   const cli = cliVersion ?? "?";
@@ -228,6 +237,9 @@ export function printConfig(
 
   const budgetStatus = budget != null ? `$${budget.toFixed(2)}` : "off";
   const cooldownStatus = cooldownMs ? `${cooldownMs}ms` : "off";
+  const reviewStatus = reviewLenses.length
+    ? `panel: ${reviewLenses.join(", ")}`
+    : "single reviewer";
 
   process.stdout.write(`[${bin}] resolved config
   version               ${bin} ${cli} (core ${core})
@@ -242,5 +254,6 @@ export function printConfig(
   notify                ${notifyStatus}
   budget                ${budgetStatus}
   cooldown              ${cooldownStatus}
+  review                ${reviewStatus}
 `);
 }
