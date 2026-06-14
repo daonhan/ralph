@@ -8,3 +8,4 @@ export {
   type RenderVars,
 } from "./render.js";
 export { runStage, type StageResult } from "./runner.js";
+export { runWatch, type RunWatchOptions } from "./watch.js";

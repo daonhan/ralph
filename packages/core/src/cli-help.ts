@@ -16,6 +16,8 @@ export type CliFlags = {
   budget?: number;
   cooldownMs?: number;
   reviewPanel: boolean;
+  watch: boolean;
+  watchIntervalSec?: number;
   rest: string[];
 };
 
@@ -35,6 +37,9 @@ export function parseFlags(argv: string[]): CliFlags {
   let cooldownMs: number | undefined;
   let expectingCooldown = false;
   let reviewPanel = false;
+  let watch = false;
+  let watchIntervalSec: number | undefined;
+  let expectingWatchInterval = false;
   const rest: string[] = [];
   for (const a of argv) {
     if (expectingMaxRetries) {
@@ -73,6 +78,16 @@ export function parseFlags(argv: string[]): CliFlags {
       expectingCooldown = false;
       continue;
     }
+    if (expectingWatchInterval) {
+      if (!/^\d+$/.test(a) || Number.parseInt(a, 10) <= 0) {
+        throw new Error(
+          `--watch-interval must be a positive integer (seconds), got: ${JSON.stringify(a)}`
+        );
+      }
+      watchIntervalSec = Number.parseInt(a, 10);
+      expectingWatchInterval = false;
+      continue;
+    }
     if (a === "-h" || a === "--help") help = true;
     else if (a === "-V" || a === "--version") version = true;
     else if (a === "--print-config") printConfig = true;
@@ -84,6 +99,8 @@ export function parseFlags(argv: string[]): CliFlags {
     else if (a === "--budget") expectingBudget = true;
     else if (a === "--cooldown") expectingCooldown = true;
     else if (a === "--review-panel") reviewPanel = true;
+    else if (a === "--watch") watch = true;
+    else if (a === "--watch-interval") expectingWatchInterval = true;
     else rest.push(a);
   }
   if (expectingMaxRetries) {
@@ -97,6 +114,9 @@ export function parseFlags(argv: string[]): CliFlags {
   }
   if (expectingCooldown) {
     throw new Error("--cooldown requires a value");
+  }
+  if (expectingWatchInterval) {
+    throw new Error("--watch-interval requires a value");
   }
   if (log !== undefined && !detach) {
     throw new Error("--log is only meaningful with --detach");
@@ -113,6 +133,8 @@ export function parseFlags(argv: string[]): CliFlags {
     budget,
     cooldownMs,
     reviewPanel,
+    watch,
+    watchIntervalSec,
     rest,
   };
 }
@@ -167,6 +189,8 @@ Flags:
   --budget <usd>      stop the loop when cumulative stage cost reaches this USD ceiling (default: off)
   --cooldown <ms>     wait this many milliseconds between iterations; adaptive backoff doubles on throttle (default: 0)
   --review-panel      replace the single reviewer stage with correctness/security/tests lens reviewers + one synth commit (default: off)
+  --watch             poll for labelled GitHub issues and run the loop whenever work is found (ghafk-only; default: off)
+  --watch-interval <sec>  seconds between polls in watch mode (default: 300)
 
 Environment variables:
   RALPH_WORKSPACE   host dir Claude runs against (default: cwd)
@@ -179,6 +203,7 @@ Environment variables:
                     claude CLI default. The claude CLI validates the value.
   RALPH_RESULT_GRACE_MS  post-result grace timer ms (default 30000; 0 disables).
   RALPH_REVIEW_LENSES   comma-separated lens list for --review-panel (default: correctness,security,tests).
+  RALPH_WATCH_LABEL     issue label to poll for in watch mode (default: "ralph").
 `);
 }
 
@@ -193,6 +218,8 @@ export type PrintConfigOptions = {
   cooldownMs?: number;
   /** Resolved review lenses (empty array = single reviewer). */
   reviewLenses?: string[];
+  watch?: boolean;
+  watchIntervalSec?: number;
 };
 
 export function printConfig(
@@ -211,6 +238,8 @@ export function printConfig(
     budget,
     cooldownMs,
     reviewLenses = [],
+    watch = false,
+    watchIntervalSec,
   } = opts;
   const core = readCoreVersion();
   const cli = cliVersion ?? "?";
@@ -240,6 +269,10 @@ export function printConfig(
   const reviewStatus = reviewLenses.length
     ? `panel: ${reviewLenses.join(", ")}`
     : "single reviewer";
+  const watchLabel = process.env.RALPH_WATCH_LABEL?.trim() || "ralph";
+  const watchStatus = watch
+    ? `on (every ${watchIntervalSec ?? 300}s, label "${watchLabel}")`
+    : "off";
 
   process.stdout.write(`[${bin}] resolved config
   version               ${bin} ${cli} (core ${core})
@@ -255,5 +288,6 @@ export function printConfig(
   budget                ${budgetStatus}
   cooldown              ${cooldownStatus}
   review                ${reviewStatus}
+  watch                 ${watchStatus}
 `);
 }

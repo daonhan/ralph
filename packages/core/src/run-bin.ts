@@ -27,6 +27,8 @@ export type RunBinConfig = {
    */
   takesInputArg: boolean;
   cliVersion?: string;
+  /** Whether this bin supports --watch. Only ralph-ghafk sets this. */
+  supportsWatch?: boolean;
 };
 
 /**
@@ -80,6 +82,8 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
       budget: flags.budget,
       cooldownMs: flags.cooldownMs,
       reviewLenses: reviewLenses ?? [],
+      watch: flags.watch,
+      watchIntervalSec: flags.watchIntervalSec,
     });
     return;
   }
@@ -103,6 +107,28 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
       argv,
       binEntry: process.argv[1],
     });
+  }
+
+  if (flags.watch) {
+    if (!cfg.supportsWatch) {
+      console.error("--watch is only supported by ralph-ghafk");
+      process.exit(1);
+    }
+    const { runWatch } = await import("./watch.js");
+    await runWatch({
+      stages: cfg.stages,
+      iterations,
+      workspaceDir,
+      packageDir,
+      watchIntervalSec: flags.watchIntervalSec ?? 300,
+      watchLabel: process.env.RALPH_WATCH_LABEL?.trim() || "ralph",
+      budgetUsd: flags.budget,
+      cooldownMs: flags.cooldownMs,
+      notify: flags.notify,
+      bin: cfg.bin,
+      cliVersion: cfg.cliVersion,
+    });
+    return;
   }
 
   await runLoop({
