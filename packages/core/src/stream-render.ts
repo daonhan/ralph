@@ -1,6 +1,6 @@
 /**
  * Terminal pretty-printer for the Claude CLI's NDJSON stream, plus the TTY-gated
- * ANSI styling primitives. Extracted from runner.ts: this module has no docker
+ * ANSI styling primitives. Extracted from runner.ts: this module has no runner
  * dependency — `renderEvent` consumes an already-parsed stream event and writes
  * assistant text to stdout and tool/diagnostic events to stderr.
  */
@@ -14,7 +14,7 @@ const TOOL_ERROR_PREVIEW = 400;
 const NO_COLOR_ENV =
   process.env.NO_COLOR != null || process.env.TERM === "dumb";
 
-/** Controls ANSI codes on stderr (tool events, banners, docker output). */
+/** Controls ANSI codes on stderr (tool events, banners, subprocess output). */
 export const USE_COLOR = process.stderr.isTTY === true && !NO_COLOR_ENV;
 
 /** Controls ANSI codes on stdout (assistant text bullets, completion line).
