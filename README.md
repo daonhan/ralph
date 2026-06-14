@@ -204,7 +204,30 @@ This forks into the background, holds an OS wake-lock so the host doesn't sleep,
 tail -f <workspace>/.ralph-tmp/logs/detached-*.log
 ```
 
-Full per-OS notes (wake-lock mechanism, BurntToast install, WSL2 caveat, etc.) live in [`docs/keep-alive.md`](./docs/keep-alive.md).
+Full per-OS notes (wake-lock mechanism, etc.) live in [`docs/keep-alive.md`](./docs/keep-alive.md).
+
+### Cost control, pacing & review panel
+
+| Flag              | Default | What it does                                                                                                                    |
+| ----------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `--budget <usd>`  | off     | Stop the loop once cumulative Claude spend reaches this dollar amount (committed work is kept). Cost is printed per stage.      |
+| `--cooldown <ms>` | `0`     | Sleep between iterations; grows automatically (×2, capped) when the API signals throttling.                                     |
+| `--review-panel`  | off     | Replace the single reviewer with a paced panel — read-only `correctness`/`security`/`tests` lenses → one `fix(review):` commit. |
+
+```bash
+# cap spend, pace iterations, and use the reviewer panel
+ralph-afk --budget 10 --cooldown 2000 --review-panel "<plan-and-prd>" 30
+```
+
+### Watch mode (`ralph-ghafk` only)
+
+Run as a daemon that idles, polls GitHub for labelled open issues, and runs the loop when work appears:
+
+```bash
+ralph-ghafk --watch --watch-interval 300 5     # poll every 5 min, ≤5 iterations per trigger
+```
+
+The trigger label defaults to `ralph` (`RALPH_WATCH_LABEL` to change it). Under `--watch`, `--budget` caps total spend across the whole session; `Ctrl+C` stops cleanly.
 
 ---
 
@@ -240,14 +263,16 @@ npx -y @daonhan/ralph ralph-afk "<plan-and-prd>" 5
 
 ### Environment variables
 
-| Variable                 | Default                  | Purpose                                                                                                                                                                                                               |
-| ------------------------ | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RALPH_WORKSPACE`        | `process.cwd()`          | Host path Claude runs against (`cwd`). Also where `.ralph-tmp/` is written.                                                                                                                                           |
-| `RALPH_RUNNER`           | `sandbox`                | `sandbox` (default) — enables the native OS sandbox (Seatbelt on macOS), confining writes to the workspace. `host` — runs claude unsandboxed (only safe in a git-recoverable, throwaway tree).                        |
-| `RALPH_SANDBOX_NET`      | _(unset — unrestricted)_ | Comma-separated domain allowlist for sandbox network egress. Unset = unrestricted (filesystem confinement is the blast-radius control; network commands fall back to the bypass-approved escape hatch automatically). |
-| `RALPH_RESULT_GRACE_MS`  | `30000`                  | Milliseconds to wait after the final NDJSON `result` event before force-killing a `claude` child that fails to exit on its own. `0` disables the timer. Invalid values fall back to the default.                      |
-| `RALPH_MODEL`            | _(unset → CLI default)_  | Pins the Claude model. When non-empty, `--model <value>` is passed through to the `claude` CLI for every stage. Empty/whitespace = unset. Pass-through: the `claude` CLI owns validation.                             |
-| `NO_COLOR` / `TERM=dumb` | _(unset)_                | Disable ANSI color in Ralph's own output. Color is also auto-disabled when stdout/stderr is not a TTY, so piping to a file stays clean.                                                                               |
+| Variable                 | Default                      | Purpose                                                                                                                                                                                                               |
+| ------------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RALPH_WORKSPACE`        | `process.cwd()`              | Host path Claude runs against (`cwd`). Also where `.ralph-tmp/` is written.                                                                                                                                           |
+| `RALPH_RUNNER`           | `sandbox`                    | `sandbox` (default) — enables the native OS sandbox (Seatbelt on macOS), confining writes to the workspace. `host` — runs claude unsandboxed (only safe in a git-recoverable, throwaway tree).                        |
+| `RALPH_SANDBOX_NET`      | _(unset — unrestricted)_     | Comma-separated domain allowlist for sandbox network egress. Unset = unrestricted (filesystem confinement is the blast-radius control; network commands fall back to the bypass-approved escape hatch automatically). |
+| `RALPH_RESULT_GRACE_MS`  | `30000`                      | Milliseconds to wait after the final NDJSON `result` event before force-killing a `claude` child that fails to exit on its own. `0` disables the timer. Invalid values fall back to the default.                      |
+| `RALPH_MODEL`            | _(unset → CLI default)_      | Pins the Claude model. When non-empty, `--model <value>` is passed through to the `claude` CLI for every stage. Empty/whitespace = unset. Pass-through: the `claude` CLI owns validation.                             |
+| `RALPH_REVIEW_LENSES`    | `correctness,security,tests` | Comma-separated lens list for the reviewer panel. Setting it implies `--review-panel`.                                                                                                                                |
+| `RALPH_WATCH_LABEL`      | `ralph`                      | Issue label that gates a `--watch` run (`ralph-ghafk`).                                                                                                                                                               |
+| `NO_COLOR` / `TERM=dumb` | _(unset)_                    | Disable ANSI color in Ralph's own output. Color is also auto-disabled when stdout/stderr is not a TTY, so piping to a file stays clean.                                                                               |
 
 ---
 
