@@ -1,6 +1,6 @@
 {
   "name": "@phamvuhoang/ralph",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "description": "CLI for the ralph AFK loop (ralph-afk, ralph-ghafk).",
   "type": "module",
   "license": "MIT",
