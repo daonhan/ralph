@@ -1,6 +1,6 @@
 {
   "name": "@phamvuhoang/ralph-core",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "description": "Claude Code AFK orchestration: iteration loop, native-sandbox runner, template renderer.",
   "type": "module",
   "license": "MIT",
