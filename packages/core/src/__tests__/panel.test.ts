@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -157,5 +157,47 @@ describe("runPanel", () => {
 
     // The sneaky lens commit was undone; HEAD is back at the implementer's commit.
     expect(g("rev-parse", "HEAD").trim()).toBe(baseHead);
+  });
+
+  it("does NOT discard pre-existing uncommitted tracked changes (enforcement off when dirty)", async () => {
+    const g = (...args: string[]) =>
+      execFileSync("git", args, {
+        cwd: ws,
+        stdio: ["ignore", "pipe", "ignore"],
+        encoding: "utf8",
+      });
+    g("init", "-q");
+    writeFileSync(join(ws, "f.txt"), "committed\n");
+    g("add", "f.txt");
+    g(
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "user.name=t",
+      "commit",
+      "-q",
+      "-m",
+      "impl"
+    );
+    // A pre-existing uncommitted tracked modification by the user.
+    writeFileSync(join(ws, "f.txt"), "user edit in progress\n");
+
+    // A well-behaved lens touches nothing.
+    mocks.executeStage.mockResolvedValue(ok("finding"));
+
+    await runPanel({
+      lenses: ["correctness"],
+      workspaceDir: ws,
+      packageDir: "/pkg",
+      iteration: 1,
+      maxRetries: 0,
+      cooldownMs: 0,
+      onStage: noStop,
+    });
+
+    // The user's in-progress edit is intact — the guard did not reset --hard it away.
+    expect(readFileSync(join(ws, "f.txt"), "utf8")).toBe(
+      "user edit in progress\n"
+    );
   });
 });

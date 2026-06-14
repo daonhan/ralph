@@ -49,7 +49,12 @@ function git(args: string[], workspaceDir: string): string | null {
   }
 }
 
-/** True if HEAD moved or a tracked file was modified since `baseHead`. */
+/** Tracked-only worktree dirtiness ("" = clean). Untracked files are ignored. */
+function trackedStatus(workspaceDir: string): string | null {
+  return git(["status", "--porcelain", "--untracked-files=no"], workspaceDir);
+}
+
+/** True if HEAD moved or a tracked file changed since `baseHead`. */
 function lensMutatedRepo(
   workspaceDir: string,
   baseHead: string | null
@@ -57,9 +62,7 @@ function lensMutatedRepo(
   if (baseHead == null) return false;
   if (git(["rev-parse", "HEAD"], workspaceDir) !== baseHead) return true;
   // Tracked-only: a lens scratch file (untracked) is harmless — synth diffs HEAD.
-  return (
-    git(["status", "--porcelain", "--untracked-files=no"], workspaceDir) !== ""
-  );
+  return trackedStatus(workspaceDir) !== "";
 }
 
 /** Harness-orchestrated reviewer panel: read-only lens reviews → one synth fix(review) commit. */
@@ -80,8 +83,17 @@ export async function runPanel(opts: RunPanelOptions): Promise<StageResult> {
 
   // Lenses are contractually read-only; synth owns the single fix(review:) commit.
   // Snapshot HEAD so we can detect + undo a lens that edits or commits despite the
-  // prompt (it runs bypassPermissions, so the OS would let it).
+  // prompt (it runs bypassPermissions, so the OS would let it). We only ENFORCE
+  // (reset --hard) when the worktree starts tracked-clean — otherwise a reset would
+  // discard pre-existing uncommitted user changes, so we disable the guard and warn.
   const baseHead = git(["rev-parse", "HEAD"], workspaceDir);
+  const enforceReadOnly =
+    baseHead != null && trackedStatus(workspaceDir) === "";
+  if (baseHead != null && !enforceReadOnly) {
+    process.stderr.write(
+      `${red(SYM.cross)} ${dim("worktree has uncommitted tracked changes — panel lens read-only enforcement disabled (won't risk your changes)")}\n`
+    );
+  }
 
   try {
     for (let i = 0; i < lenses.length; i++) {
@@ -102,7 +114,9 @@ export async function runPanel(opts: RunPanelOptions): Promise<StageResult> {
 
       // Enforce read-only: if the lens committed or edited tracked files, warn and
       // restore HEAD so the next lens / synth see the implementer's commit cleanly.
-      if (lensMutatedRepo(workspaceDir, baseHead)) {
+      // Only runs when the worktree started clean, so reset --hard can only ever
+      // discard the lens's own changes — never pre-existing work.
+      if (enforceReadOnly && lensMutatedRepo(workspaceDir, baseHead)) {
         process.stderr.write(
           `${red(SYM.cross)} ${dim(`lens ${lens} mutated the repo (read-only violation) — restoring to ${baseHead!.slice(0, 8)}`)}\n`
         );
