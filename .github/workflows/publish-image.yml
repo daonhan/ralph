@@ -41,7 +41,7 @@ jobs:
       contents: write # append digest to + upload artifacts on the GH Release
       id-token: write # keyless cosign attestation (OIDC)
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Resolve image tag
         id: tag
