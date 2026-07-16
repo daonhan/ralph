@@ -71,6 +71,9 @@ Release PR appears.
      attestation.
 6. Watch the Actions tab; the publish workflow run links to the published artifact.
 
+A Python runtime or tooling change confined to the sandbox image is a
+`ralph-sandbox` release only. It does not bump either npm package.
+
 > **Token requirement.** release-please must create tags with a Personal Access
 > Token (`RELEASE_PLEASE_TOKEN` secret, repo scope), because a tag created with the
 > default `GITHUB_TOKEN` does **not** trigger the `push: tags` publish workflows.

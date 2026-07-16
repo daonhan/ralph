@@ -360,7 +360,7 @@ pnpm test
 
 The pre-commit hook ([`../.husky/pre-commit`](../.husky/pre-commit)) runs `pnpm exec lint-staged` (Prettier `--write` on staged files) then `pnpm typecheck`. The root `prepare` script is `husky || git config core.hooksPath .husky` so installs still work if Husky does not self-initialize.
 
-Build the sandbox image locally from [`../packages/core/templates/Dockerfile`](../packages/core/templates/Dockerfile) (`node:22-bookworm` + git/curl/jq + .NET SDK 10 + `gh` + Claude Code CLI; base `node` user renamed to `agent` UID 1000; `safe.directory=*` global; `WORKDIR /home/agent/workspace`; `ENTRYPOINT []`, `CMD ["claude"]`):
+Build the sandbox image locally from [`../packages/core/templates/Dockerfile`](../packages/core/templates/Dockerfile) (`node:22-bookworm` + Debian Bookworm Python 3.11 exposed as `python`/`python3` + `python -m venv` + pinned `uv`/`uvx` 0.11.28 + git/curl/jq + .NET SDK 10 + `gh` + Claude Code CLI; base `node` user renamed to `agent` UID 1000; `safe.directory=*` global; `WORKDIR /home/agent/workspace`; `ENTRYPOINT []`, `CMD ["claude"]`):
 
 ```bash
 docker build -t docker.io/daonhan/ralph-sandbox:latest \
@@ -371,6 +371,13 @@ docker build -t docker.io/daonhan/ralph-sandbox:latest \
 docker build -t docker.io/daonhan/ralph-sandbox:latest `
   -f packages/core/templates/Dockerfile .
 ```
+
+Python runtime selection is static: the image supplies one baked system Python,
+and the runner does not inspect `.python-version`, `.tool-versions`, `.mise.toml`,
+`pyproject.toml`, or similar manifests. Repositories pinned to another version
+must use a custom image until detection support exists. Project dependencies
+belong in a project-local virtual environment or uv-managed isolation, not in the
+Debian system Python.
 
 Diagnose resolved config (workspace / docker context / image / socket) without launching Docker:
 
