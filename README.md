@@ -155,11 +155,24 @@ cd ralph
 docker build -t docker.io/daonhan/ralph-sandbox:latest -f packages/core/templates/Dockerfile .
 ```
 
-The image bundles: Node 22, .NET SDK 10, `gh`, `jq`, `git`, the Claude Code CLI.
+The image bundles Node 22, Debian Bookworm Python 3.11 as `python` and `python3`,
+`python -m venv`, `uv`/`uvx` 0.11.28, .NET SDK 10, `gh`, `jq`, `git`, and the
+Claude Code CLI. Basic Python repositories need no extra runtime install. Create a
+project-local virtual environment (for example, `.venv`) or use uv-managed
+isolation; do not install project dependencies globally into the Debian system
+Python.
+
+This release provides one baked system Python and does not select versions from
+`.python-version`, `.tool-versions`, `.mise.toml`, `pyproject.toml`, or similar
+manifests. Repositories pinned to another Python version need a custom
+`RALPH_IMAGE` until future version-detection support is added.
 
 #### Publishing a new image (maintainers)
 
 The repo ships a GitHub Actions workflow at [`.github/workflows/publish-image.yml`](./.github/workflows/publish-image.yml) that builds + pushes `linux/amd64` images to Docker Hub.
+
+The Python runtime and tooling addition is a `ralph-sandbox` image release only;
+it does not bump `@daonhan/ralph-core` or `@daonhan/ralph`.
 
 Triggers:
 
@@ -533,7 +546,7 @@ The agent playbooks are self-contained: `packages/core/templates/prompt.md` (pla
 | [`apps/cli/scripts/ghafk.sh`](./apps/cli/scripts/ghafk.sh)                       | Optional shim — GitHub-issue loop. Calls `ralph-ghafk`.                                                                                                                      |
 | [`packages/core/templates/prompt.md`](./packages/core/templates/prompt.md)       | Agent playbook for `ralph-afk`. Shipped in core tarball.                                                                                                                     |
 | [`packages/core/templates/ghprompt.md`](./packages/core/templates/ghprompt.md)   | Agent playbook for `ralph-ghafk`. Shipped in core tarball.                                                                                                                   |
-| [`packages/core/templates/Dockerfile`](./packages/core/templates/Dockerfile)     | Builds `ralph-sandbox` image: Node 22 + .NET SDK 10 + `gh` + `claude`. Shipped in `@daonhan/ralph-core` tarball.                                                             |
+| [`packages/core/templates/Dockerfile`](./packages/core/templates/Dockerfile)     | Builds `ralph-sandbox` image: Node 22 + Python 3.11/venv + `uv`/`uvx` + .NET SDK 10 + `gh` + `claude`. Shipped in `@daonhan/ralph-core` tarball.                             |
 | [`.dockerignore`](./.dockerignore)                                               | Shrinks build context (consumed at repo root for CI builds).                                                                                                                 |
 | [`package.json`](./package.json)                                                 | Monorepo root (private). Shared devDeps + pnpm workspace scripts.                                                                                                            |
 | [`pnpm-workspace.yaml`](./pnpm-workspace.yaml)                                   | Declares `apps/*` and `packages/*` as workspace members.                                                                                                                     |

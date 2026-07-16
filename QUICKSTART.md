@@ -29,6 +29,17 @@ docker pull docker.io/daonhan/ralph-sandbox:latest
 
 (Ralph also auto-pulls on first run; this just primes the cache.)
 
+The image already provides Debian Bookworm Python 3.11 as `python` and `python3`,
+`python -m venv`, and `uv`/`uvx` 0.11.28, so basic Python repositories need no
+extra runtime install. Use a project-local virtual environment or uv-managed
+isolation; do not install project dependencies globally into the Debian system
+Python.
+
+This release does not select pinned Python versions from `.python-version`,
+`.tool-versions`, `.mise.toml`, `pyproject.toml`, or similar manifests. A repository
+that requires another Python version needs a custom image until future detection
+support is added.
+
 ## 4. One-off auth
 
 Credentials live on the **host** (`~/.claude`, `~/.config/gh`) and get bind-mounted into every container. Log in once via an interactive container.

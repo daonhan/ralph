@@ -12,7 +12,7 @@ If you just want to _run_ Ralph against your own repo, see [`./README.md`](./REA
 | ------ | ------- | ------------------------------------------------------------- |
 | Node   | ≥ 20    | ESM, `node --test`, `tsc`.                                    |
 | pnpm   | ≥ 9     | Workspace linking. Root pins `packageManager: pnpm@9.12.0`.   |
-| Docker | any     | Running the loop and the `ensure-image` / spill smoke checks. |
+| Docker | any     | Running the loop and the image / `ensure-image` smoke checks. |
 
 `corepack enable` will activate the pinned pnpm automatically.
 
@@ -83,6 +83,10 @@ Note the layered meaning of "test" in this monorepo:
   `packages/core` → `vitest run`; `apps/cli` has no `test` script (skipped).
 - **`pnpm test`** (root) → `node --test`, which discovers `scripts/*.test.mjs`.
 
+The full sandbox-image smoke is intentionally not part of these ordinary test
+commands because it builds an image and, by default, reaches PyPI. Run it explicitly
+for image changes as described in [Verify sandbox image changes](#verify-sandbox-image-changes).
+
 ### What each test covers
 
 Vitest unit tests, `packages/core/src/__tests__/` (pure logic, mocked I/O):
@@ -98,11 +102,12 @@ Vitest unit tests, `packages/core/src/__tests__/` (pure logic, mocked I/O):
 
 Root `node --test`, `scripts/*.test.mjs` (contract + pure-render tests):
 
-| File                             | Covers                                                                       |
-| -------------------------------- | ---------------------------------------------------------------------------- |
-| `release-please-config.test.mjs` | Reproduces release-please path attribution; catches component-scoping drift. |
-| `runner-floating-ref.test.mjs`   | `isFloatingRef` — when `ensureImage` must re-pull vs. short-circuit.         |
-| `update-status-table.test.mjs`   | `renderStatusTable` / `replaceBlock` for the RELEASING.md status block.      |
+| File                             | Covers                                                                                    |
+| -------------------------------- | ----------------------------------------------------------------------------------------- |
+| `release-please-config.test.mjs` | Reproduces release-please path attribution; catches component-scoping drift.              |
+| `runner-floating-ref.test.mjs`   | `isFloatingRef` — when `ensureImage` must re-pull vs. short-circuit.                      |
+| `smoke-image.test.mjs`           | Image-smoke argument parsing, Docker command construction, and failures; no Docker calls. |
+| `update-status-table.test.mjs`   | `renderStatusTable` / `replaceBlock` for the RELEASING.md status block.                   |
 
 Smoke scripts in `scripts/` (import the built `dist/`, so run after `pnpm -r build`):
 
@@ -113,6 +118,40 @@ Smoke scripts in `scripts/` (import the built `dist/`, so run after `pnpm -r bui
 | `smoke-spill-size.mjs`         | Heavy `@spill` output lands in the spill file, not the prompt.                                                    |
 | `smoke-spill-large.mjs`        | A ~200 KB `@spill` payload spills while the prompt keeps only a short ref path.                                   |
 | `ensure-image-integration.mjs` | `ensureImage` against the real `docker` CLI (re-pull / fallback / pinned).                                        |
+| `smoke-image.mjs`              | Builds or accepts a sandbox image, then checks the external Python/user/tooling contract.                         |
+
+### Verify sandbox image changes
+
+Every change to the sandbox image must pass this maintainer smoke before its
+`ralph-sandbox` Release PR is merged and the image is published:
+
+```bash
+pnpm smoke:image
+```
+
+The default command builds `ralph-sandbox:smoke` from
+`packages/core/templates/Dockerfile` with the repository root as its Docker build
+context, then checks the default `agent` user, `python`, `python3`, venv creation,
+pip inside the venv, recognizable `uv --version` and `uvx --version` output, and an
+`uv` install of the pure-Python `six` package from PyPI.
+
+To smoke an already-built release candidate without rebuilding it, pass its tag:
+
+```bash
+pnpm smoke:image -- --image ralph-sandbox:python-tooling
+```
+
+The package-install check requires network access and the command announces when it
+runs. For an offline diagnostic only, skip that check explicitly with
+`--skip-network` (or `RALPH_SMOKE_SKIP_NETWORK=1`):
+
+```bash
+pnpm smoke:image -- --image ralph-sandbox:python-tooling --skip-network
+```
+
+`RALPH_SMOKE_IMAGE=<tag>` is the environment-variable equivalent of `--image`.
+The final pre-publish verification must run the network check; a skipped run is not
+sufficient to release the image.
 
 ## Pre-commit hook
 
