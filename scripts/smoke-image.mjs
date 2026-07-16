@@ -5,23 +5,20 @@ import { fileURLToPath } from "node:url";
 
 export function parseSmokeArgs(args, env = process.env) {
   const imageIndex = args.indexOf("--image");
-  if (
-    imageIndex !== -1 &&
-    (!args[imageIndex + 1] || args[imageIndex + 1].startsWith("--"))
-  ) {
-    throw new Error("--image requires an image tag");
-  }
   for (let index = 0; index < args.length; index++) {
     if (args[index] === "--image") {
+      const image = args[index + 1];
+      if (!image || image.trim() === "" || image.startsWith("--")) {
+        throw new Error("--image requires an image tag");
+      }
       index++;
     } else if (args[index] !== "--skip-network") {
       throw new Error(`unknown argument: ${args[index]}`);
     }
   }
-  const prebuiltImage =
-    (imageIndex === -1 ? null : args[imageIndex + 1]) ??
-    env.RALPH_SMOKE_IMAGE ??
-    null;
+  const imageArg = imageIndex === -1 ? null : args[imageIndex + 1].trim();
+  const envImage = env.RALPH_SMOKE_IMAGE?.trim() || null;
+  const prebuiltImage = imageArg ?? envImage;
   return {
     image: prebuiltImage ?? "ralph-sandbox:smoke",
     build: prebuiltImage === null,
@@ -101,6 +98,21 @@ export function runImageSmoke(options, { run, log }) {
       label: "uv is available",
       entrypoint: "uv",
       args: ["--version"],
+      validateOutput(output) {
+        return /^uv \d+\.\d+\.\d+(?:\S*)?(?:\s|$)/.test(output.trim())
+          ? null
+          : `got ${output.trim() || "(empty)"}`;
+      },
+    },
+    {
+      label: "uvx is available",
+      entrypoint: "uvx",
+      args: ["--version"],
+      validateOutput(output) {
+        return /^uvx \d+\.\d+\.\d+(?:\S*)?(?:\s|$)/.test(output.trim())
+          ? null
+          : `got ${output.trim() || "(empty)"}`;
+      },
     },
   ];
   if (!options.skipNetwork) {

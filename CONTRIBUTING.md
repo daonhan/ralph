@@ -132,8 +132,8 @@ pnpm smoke:image
 The default command builds `ralph-sandbox:smoke` from
 `packages/core/templates/Dockerfile` with the repository root as its Docker build
 context, then checks the default `agent` user, `python`, `python3`, venv creation,
-pip inside the venv, `uv`, and an `uv` install of the pure-Python `six` package from
-PyPI.
+pip inside the venv, recognizable `uv --version` and `uvx --version` output, and an
+`uv` install of the pure-Python `six` package from PyPI.
 
 To smoke an already-built release candidate without rebuilding it, pass its tag:
 

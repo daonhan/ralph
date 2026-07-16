@@ -17,7 +17,11 @@ function successfulResult(args) {
         ? "agent\n"
         : entrypoint === "python" || entrypoint === "python3"
           ? "Python 3.11.2\n"
-          : "",
+          : entrypoint === "uv"
+            ? "uv 0.11.28 (x86_64-unknown-linux-musl)\n"
+            : entrypoint === "uvx"
+              ? "uvx 0.11.28 (x86_64-unknown-linux-musl)\n"
+              : "",
     stderr: "",
   };
 }
@@ -53,6 +57,17 @@ test("accepts a prebuilt image without scheduling a build", () => {
   });
 });
 
+test("trims an explicit image tag", () => {
+  assert.deepEqual(
+    parseSmokeArgs(["--image", "  example/sandbox:test  "], {}),
+    {
+      image: "example/sandbox:test",
+      build: false,
+      skipNetwork: false,
+    }
+  );
+});
+
 test("accepts a prebuilt image from RALPH_SMOKE_IMAGE", () => {
   assert.deepEqual(
     parseSmokeArgs([], { RALPH_SMOKE_IMAGE: "env-image:test" }),
@@ -62,6 +77,25 @@ test("accepts a prebuilt image from RALPH_SMOKE_IMAGE", () => {
       skipNetwork: false,
     }
   );
+});
+
+test("trims a prebuilt image from RALPH_SMOKE_IMAGE", () => {
+  assert.deepEqual(
+    parseSmokeArgs([], { RALPH_SMOKE_IMAGE: "  env-image:test  " }),
+    {
+      image: "env-image:test",
+      build: false,
+      skipNetwork: false,
+    }
+  );
+});
+
+test("treats whitespace-only RALPH_SMOKE_IMAGE as unset", () => {
+  assert.deepEqual(parseSmokeArgs([], { RALPH_SMOKE_IMAGE: "   " }), {
+    image: "ralph-sandbox:smoke",
+    build: true,
+    skipNetwork: false,
+  });
 });
 
 test("accepts explicit flag and env forms for skipping the network check", () => {
@@ -82,6 +116,20 @@ test("rejects --image without a tag", () => {
 test("rejects --image when the next token is another flag", () => {
   assert.throws(
     () => parseSmokeArgs(["--image", "--skip-network"], {}),
+    /--image requires an image tag/
+  );
+});
+
+test("rejects --image with a whitespace-only tag", () => {
+  assert.throws(
+    () => parseSmokeArgs(["--image", "   "], {}),
+    /--image requires an image tag/
+  );
+});
+
+test("rejects a repeated --image with a whitespace-only tag", () => {
+  assert.throws(
+    () => parseSmokeArgs(["--image", "sandbox:first", "--image", "   "], {}),
     /--image requires an image tag/
   );
 });
@@ -136,15 +184,19 @@ test("prebuilt mode runs every Python image contract from outside the container"
       ["run", "--rm", "--entrypoint", "python3", "sandbox:test", "--version"],
     ],
   ]);
-  assert.equal(calls.length, 7);
+  assert.equal(calls.length, 8);
   assert.match(calls[3][1].at(-1), /python -m venv/);
   assert.match(calls[4][1].at(-1), /bin\/python" -m pip --version/);
   assert.deepEqual(calls[5], [
     "docker",
     ["run", "--rm", "--entrypoint", "uv", "sandbox:test", "--version"],
   ]);
-  assert.match(calls[6][1].at(-1), /uv pip install/);
-  assert.match(calls[6][1].at(-1), /six==1\.17\.0/);
+  assert.deepEqual(calls[6], [
+    "docker",
+    ["run", "--rm", "--entrypoint", "uvx", "sandbox:test", "--version"],
+  ]);
+  assert.match(calls[7][1].at(-1), /uv pip install/);
+  assert.match(calls[7][1].at(-1), /six==1\.17\.0/);
 });
 
 test("each failed check names the broken image contract", () => {
@@ -155,6 +207,7 @@ test("each failed check names the broken image contract", () => {
     "python -m venv creates a virtual environment",
     "pip is available inside a virtual environment",
     "uv is available",
+    "uvx is available",
     "uv installs a pure-Python package from PyPI (network)",
   ];
 
@@ -211,10 +264,73 @@ test("rejects a python3 command that is not Python 3", () => {
   );
 });
 
+test("rejects empty uv version output", () => {
+  assert.throws(
+    () =>
+      executeSmoke(PREBUILT_ARGS, (args) => ({
+        ...successfulResult(args),
+        stdout:
+          args[args.indexOf("--entrypoint") + 1] === "uv"
+            ? ""
+            : successfulResult(args).stdout,
+      })),
+    /uv is available.*got \(empty\)/
+  );
+});
+
+test("rejects malformed uv version output", () => {
+  assert.throws(
+    () =>
+      executeSmoke(PREBUILT_ARGS, (args) => ({
+        ...successfulResult(args),
+        stdout:
+          args[args.indexOf("--entrypoint") + 1] === "uv"
+            ? "uv version unknown\n"
+            : successfulResult(args).stdout,
+      })),
+    /uv is available.*got uv version unknown/
+  );
+});
+
+test("accepts recognizable uv and uvx version output", () => {
+  assert.doesNotThrow(() => executeSmoke(PREBUILT_ARGS));
+});
+
+test("rejects an image without uvx", () => {
+  assert.throws(
+    () =>
+      executeSmoke(PREBUILT_ARGS, (args) => {
+        const entrypoint = args[args.indexOf("--entrypoint") + 1];
+        return entrypoint === "uvx"
+          ? { status: 127, stdout: "", stderr: "uvx: not found" }
+          : successfulResult(args);
+      }),
+    /uvx is available.*uvx: not found/
+  );
+});
+
+test("rejects malformed uvx version output", () => {
+  assert.throws(
+    () =>
+      executeSmoke(PREBUILT_ARGS, (args) => ({
+        ...successfulResult(args),
+        stdout:
+          args[args.indexOf("--entrypoint") + 1] === "uvx"
+            ? "uvx version unknown\n"
+            : successfulResult(args).stdout,
+      })),
+    /uvx is available.*got uvx version unknown/
+  );
+});
+
 test("reports when the network package-install check is skipped", () => {
   const { calls, logs } = executeSmoke([...PREBUILT_ARGS, "--skip-network"]);
 
-  assert.equal(calls.length, 6);
+  assert.equal(calls.length, 7);
+  assert.deepEqual(calls.at(-1), [
+    "docker",
+    ["run", "--rm", "--entrypoint", "uvx", "sandbox:test", "--version"],
+  ]);
   assert.match(logs.at(-1), /SKIP.*network package-install check/);
 });
 
