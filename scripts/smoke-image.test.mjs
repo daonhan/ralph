@@ -7,23 +7,32 @@ import { parseSmokeArgs, runImageSmoke } from "./smoke-image.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./smoke-image.mjs", import.meta.url));
 const PREBUILT_ARGS = ["--image", "sandbox:test"];
+const DOCKERFILE = readFileSync(
+  new URL("../packages/core/templates/Dockerfile", import.meta.url),
+  "utf8"
+);
+const CODEX_HELP = [
+  "--json",
+  "--ephemeral",
+  "--ignore-user-config",
+  "--model",
+  "--dangerously-bypass-approvals-and-sandbox",
+].join("\n");
 
 function successfulResult(args) {
   const entrypoint = args[args.indexOf("--entrypoint") + 1];
-  return {
-    status: 0,
-    stdout:
-      entrypoint === "id"
-        ? "agent\n"
-        : entrypoint === "python" || entrypoint === "python3"
-          ? "Python 3.11.2\n"
-          : entrypoint === "uv"
-            ? "uv 0.11.28 (x86_64-unknown-linux-musl)\n"
-            : entrypoint === "uvx"
-              ? "uvx 0.11.28 (x86_64-unknown-linux-musl)\n"
-              : "",
-    stderr: "",
-  };
+  let stdout = "";
+  if (entrypoint === "id") stdout = "agent\n";
+  else if (entrypoint === "codex") {
+    stdout = args.includes("exec") ? CODEX_HELP + "\n" : "codex-cli 0.144.4\n";
+  } else if (entrypoint === "python" || entrypoint === "python3") {
+    stdout = "Python 3.11.2\n";
+  } else if (entrypoint === "uv") {
+    stdout = "uv 0.11.28 (x86_64-unknown-linux-musl)\n";
+  } else if (entrypoint === "uvx") {
+    stdout = "uvx 0.11.28 (x86_64-unknown-linux-musl)\n";
+  }
+  return { status: 0, stdout, stderr: "" };
 }
 
 function executeSmoke(args, resultFor = successfulResult) {
@@ -184,11 +193,35 @@ test("reports a failed image build in plain language", () => {
   );
 });
 
-test("prebuilt mode runs every Python image contract from outside the container", () => {
+test("Dockerfile pins the verified Codex CLI version", () => {
+  assert.match(DOCKERFILE, /ARG CODEX_VERSION=0\.144\.4/);
+  assert.match(
+    DOCKERFILE,
+    /npm install --global "@openai\/codex@\${CODEX_VERSION}"/
+  );
+});
+
+test("prebuilt mode runs every sandbox image contract", () => {
   const { calls } = executeSmoke(PREBUILT_ARGS);
 
-  assert.deepEqual(calls.slice(0, 3), [
+  assert.deepEqual(calls.slice(0, 5), [
     ["docker", ["run", "--rm", "--entrypoint", "id", "sandbox:test", "-un"]],
+    [
+      "docker",
+      ["run", "--rm", "--entrypoint", "codex", "sandbox:test", "--version"],
+    ],
+    [
+      "docker",
+      [
+        "run",
+        "--rm",
+        "--entrypoint",
+        "codex",
+        "sandbox:test",
+        "exec",
+        "--help",
+      ],
+    ],
     [
       "docker",
       ["run", "--rm", "--entrypoint", "python", "sandbox:test", "--version"],
@@ -198,24 +231,26 @@ test("prebuilt mode runs every Python image contract from outside the container"
       ["run", "--rm", "--entrypoint", "python3", "sandbox:test", "--version"],
     ],
   ]);
-  assert.equal(calls.length, 8);
-  assert.match(calls[3][1].at(-1), /python -m venv/);
-  assert.match(calls[4][1].at(-1), /bin\/python" -m pip --version/);
-  assert.deepEqual(calls[5], [
+  assert.equal(calls.length, 10);
+  assert.match(calls[5][1].at(-1), /python -m venv/);
+  assert.match(calls[6][1].at(-1), /bin\/python" -m pip --version/);
+  assert.deepEqual(calls[7], [
     "docker",
     ["run", "--rm", "--entrypoint", "uv", "sandbox:test", "--version"],
   ]);
-  assert.deepEqual(calls[6], [
+  assert.deepEqual(calls[8], [
     "docker",
     ["run", "--rm", "--entrypoint", "uvx", "sandbox:test", "--version"],
   ]);
-  assert.match(calls[7][1].at(-1), /uv pip install/);
-  assert.match(calls[7][1].at(-1), /six==1\.17\.0/);
+  assert.match(calls[9][1].at(-1), /uv pip install/);
+  assert.match(calls[9][1].at(-1), /six==1\.17\.0/);
 });
 
 test("each failed check names the broken image contract", () => {
   const labels = [
     "default container user is agent",
+    "Codex CLI version is pinned",
+    "Codex exec exposes Ralph automation flags",
     "python resolves to Python 3",
     "python3 is available",
     "python -m venv creates a virtual environment",
@@ -340,7 +375,7 @@ test("rejects malformed uvx version output", () => {
 test("reports when the network package-install check is skipped", () => {
   const { calls, logs } = executeSmoke([...PREBUILT_ARGS, "--skip-network"]);
 
-  assert.equal(calls.length, 7);
+  assert.equal(calls.length, 9);
   assert.deepEqual(calls.at(-1), [
     "docker",
     ["run", "--rm", "--entrypoint", "uvx", "sandbox:test", "--version"],

@@ -65,6 +65,32 @@ export function runImageSmoke(options, { run, log }) {
       },
     },
     {
+      label: "Codex CLI version is pinned",
+      entrypoint: "codex",
+      args: ["--version"],
+      validateOutput(output) {
+        return output.trim() === "codex-cli 0.144.4"
+          ? null
+          : `got ${output.trim() || "(empty)"}`;
+      },
+    },
+    {
+      label: "Codex exec exposes Ralph automation flags",
+      entrypoint: "codex",
+      args: ["exec", "--help"],
+      validateOutput(output) {
+        const required = [
+          "--json",
+          "--ephemeral",
+          "--ignore-user-config",
+          "--model",
+          "--dangerously-bypass-approvals-and-sandbox",
+        ];
+        const missing = required.filter((flag) => !output.includes(flag));
+        return missing.length === 0 ? null : `missing ${missing.join(", ")}`;
+      },
+    },
+    {
       label: "python resolves to Python 3",
       entrypoint: "python",
       args: ["--version"],
@@ -174,7 +200,7 @@ function main() {
       console.log(message);
     },
   });
-  console.log(`All Python image contracts passed for ${options.image}.`);
+  console.log(`All sandbox image contracts passed for ${options.image}.`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

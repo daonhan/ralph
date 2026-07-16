@@ -34,6 +34,10 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 
 RUN corepack enable
 
+ARG CODEX_VERSION=0.144.4
+RUN npm install --global "@openai/codex@${CODEX_VERSION}" \
+  && test "$(codex --version)" = "codex-cli ${CODEX_VERSION}"
+
 # Rename the base image's "node" user (UID 1000) to "agent".
 # Keeps UID 1000 so --user 1000:1000 maps to the right home dir owner.
 RUN usermod -d /home/agent -m -l agent node
@@ -53,6 +57,6 @@ ENV PATH="/home/agent/.local/bin:$PATH" \
 # main.ts bind-mounts the host workspace at /home/agent/workspace.
 WORKDIR /home/agent/workspace
 
-# Reset ENTRYPOINT so the orchestrator can pass a full `claude ...` argv.
+# Reset ENTRYPOINT so the orchestrator can pass a full provider command.
 ENTRYPOINT []
 CMD ["claude"]
