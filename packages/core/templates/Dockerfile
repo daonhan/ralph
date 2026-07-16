@@ -1,5 +1,7 @@
 FROM node:22-bookworm
 
+COPY --from=ghcr.io/astral-sh/uv:0.11.28 /uv /uvx /bin/
+
 # System dependencies
 RUN apt-get update && apt-get install -y \
     git \
