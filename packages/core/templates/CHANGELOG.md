@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.2.3...ralph-sandbox-v0.3.0) (2026-07-16)
+
+
+### Features
+
+* **sandbox:** add baseline Python runtime ([8e35576](https://github.com/daonhan/ralph/commit/8e3557665beb2e581f91611357440bc1d41f95f0))
+* **sandbox:** add uv tooling ([2f42a4a](https://github.com/daonhan/ralph/commit/2f42a4a08c9f8b9ac0c3956a9575fb69edf15314))
+
 ## [0.2.3](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.2.2...ralph-sandbox-v0.2.3) (2026-06-05)
 
 
