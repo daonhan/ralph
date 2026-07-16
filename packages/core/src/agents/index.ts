@@ -5,10 +5,13 @@ import type { AgentAdapter, AgentName, AgentSelection } from "./types.js";
 export type {
   AgentAdapter,
   AgentCommandContext,
+  AgentDecodeResult,
   AgentMount,
   AgentName,
+  AgentRenderEvent,
   AgentSelection,
   AgentSelectionSource,
+  AgentStreamDecoder,
 } from "./types.js";
 
 const ADAPTERS: Record<AgentName, AgentAdapter> = {
