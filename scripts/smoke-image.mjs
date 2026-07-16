@@ -4,19 +4,19 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export function parseSmokeArgs(args, env = process.env) {
-  const imageIndex = args.indexOf("--image");
+  let imageArg = null;
   for (let index = 0; index < args.length; index++) {
     if (args[index] === "--image") {
       const image = args[index + 1];
       if (!image || image.trim() === "" || image.startsWith("--")) {
         throw new Error("--image requires an image tag");
       }
+      imageArg = image.trim();
       index++;
     } else if (args[index] !== "--skip-network") {
       throw new Error(`unknown argument: ${args[index]}`);
     }
   }
-  const imageArg = imageIndex === -1 ? null : args[imageIndex + 1].trim();
   const envImage = env.RALPH_SMOKE_IMAGE?.trim() || null;
   const prebuiltImage = imageArg ?? envImage;
   return {
@@ -159,10 +159,16 @@ function main() {
   const options = parseSmokeArgs(process.argv.slice(2));
   runImageSmoke(options, {
     run(command, args) {
-      return spawnSync(command, args, {
+      const isBuild = args[0] === "build";
+      const result = spawnSync(command, args, {
         encoding: "utf8",
-        stdio: args[0] === "build" ? "inherit" : undefined,
+        stdio: isBuild ? "pipe" : undefined,
       });
+      if (isBuild) {
+        if (result.stdout) process.stdout.write(result.stdout);
+        if (result.stderr) process.stderr.write(result.stderr);
+      }
+      return result;
     },
     log(message) {
       console.log(message);

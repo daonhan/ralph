@@ -134,6 +134,20 @@ test("rejects a repeated --image with a whitespace-only tag", () => {
   );
 });
 
+test("uses the last repeated --image tag", () => {
+  assert.deepEqual(
+    parseSmokeArgs(
+      ["--image", "sandbox:first", "--image", "sandbox:second"],
+      {}
+    ),
+    {
+      image: "sandbox:second",
+      build: false,
+      skipNetwork: false,
+    }
+  );
+});
+
 test("rejects unknown arguments", () => {
   assert.throws(
     () => parseSmokeArgs(["--surprise"], {}),
