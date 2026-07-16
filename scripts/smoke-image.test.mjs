@@ -285,6 +285,32 @@ test("rejects an image whose default user is not agent", () => {
   );
 });
 
+test("rejects --json-schema when Codex exec does not expose --json", () => {
+  assert.throws(
+    () =>
+      executeSmoke(PREBUILT_ARGS, (args) => ({
+        ...successfulResult(args),
+        stdout: args.includes("exec")
+          ? CODEX_HELP.replace("--json", "--json-schema") + "\n"
+          : successfulResult(args).stdout,
+      })),
+    /Codex exec exposes Ralph automation flags.*missing --json/
+  );
+});
+
+test("rejects --model-provider when Codex exec does not expose --model", () => {
+  assert.throws(
+    () =>
+      executeSmoke(PREBUILT_ARGS, (args) => ({
+        ...successfulResult(args),
+        stdout: args.includes("exec")
+          ? CODEX_HELP.replace("--model", "--model-provider") + "\n"
+          : successfulResult(args).stdout,
+      })),
+    /Codex exec exposes Ralph automation flags.*missing --model/
+  );
+});
+
 test("rejects a python command that is not Python 3", () => {
   assert.throws(
     () =>

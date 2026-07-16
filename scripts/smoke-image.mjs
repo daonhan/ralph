@@ -86,7 +86,8 @@ export function runImageSmoke(options, { run, log }) {
           "--model",
           "--dangerously-bypass-approvals-and-sandbox",
         ];
-        const missing = required.filter((flag) => !output.includes(flag));
+        const options = new Set(output.match(/--[a-z0-9-]+/g) ?? []);
+        const missing = required.filter((flag) => !options.has(flag));
         return missing.length === 0 ? null : `missing ${missing.join(", ")}`;
       },
     },
