@@ -5,6 +5,8 @@
  * assistant text to stdout and tool/diagnostic events to stderr.
  */
 
+import type { AgentRenderEvent } from "./agents/types.js";
+
 const TOOL_INPUT_PREVIEW = 200;
 const TOOL_RESULT_PREVIEW = 120;
 const TOOL_ERROR_PREVIEW = 400;
@@ -49,115 +51,81 @@ export const SYM = USE_COLOR
 
 export const SYM_OUT = USE_COLOR_STDOUT ? { bullet: "●" } : { bullet: "*" };
 
-type AssistantBlock = {
-  type: string;
-  text?: string;
-  name?: string;
-  input?: unknown;
-  id?: string;
-};
-type UserBlock = {
-  type: string;
-  content?: unknown;
-  is_error?: boolean;
-  tool_use_id?: string;
-};
-export type StreamJson =
-  | { type: "assistant"; message?: { content?: AssistantBlock[] } }
-  | { type: "user"; message?: { content?: UserBlock[] } }
-  | { type: "system"; subtype?: string; [k: string]: unknown }
-  | { type: "result"; result?: string; is_error?: boolean }
-  | { type: string; [k: string]: unknown };
-
 export type ToolTrack = { name: string; startedAt: number };
 
 export function renderEvent(
-  ev: StreamJson,
+  ev: AgentRenderEvent,
   toolMap: Map<string, ToolTrack>
 ): void {
   switch (ev.type) {
-    case "system": {
-      const sub = (ev as { subtype?: string }).subtype;
-      if (sub === "init") {
-        const model = (ev as { model?: string }).model ?? "?";
-        const cwd = (ev as { cwd?: string }).cwd ?? "?";
+    case "init":
+      process.stderr.write(`${dim("───")} ${bold("init")} ${dim(ev.detail)}\n`);
+      return;
+    case "assistant": {
+      const lines = ev.text.split("\n");
+      const formatted = lines
+        .map((line, index) =>
+          index === 0
+            ? `${boldOut(cyanOut(SYM_OUT.bullet))} ${line}`
+            : `  ${line}`
+        )
+        .join("\r\n");
+      process.stdout.write(formatted + "\r\n\n");
+      return;
+    }
+    case "thinking":
+      process.stderr.write(`${dim(SYM.bullet + " thinking" + SYM.ellip)}\n`);
+      return;
+    case "tool-start": {
+      if (ev.id) {
+        toolMap.set(ev.id, { name: ev.name, startedAt: Date.now() });
+      }
+      process.stderr.write(
+        `${cyan(SYM.bullet)} ${bold(ev.name)} ${dim(
+          previewInput(ev.name, ev.input)
+        )}\n`
+      );
+      return;
+    }
+    case "tool-result": {
+      const text = stringifyToolResult(ev.content);
+      const tracked = ev.id ? toolMap.get(ev.id) : undefined;
+      const toolName = tracked?.name ?? ev.name ?? "tool";
+      const elapsed = tracked ? ` (${Date.now() - tracked.startedAt}ms)` : "";
+      if (ev.id) toolMap.delete(ev.id);
+      if (ev.isError) {
+        const snippet = text
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, TOOL_ERROR_PREVIEW);
         process.stderr.write(
-          `${dim("───")} ${bold("init")} ${dim(`model=${model} cwd=${cwd}`)}\n`
+          `${dim(SYM.cont)} ${red(SYM.cross)} ${bold(toolName)}${red(
+            " failed"
+          )}\n  ${red(snippet)}${
+            text.length > snippet.length ? " " + SYM.ellip : ""
+          }\n`
+        );
+      } else {
+        const snippet = text
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, TOOL_RESULT_PREVIEW);
+        process.stderr.write(
+          `${dim(SYM.cont)} ${green(SYM.check)} ${bold(toolName)}${dim(
+            elapsed
+          )} ${dim(snippet)}${
+            text.length > snippet.length ? " " + SYM.ellip : ""
+          }\n`
         );
       }
       return;
     }
-    case "assistant": {
-      const content =
-        (ev as { message?: { content?: AssistantBlock[] } }).message?.content ??
-        [];
-      for (const block of content) {
-        if (block.type === "text" && typeof block.text === "string") {
-          const lines = block.text.split("\n");
-          const formatted = lines
-            .map((l, idx) =>
-              idx === 0 ? `${boldOut(cyanOut(SYM_OUT.bullet))} ${l}` : `  ${l}`
-            )
-            .join("\r\n");
-          process.stdout.write(formatted + "\r\n\n");
-        } else if (block.type === "thinking") {
-          process.stderr.write(
-            `${dim(SYM.bullet + " thinking" + SYM.ellip)}\n`
-          );
-        } else if (block.type === "tool_use") {
-          const name = block.name ?? "?";
-          const preview = previewInput(name, block.input);
-          if (block.id) {
-            toolMap.set(block.id, { name, startedAt: Date.now() });
-          }
-          process.stderr.write(
-            `${cyan(SYM.bullet)} ${bold(name)} ${dim(preview)}\n`
-          );
-        }
-      }
-      return;
-    }
-    case "user": {
-      const content =
-        (ev as { message?: { content?: UserBlock[] } }).message?.content ?? [];
-      for (const block of content) {
-        if (block.type !== "tool_result") continue;
-        const text = stringifyToolResult(block.content);
-        const tracked = block.tool_use_id
-          ? toolMap.get(block.tool_use_id)
-          : undefined;
-        const toolName = tracked?.name ?? "tool";
-        const elapsed = tracked ? ` (${Date.now() - tracked.startedAt}ms)` : "";
-        if (block.tool_use_id) toolMap.delete(block.tool_use_id);
-
-        if (block.is_error) {
-          const snippet = text
-            .replace(/\s+/g, " ")
-            .trim()
-            .slice(0, TOOL_ERROR_PREVIEW);
-          process.stderr.write(
-            `${dim(SYM.cont)} ${red(SYM.cross)} ${bold(toolName)}${red(" failed")}\n  ${red(snippet)}${text.length > snippet.length ? " " + SYM.ellip : ""}\n`
-          );
-        } else {
-          const snippet = text
-            .replace(/\s+/g, " ")
-            .trim()
-            .slice(0, TOOL_RESULT_PREVIEW);
-          process.stderr.write(
-            `${dim(SYM.cont)} ${green(SYM.check)} ${bold(toolName)}${dim(elapsed)} ${dim(snippet)}${text.length > snippet.length ? " " + SYM.ellip : ""}\n`
-          );
-        }
-      }
-      return;
-    }
-    case "result": {
-      const isError = (ev as { is_error?: boolean }).is_error;
-      if (isError)
-        process.stderr.write(`${red(SYM.bullet + " result errored")}\n`);
-      return;
-    }
-    default:
-      return;
+    case "diagnostic":
+      process.stderr.write(
+        ev.isError
+          ? `${red(SYM.bullet + " " + ev.message)}\n`
+          : `${dim(SYM.bullet + " " + ev.message)}\n`
+      );
   }
 }
 
@@ -167,6 +135,7 @@ function previewInput(toolName: string, input: unknown): string {
   // Pick the most informative field per tool.
   const keyOrder: Record<string, string[]> = {
     Bash: ["command"],
+    command: ["command"],
     Edit: ["file_path"],
     Write: ["file_path"],
     Read: ["file_path"],

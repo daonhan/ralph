@@ -1,6 +1,16 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
-import { buildClaudeArgs, parseGraceMs, resolveModelArgs } from "../runner.js";
+import { getAgentAdapter } from "../agents/index.js";
+import {
+  buildClaudeArgs,
+  parseGraceMs,
+  resolveAgentRuntimeArgs,
+  resolveModelArgs,
+} from "../runner.js";
 
 describe("parseGraceMs", () => {
   it("returns the default when unset", () => {
@@ -117,5 +127,32 @@ describe("buildClaudeArgs", () => {
     const promptIdx = args.findIndex((a) => a.includes(promptPath));
     expect(modelIdx).toBeGreaterThan(-1);
     expect(modelIdx).toBeLessThan(promptIdx);
+  });
+});
+
+describe("resolveAgentRuntimeArgs", () => {
+  it("mounts only the selected provider plus shared GitHub config", () => {
+    const home = mkdtempSync(join(tmpdir(), "ralph-agent-home-"));
+    try {
+      mkdirSync(join(home, ".claude"));
+      writeFileSync(join(home, ".claude.json"), "{}", "utf8");
+      mkdirSync(join(home, ".codex"));
+      mkdirSync(join(home, ".config", "gh"), { recursive: true });
+
+      const claudeArgs = resolveAgentRuntimeArgs(
+        getAgentAdapter("claude"),
+        home
+      );
+      expect(claudeArgs.join(" ")).toContain(".claude");
+      expect(claudeArgs.join(" ")).not.toContain(".codex");
+
+      const codexArgs = resolveAgentRuntimeArgs(getAgentAdapter("codex"), home);
+      expect(codexArgs.join(" ")).toContain("/home/agent/.codex");
+      expect(codexArgs.join(" ")).not.toContain(".claude");
+      expect(codexArgs).toContain("CODEX_HOME=/home/agent/.codex");
+      expect(codexArgs.join(" ")).toContain("/home/agent/.config/gh:ro");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
