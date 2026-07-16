@@ -170,6 +170,47 @@ describe("Codex stream decoder", () => {
     });
   });
 
+  it("accepts a successful MCP item with a null error", () => {
+    const decoded = createCodexDecoder().decode({
+      type: "item.completed",
+      item: {
+        id: "item-mcp",
+        type: "mcp_tool_call",
+        server: "github",
+        tool: "search",
+        status: "completed",
+        result: { count: 1 },
+        error: null,
+      },
+    });
+
+    expect(decoded.events[0]).toMatchObject({
+      type: "tool-result",
+      id: "item-mcp",
+      name: "github.search",
+      isError: false,
+    });
+  });
+
+  it("rejects a declined command without an exit code", () => {
+    const decoded = createCodexDecoder().decode({
+      type: "item.completed",
+      item: {
+        id: "item-command",
+        type: "command_execution",
+        command: "pnpm test",
+        status: "declined",
+      },
+    });
+
+    expect(decoded.events[0]).toMatchObject({
+      type: "tool-result",
+      id: "item-command",
+      name: "command",
+      isError: true,
+    });
+  });
+
   it("surfaces turn failures and error records", () => {
     const decoder = createCodexDecoder();
     expect(

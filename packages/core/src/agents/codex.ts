@@ -86,8 +86,9 @@ function toolOutput(item: Record<string, unknown>): unknown {
 function toolFailed(item: Record<string, unknown>): boolean {
   return (
     item.status === "failed" ||
+    item.status === "declined" ||
     (typeof item.exit_code === "number" && item.exit_code !== 0) ||
-    item.error !== undefined
+    item.error != null
   );
 }
 
