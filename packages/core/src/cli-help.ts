@@ -2,6 +2,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  parseAgentName,
+  type AgentName,
+  type AgentSelectionSource,
+} from "./agents/index.js";
+import { resolveCodexModel } from "./agents/codex.js";
 import { DEFAULT_MAX_RETRIES } from "./retry.js";
 import {
   IMAGE_REF,
@@ -19,6 +25,8 @@ export type CliFlags = {
   detach: boolean;
   log?: string;
   notify: boolean;
+  agent?: AgentName;
+  codexUserConfig: boolean;
   rest: string[];
 };
 
@@ -33,8 +41,17 @@ export function parseFlags(argv: string[]): CliFlags {
   let log: string | undefined;
   let expectingLog = false;
   let notify = false;
+  let agent: AgentName | undefined;
+  let expectingAgent = false;
+  let codexUserConfig = false;
   const rest: string[] = [];
   for (const a of argv) {
+    if (expectingAgent) {
+      if (a.startsWith("-")) throw new Error("--agent requires a value");
+      agent = parseAgentName(a);
+      expectingAgent = false;
+      continue;
+    }
     if (expectingMaxRetries) {
       if (!/^\d+$/.test(a)) {
         throw new Error(
@@ -58,7 +75,12 @@ export function parseFlags(argv: string[]): CliFlags {
     else if (a === "--detach") detach = true;
     else if (a === "--log") expectingLog = true;
     else if (a === "--notify") notify = true;
+    else if (a === "--agent") expectingAgent = true;
+    else if (a === "--codex-user-config") codexUserConfig = true;
     else rest.push(a);
+  }
+  if (expectingAgent) {
+    throw new Error("--agent requires a value");
   }
   if (expectingMaxRetries) {
     throw new Error("--max-retries requires a value");
@@ -78,6 +100,8 @@ export function parseFlags(argv: string[]): CliFlags {
     detach,
     log,
     notify,
+    agent,
+    codexUserConfig,
     rest,
   };
 }
@@ -129,6 +153,8 @@ Flags:
   --detach            fork the loop into a background process, print pid + log path, and exit (parent returns 0)
   --log <path>        override the detached log path (default: <workspace>/.ralph-tmp/logs/detached-<parent-pid>.log; requires --detach)
   --notify            emit OS notification + terminal bell on loop completion or unrecoverable failure (default: off)
+  --agent <claude|codex> select the in-container coding agent (default: claude; overrides RALPH_AGENT)
+  --codex-user-config    load ~/.codex/config.toml for Codex (default: isolated; requires Codex)
 
 Environment variables:
   RALPH_WORKSPACE       host dir bind-mounted at /home/agent/workspace (default: cwd)
@@ -139,10 +165,10 @@ Environment variables:
                         socket is detected). Mounting lets Testcontainers inside the
                         sandbox spawn sibling containers on the host daemon. Grants
                         root-equivalent host access.
-  RALPH_MODEL           pin the sandbox Claude model. When non-empty, "--model <value>"
-                        is passed through to the in-container claude CLI for every
-                        stage. When unset (or empty/whitespace), the in-container CLI
-                        default is used. Pass-through — the claude CLI validates.
+  RALPH_AGENT           fallback agent selection when --agent is absent
+  RALPH_MODEL           model override for the selected agent. Claude passes it
+                        through. Isolated Codex defaults to gpt-5.6-sol with high
+                        reasoning when this variable is unset.
   RALPH_DOCKER_SOCK_PATH explicit docker.sock host path. When unset, auto-detected via
                         DOCKER_HOST (unix:// only), then a candidate list:
                           /var/run/docker.sock
@@ -157,6 +183,40 @@ Build fallback runs only if pull fails AND $RALPH_DOCKER_CONTEXT/Dockerfile exis
 `);
 }
 
+export type AgentConfigDescription = {
+  codexConfig?: string;
+  model: string;
+  reasoning?: string;
+};
+
+export function describeAgentConfig(
+  agent: AgentName,
+  codexUserConfig: boolean,
+  rawModel: string | undefined
+): AgentConfigDescription {
+  const explicit = rawModel?.trim();
+  if (agent === "claude") {
+    return {
+      model: explicit
+        ? `${explicit} (RALPH_MODEL)`
+        : "sandbox CLI default (RALPH_MODEL unset)",
+    };
+  }
+
+  const resolution = resolveCodexModel(rawModel, codexUserConfig);
+  return {
+    codexConfig: codexUserConfig
+      ? "inherited (~/.codex/config.toml)"
+      : "isolated (--ignore-user-config)",
+    model: resolution.model
+      ? `${resolution.model} (${resolution.modelSource})`
+      : "user config (RALPH_MODEL unset)",
+    reasoning: resolution.reasoningEffort
+      ? `${resolution.reasoningEffort} (${resolution.reasoningSource})`
+      : resolution.reasoningSource,
+  };
+}
+
 export type PrintConfigOptions = {
   cliVersion?: string;
   noKeepAlive?: boolean;
@@ -164,6 +224,9 @@ export type PrintConfigOptions = {
   detach?: boolean;
   detachLogPath?: string;
   notify?: boolean;
+  agent?: AgentName;
+  agentSource?: AgentSelectionSource;
+  codexUserConfig?: boolean;
 };
 
 export function printConfig(
@@ -180,6 +243,9 @@ export function printConfig(
     detach = false,
     detachLogPath,
     notify = false,
+    agent = "claude",
+    agentSource = "default",
+    codexUserConfig = false,
   } = opts;
   const dockerfile = resolveDockerfile(ralphDir);
   const dfPresent = existsSync(dockerfile);
@@ -212,11 +278,21 @@ export function printConfig(
   const detachStatus =
     detach && detachLogPath ? `on (log: ${detachLogPath})` : "off";
   const notifyStatus = notify ? "on" : "off";
-  const rawModel = process.env.RALPH_MODEL;
-  const modelStatus =
-    rawModel && rawModel.trim() !== ""
-      ? `${rawModel.trim()} (RALPH_MODEL)`
-      : "sandbox CLI default (RALPH_MODEL unset)";
+  const provider = describeAgentConfig(
+    agent,
+    codexUserConfig,
+    process.env.RALPH_MODEL
+  );
+  const providerLines = [
+    `  agent                 ${agent} (${agentSource})`,
+    ...(provider.codexConfig
+      ? [`  codex config          ${provider.codexConfig}`]
+      : []),
+    `  model                 ${provider.model}`,
+    ...(provider.reasoning
+      ? [`  reasoning             ${provider.reasoning}`]
+      : []),
+  ].join("\n");
 
   process.stdout.write(`[${bin}] resolved config
   version               ${bin} ${cli} (core ${core})
@@ -225,8 +301,8 @@ export function printConfig(
   RALPH_IMAGE           ${IMAGE_REF}${process.env.RALPH_IMAGE || process.env.RALPH_IMAGE_TAG ? "" : "  (default)"}
   Dockerfile at ctx     ${dfPresent ? "present" : "MISSING"} (${dockerfile})
   packageDir            ${packageDir}
+${providerLines}
   RALPH_DOCKER_SOCK     ${sockStatus}
-  model                 ${modelStatus}
   keep-alive            ${keepAliveStatus}
   max-retries           ${maxRetries}
   detach                ${detachStatus}

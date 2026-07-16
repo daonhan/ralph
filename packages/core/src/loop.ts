@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 
+import type { AgentName } from "./agents/index.js";
 import { readCoreVersion } from "./cli-help.js";
 import { acquire, type Releaser } from "./keepalive.js";
 import { notifyComplete, notifyError } from "./notify.js";
@@ -51,6 +52,10 @@ export type LoopOptions = {
   bin?: string;
   /** CLI version for the init-time version banner. */
   cliVersion?: string;
+  /** In-container coding agent. Default: Claude. */
+  agent?: AgentName;
+  /** When true, Codex loads ~/.codex/config.toml. Default: false. */
+  codexUserConfig?: boolean;
 };
 
 export async function runLoop(opts: LoopOptions): Promise<void> {
@@ -66,7 +71,13 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     notify = false,
     bin = "ralph",
     cliVersion = "?",
+    agent = "claude",
+    codexUserConfig = false,
   } = opts;
+
+  if (codexUserConfig && agent !== "codex") {
+    throw new Error("codexUserConfig requires agent=codex");
+  }
 
   const versionLine = `${bin} ${cliVersion} (core ${readCoreVersion()})`;
   process.stderr.write(
@@ -145,7 +156,11 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
                 i,
                 spillHostDir,
                 stageLog,
-                { signal: stageAbort.signal }
+                {
+                  signal: stageAbort.signal,
+                  agent,
+                  codexUserConfig,
+                }
               );
             },
             {

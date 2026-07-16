@@ -1,6 +1,15 @@
 export { runAfk } from "./main.js";
 export { runGhAfk } from "./gh-main.js";
+export type {
+  AgentName,
+  AgentSelection,
+  AgentSelectionSource,
+} from "./agents/index.js";
 export { runLoop, type LoopOptions } from "./loop.js";
 export { STAGES, type Stage } from "./stages.js";
-export { renderTemplate, type RenderOptions, type RenderVars } from "./render.js";
+export {
+  renderTemplate,
+  type RenderOptions,
+  type RenderVars,
+} from "./render.js";
 export { ensureImage, runStage } from "./runner.js";

@@ -37,6 +37,19 @@ describe("stripDetachFlags", () => {
   it("is a no-op when neither flag is present", () => {
     expect(stripDetachFlags(["plan", "3"])).toEqual(["plan", "3"]);
   });
+
+  it("preserves provider flags in the detached child argv", () => {
+    expect(
+      stripDetachFlags([
+        "--detach",
+        "--agent",
+        "codex",
+        "--codex-user-config",
+        "plan.md",
+        "3",
+      ])
+    ).toEqual(["--agent", "codex", "--codex-user-config", "plan.md", "3"]);
+  });
 });
 
 type SpawnCall = {
