@@ -4,5 +4,6 @@ dist/
 .ralph-tmp/
 .ghafk-prompt-*.md
 .pnpm-store/
+.worktrees/
 .ralph-*.mjs
 .claude/scheduled_tasks.lock
