@@ -55,7 +55,12 @@ Release PR appears.
    unreleased commits. The PR bumps the version, amends `CHANGELOG.md`, and carries
    the refreshed status table.
 3. Review the PR: confirm the proposed version and the CHANGELOG diff read the way
-   you want users to see them.
+   you want users to see them. Before merging a `ralph-sandbox` Release PR, run
+   `pnpm smoke:image` from the release candidate revision. This full build-and-smoke
+   (including its network package-install check) is required before publishing; an
+   offline `--skip-network` run does not satisfy the release gate. If the candidate
+   image was built separately, verify that exact tag with
+   `pnpm smoke:image -- --image <candidate-tag>`.
 4. **Merge the Release PR.** That single action creates the component tag
    (`<component>-vX.Y.Z`) and the GitHub Release.
 5. The tag triggers the matching publish workflow:
