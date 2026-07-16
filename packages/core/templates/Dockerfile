@@ -8,6 +8,9 @@ RUN apt-get update && apt-get install -y \
     wget \
     ca-certificates \
     gnupg \
+    python3 \
+    python3-venv \
+    python-is-python3 \
   && rm -rf /var/lib/apt/lists/*
 
 # .NET SDK 10 (Microsoft package feed for Debian 12 / Bookworm)
