@@ -295,21 +295,59 @@ persisted there.
 
 #### Verify back on the host
 
+Verify the credentials for the provider you selected.
+
+##### Claude credentials
+
 Linux / macOS / WSL:
 
 ```bash
 ls -la ~/.claude/.credentials.json ~/.claude.json
-cat ~/.config/gh/hosts.yml | head
 ```
 
 PowerShell:
 
 ```powershell
 Get-ChildItem "$HOME\.claude\.credentials.json","$HOME\.claude.json"
+```
+
+##### Codex credentials
+
+```bash
+codex login status
+```
+
+Because `cli_auth_credentials_store = "file"`, verify that a successful login
+also created the credential file without printing its reusable secret.
+
+Linux / macOS / WSL:
+
+```bash
+ls -la ~/.codex/auth.json
+```
+
+PowerShell:
+
+```powershell
+Get-ChildItem "$HOME\.codex\auth.json"
+```
+
+##### GitHub credentials (`ralph-ghafk` only)
+
+Linux / macOS / WSL:
+
+```bash
+cat ~/.config/gh/hosts.yml | head
+```
+
+PowerShell:
+
+```powershell
 Get-Content "$HOME\.config\gh\hosts.yml"
 ```
 
-Expected `hosts.yml` content: a `github.com:` block with `user:` and `oauth_token:` keys.
+Expected `hosts.yml` content: a `github.com:` block with `user:` and
+`oauth_token:` keys.
 
 #### Re-login / token expired
 
@@ -598,12 +636,12 @@ The agent playbooks are self-contained: `packages/core/templates/prompt.md` (pla
   ```
 - **`docker pull failed … and no Dockerfile at …`** — the default image ref isn't reachable (offline, registry down, or you set a custom `$RALPH_IMAGE` that doesn't exist) AND no Dockerfile is at `$RALPH_DOCKER_CONTEXT`. Fix one of: connectivity, `RALPH_IMAGE`, or place a Dockerfile at `$RALPH_DOCKER_CONTEXT`.
 - **`pull access denied … repository does not exist`** — `$RALPH_IMAGE` points at a private repo or a typo. Either `docker login`, switch to a public image, or unset `RALPH_IMAGE` to use the default.
-- **Loop hangs after a stage's final assistant message (no next iteration, no error)** — the selected CLI inside the sandbox emitted its completion event but failed to exit. The runner self-recovers within `RALPH_RESULT_GRACE_MS` (default 30000ms); bump or disable it via the environment when diagnosing:
+- **Loop hangs after a stage's final assistant message (no next iteration, no error)** — the selected CLI inside the sandbox emitted its completion event but failed to exit. After `RALPH_RESULT_GRACE_MS` (default 30000ms), the runner kills the lingering docker child, keeps the captured completion, and continues the loop. Bump or disable the timer via the environment when diagnosing. To inspect or stop the container manually before the timer expires:
   ```bash
   docker ps --filter ancestor=docker.io/daonhan/ralph-sandbox:latest
   docker kill <container-id>
   ```
-  The sandbox runs with `--rm` so the container is removed; ralph rejects the current stage with `docker run exited with <code>` and aborts that iteration. Work already committed in prior iterations is preserved.
+  The sandbox runs with `--rm`, so the container is removed after it exits.
 
 ---
 
