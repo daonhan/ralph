@@ -87,20 +87,20 @@ At runtime, the host workspace gets a `.ralph-tmp/` directory containing the per
 ## Prerequisites
 
 - **Docker** — Docker Desktop (Windows/macOS) or Docker Engine (Linux). The orchestrator shells out to `docker build` / `docker run`.
-- **Node.js 20+** + **npm 9+** (or `pnpm`/`yarn`). For Windows: native nvm-for-windows, nvm-windows, or directly from nodejs.org; for macOS/Linux: nvm, asdf, or distro package.
+- **Node.js 20+** + **npm 9+** (or `pnpm`/`yarn`). For Windows Claude runs: native nvm-for-windows, nvm-windows, or directly from nodejs.org. For Windows Codex runs: install Node inside WSL. For macOS/Linux: nvm, asdf, or a distro package.
 - **`gh`** authenticated (only required for `ralph-ghafk`): `gh auth login` once.
 - **Claude Code or Codex** authentication for the provider you select. See "First-run setup" below.
-- **(Windows only, optional but recommended)** `bash.exe` on PATH — comes free with [Git for Windows](https://git-scm.com/download/win). The renderer prefers it over `cmd.exe` because POSIX redirects + utilities (`git log`, `gh issue list`) are smoother. If absent, the renderer falls back to `cmd.exe` and uses the built-in try-shell tag (`!?\`cmd|||fallback\``) so commands that fail return their fallback string cleanly — no broken render.
+- **(Windows Claude only, optional but recommended)** `bash.exe` on PATH — comes free with [Git for Windows](https://git-scm.com/download/win). The renderer prefers it over `cmd.exe` because POSIX redirects + utilities (`git log`, `gh issue list`) are smoother. If absent, the renderer falls back to `cmd.exe` and uses the built-in try-shell tag (`!?\`cmd|||fallback\``) so commands that fail return their fallback string cleanly — no broken render.
 
 ### Supported shells / OS combinations
 
-| Where you invoke `ralph-afk` | Status | Notes                                                                                                   |
-| ---------------------------- | ------ | ------------------------------------------------------------------------------------------------------- |
-| Linux native (Ubuntu, etc.)  | ✓      | `/bin/bash` used for shell tags. Confirmed via WSL Ubuntu.                                              |
-| macOS native                 | ✓      | `/bin/bash` used. Identical to Linux path.                                                              |
-| Windows PowerShell / cmd     | ✓      | Renderer probes `bash.exe`; falls back to `cmd.exe`. Use `npm i -g @daonhan/ralph` against native Node. |
-| Windows + WSL bash           | ✓      | Install inside WSL with a user-local prefix (`npm config set prefix ~/.npm-global`) to avoid sudo.      |
-| Windows + Git Bash           | ✓      | Resolves shell to its own `bash.exe`.                                                                   |
+| Where you invoke `ralph-afk` | Claude | Codex | Notes                                                                                           |
+| ---------------------------- | ------ | ----- | ----------------------------------------------------------------------------------------------- |
+| Linux native (Ubuntu, etc.)  | ✓      | ✓     | `/bin/bash` is used for shell tags.                                                             |
+| macOS native                 | ✓      | ✓     | `/bin/bash` is used.                                                                            |
+| Windows PowerShell / cmd     | ✓      | —     | Native Windows is supported for Claude. Codex requires WSL.                                     |
+| Windows + WSL bash           | ✓      | ✓     | Install Ralph, the selected host CLI, and credentials inside the same WSL distro.               |
+| Windows + Git Bash           | ✓      | —     | Native Git Bash and its Windows home are supported for Claude. Codex requires a WSL Linux home. |
 
 ### Windows + WSL: credentials
 
@@ -108,9 +108,17 @@ Credentials live on the **host** at `~/.claude` or `~/.codex` (for the selected 
 
 | Launch from              | `$HOME` is                        | Mounted into container                                              |
 | ------------------------ | --------------------------------- | ------------------------------------------------------------------- |
-| Windows PowerShell / cmd | `C:\Users\<name>`                 | The selected provider's credential store under this home is mounted |
+| Windows PowerShell / cmd | `C:\Users\<name>`                 | Claude credentials under this home are mounted                      |
 | WSL bash                 | `/home/<linuxname>`               | The selected provider's credential store under this home is mounted |
 | Linux / macOS            | `/home/<name>` or `/Users/<name>` | The selected provider's credential store under this home is mounted |
+
+**Windows Codex support requires WSL.** Install Ralph and the pinned host Codex
+CLI, run `codex login`, and invoke Ralph from the same WSL shell. Keep
+`~/.codex` in the WSL distro's Linux home (the ext4 filesystem), for example
+`/home/<linuxname>/.codex`. The target workspace may still live on Windows and
+be opened through `/mnt/c/...` or `/mnt/d/...`. A Windows-backed Codex home from
+PowerShell, cmd, or Git Bash is not supported; those native Windows homes remain
+valid for Claude.
 
 If you already logged in via PowerShell `claude.exe` and want WSL to use those creds too:
 
@@ -123,7 +131,7 @@ mkdir -p ~/.config/gh
 cp -r /mnt/c/Users/<WINUSER>/.config/gh/. ~/.config/gh/ 2>/dev/null || true
 ```
 
-- Launching from PowerShell after a global install — just call the bin directly:
+- Launching Claude from PowerShell after a global install — just call the bin directly:
   ```powershell
   ralph-afk "<plan-and-prd>" 3
   ```
@@ -142,7 +150,8 @@ Claude remains the default:
 ralph-afk "./docs/plans/x.md ./docs/prd/x.md" 5
 ```
 
-Select Codex per invocation:
+Select Codex per invocation. On Windows, run these commands from WSL as
+described above:
 
 ```bash
 ralph-afk --agent codex "./docs/plans/x.md ./docs/prd/x.md" 5
@@ -217,7 +226,7 @@ Required repo secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (a Docker Hub acc
 
 The image is stateless. Provider credentials live on the **host** at `~/.claude` or `~/.codex`. If you use `ralph-ghafk`, its provider-independent GitHub CLI credentials live at `~/.config/gh`. The orchestrator mounts only the selected provider's credentials, plus GitHub CLI credentials when present, into each container.
 
-> **Same-shell rule.** `ralph-afk` / `ralph-ghafk` read `$HOME` of the shell that launched them. Auth from the same shell context you intend to run the bins in. PowerShell host (`C:\Users\<you>\.config\gh\`) and WSL host (`\\wsl$\Ubuntu\home\<you>\.config\gh\`) are separate stores — don't mix.
+> **Same-shell rule.** `ralph-afk` / `ralph-ghafk` read `$HOME` of the shell that launched them. Auth from the same shell context you intend to run the bins in. PowerShell host (`C:\Users\<you>\.config\gh\`) and WSL host (`\\wsl$\Ubuntu\home\<you>\.config\gh\`) are separate stores — don't mix. Native PowerShell and Git Bash homes are valid for Claude, but Windows Codex requires a WSL Linux home.
 
 Choose one provider login path below. Claude and Codex authentication are
 mutually exclusive; GitHub authentication is provider-independent and required
@@ -258,9 +267,10 @@ exit
 
 #### Codex login
 
-Use this path instead when you select Codex. Install the host CLI version pinned
-in Ralph's sandbox from the same PowerShell, WSL, Linux, or macOS shell that
-will launch Ralph:
+Use this path instead when you select Codex. On Windows, open WSL first; native
+PowerShell, cmd, and Git Bash are not supported Codex launch contexts. Install
+the host CLI version pinned in Ralph's sandbox from the same Linux, macOS, or
+WSL shell that will launch Ralph:
 
 ```bash
 npm install --global @openai/codex@0.144.4
@@ -282,7 +292,9 @@ codex login status
 ```
 
 Ralph mounts `~/.codex` read-write at `/home/agent/.codex` so Codex can refresh
-the login. It runs with `--ephemeral`, so stage session transcripts are not
+the login. On Windows, that directory must be under the WSL Linux home, not on
+an NTFS mount; the workspace itself may remain under `/mnt/c` or `/mnt/d`.
+Ralph runs Codex with `--ephemeral`, so stage session transcripts are not
 persisted there.
 
 #### GitHub login (`ralph-ghafk` only)
@@ -340,7 +352,7 @@ PowerShell:
 Get-ChildItem "$HOME\.claude\.credentials.json","$HOME\.claude.json"
 ```
 
-##### Codex credentials
+##### Codex credentials (Linux / macOS / WSL)
 
 ```bash
 codex login status
@@ -349,16 +361,8 @@ codex login status
 Because `cli_auth_credentials_store = "file"`, verify that a successful login
 also created the credential file without printing its reusable secret.
 
-Linux / macOS / WSL:
-
 ```bash
 ls -la ~/.codex/auth.json
-```
-
-PowerShell:
-
-```powershell
-Get-ChildItem "$HOME\.codex\auth.json"
 ```
 
 ##### GitHub credentials (`ralph-ghafk` only)
@@ -653,7 +657,8 @@ The agent playbooks are self-contained: `packages/core/templates/prompt.md` (pla
 - **`Cannot find module '@daonhan/ralph-core'`** — `@daonhan/ralph` was installed but its dep didn't resolve. Re-run `npm install` (or `pnpm install`) in the workspace, or use `npx -y @daonhan/ralph` to let npx fetch a clean copy.
 - **`@esbuild/win32-x64 package is present but this platform needs @esbuild/linux-x64`** — `node_modules/` installed from the wrong OS. Delete `node_modules/` + lockfile and reinstall under WSL.
 - **`Not logged in · Please run /login`** — Claude credentials are missing inside the container. Run the interactive `docker run … claude /login` step from "First-run setup".
-- **Codex reports that login is missing** — ensure `cli_auth_credentials_store = "file"`, run `codex login` from the same shell context as Ralph, and confirm `codex login status` succeeds.
+- **Codex reports that login is missing** — ensure `cli_auth_credentials_store = "file"`, run `codex login` from the same Linux, macOS, or WSL shell as Ralph, and confirm `codex login status` succeeds. On Windows, both login and Ralph must run in WSL with `~/.codex` under the WSL Linux home.
+- **Codex fails with `chmod` / `fchmod` `EPERM` on Windows** — `~/.codex` is backed by NTFS. Authenticate and invoke Ralph from WSL with `~/.codex` under `/home/<user>`; the workspace may stay under `/mnt/c` or `/mnt/d`. Switching only the command shell is insufficient if the active Codex home still points to the Windows filesystem.
 - **Codex config, MCP servers, or hooks are missing** — isolated Codex intentionally ignores `~/.codex/config.toml`; opt in with `--codex-user-config` and ensure configured commands and paths work inside Linux Docker.
 - **An explicit Codex model fails** — fix or remove `RALPH_MODEL`. Ralph does not silently fall back to `gpt-5.6-sol` or another model after an explicit model failure.
 - **`gh issue list` fails with `not a git repository`** — the workspace has no `.git`. The `ghafk.md` template uses `|| echo "[]"` fallback so the iteration still proceeds, but `gh` cannot detect the target repo. Initialize the repo, or push first.

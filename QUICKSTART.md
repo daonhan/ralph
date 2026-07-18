@@ -9,8 +9,9 @@ Ralph drives Claude Code by default, or Codex when selected with `--agent codex`
 ## 1. Prerequisites
 
 - **Docker** running — Docker Desktop (Windows/macOS) or Docker Engine (Linux).
-- **Node.js 20+** with `npm`.
-- **(Windows, recommended)** `bash.exe` on your `PATH` — comes free with [Git for Windows](https://git-scm.com/download/win). The renderer prefers it over `cmd.exe`; without it, it falls back to `cmd.exe`.
+- **Node.js 20+** with `npm`. Windows Codex users need Node inside WSL; native Windows Node remains supported for Claude.
+- **(Windows Claude, recommended)** `bash.exe` on your `PATH` — comes free with [Git for Windows](https://git-scm.com/download/win). The renderer prefers it over `cmd.exe`; without it, it falls back to `cmd.exe`.
+- **(Windows Codex)** WSL with a normal Linux home under `/home/<user>`.
 - **`gh`** — only if you will use `ralph-ghafk` (the GitHub-issue loop).
 
 ## 2. Install
@@ -20,6 +21,7 @@ npm i -g @daonhan/ralph
 ```
 
 Both bins — `ralph-afk` and `ralph-ghafk` — land on your `PATH`.
+On Windows, run this install inside WSL if you will use Codex.
 
 ## 3. Get the sandbox image
 
@@ -44,7 +46,7 @@ support is added.
 
 Credentials live on the **host** (`~/.claude` or `~/.codex`, plus `~/.config/gh`) and the selected provider's credentials get bind-mounted into each container. Log in once for the provider you will use. If you will run `ralph-ghafk`, authenticate GitHub separately after the provider login.
 
-**Same-shell rule:** credentials resolve against `$HOME` of the shell that launches the bin, and PowerShell `$HOME` (`C:\Users\<you>`) and WSL `$HOME` (`/home/<you>`) are separate stores — auth from the same shell context you will run the bins from.
+**Same-shell rule:** credentials resolve against `$HOME` of the shell that launches the bin, and PowerShell `$HOME` (`C:\Users\<you>`) and WSL `$HOME` (`/home/<you>`) are separate stores — auth from the same shell context you will run the bins from. Native PowerShell and Git Bash homes are valid for Claude; Windows Codex requires WSL and a WSL Linux home.
 
 Choose one provider login path below. Claude and Codex authentication are
 mutually exclusive; GitHub authentication is provider-independent and required
@@ -85,9 +87,10 @@ exit
 
 ### Codex login
 
-Use this path instead when you select Codex. Install the host CLI version pinned
-in Ralph's sandbox from the same PowerShell, WSL, Linux, or macOS shell that
-will launch Ralph:
+Use this path instead when you select Codex. On Windows, native PowerShell, cmd,
+and Git Bash are not supported Codex launch contexts. Open WSL, then install the
+host CLI version pinned in Ralph's sandbox from the same WSL shell that will
+launch Ralph. On Linux and macOS, use the same native shell for both:
 
 ```bash
 npm install --global @openai/codex@0.144.4
@@ -109,8 +112,13 @@ codex login status
 ```
 
 Ralph mounts `~/.codex` read-write at `/home/agent/.codex` so Codex can refresh
-the login. It runs with `--ephemeral`, so stage session transcripts are not
-persisted there.
+the login. On Windows, keep `~/.codex` under `/home/<user>` in the WSL distro's
+Linux filesystem; the target workspace may still live under `/mnt/c` or
+`/mnt/d`. A native NTFS-backed mount fails when Codex performs required
+`chmod`/`fchmod` operations (`EPERM`). Switching only the command shell is not
+enough if the active Codex home still points at the Windows filesystem. Ralph
+runs Codex with `--ephemeral`, so stage session transcripts are not persisted
+there.
 
 Codex ignores the rest of `~/.codex/config.toml` by default. Use
 `--codex-user-config` only when you intentionally want its model settings, MCP
@@ -161,25 +169,24 @@ configuration read-only at `/home/agent/.config/gh` for the stage.
 Claude remains the default. Select Codex per invocation with `--agent codex`;
 `RALPH_AGENT=codex` is the fallback when that flag is absent.
 
-bash:
+Linux / macOS / WSL bash (use WSL for Codex on Windows):
 
 ```bash
 ralph-afk "./docs/plans/x.md ./docs/prd/x.md" 5
 ralph-afk --agent codex "./docs/plans/x.md ./docs/prd/x.md" 5
 ```
 
-PowerShell:
+PowerShell (Claude only):
 
 ```powershell
 ralph-afk "./docs/plans/x.md ./docs/prd/x.md" 5
-ralph-afk --agent codex "./docs/plans/x.md ./docs/prd/x.md" 5
 ```
 
 ### GitHub-issue loop — `ralph-ghafk`
 
 No plan/PRD arg — context comes from open GitHub issues (`gh issue list`).
 
-bash:
+Linux / macOS / WSL bash (use WSL for Codex on Windows):
 
 ```bash
 export GH_CONFIG_DIR="$HOME/.config/gh"
@@ -187,12 +194,11 @@ ralph-ghafk 5
 ralph-ghafk --agent codex 5
 ```
 
-PowerShell:
+PowerShell (Claude only):
 
 ```powershell
 $env:GH_CONFIG_DIR = "$HOME\.config\gh"
 ralph-ghafk 5
-ralph-ghafk --agent codex 5
 ```
 
 ## 6. How it ends / how to stop

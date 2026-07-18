@@ -292,6 +292,16 @@ also unset, both model and reasoning effort come from `~/.codex/config.toml`.
 - **Credential mounts** (only if the host path exists, resolved against `HOME || USERPROFILE`) are selected-provider-only: Claude mounts `~/.claude` and `~/.claude.json` (**rw**); Codex mounts only `~/.codex` (**rw**) and injects `CODEX_HOME=/home/agent/.codex`. Codex's `~/.codex/auth.json` is a reusable secret available to the process. Both may mount `~/.config/gh` (**ro**).
 - **Approval bypass** is provider-specific: Claude receives stage `permissionMode=bypassPermissions`; Codex receives `--dangerously-bypass-approvals-and-sandbox`.
 
+On Windows, the generic `HOME || USERPROFILE` resolution is a supported native
+launch path for Claude only. Codex requires Ralph, the pinned host Codex CLI,
+and `codex login` to run from the same WSL shell, with `~/.codex` in the WSL
+Linux home. A Windows/NTFS-backed Codex home cannot satisfy Codex's required
+`chmod`/`fchmod` calls and fails with `EPERM`; changing only the command shell
+does not relocate the credential home. The workspace may still be mounted from
+`/mnt/c` or `/mnt/d`. For `ralph-ghafk`, the same WSL shell must export
+`GH_CONFIG_DIR="$HOME/.config/gh"` so the provider-independent GitHub config is
+the one mounted read-only.
+
 ### Docker socket mount (default ON)
 
 `resolveDockerSocketMount()` bind-mounts the host Docker socket into the sandbox so **Testcontainers** (and any Docker API client) inside the container can spawn **sibling** containers on the host daemon.

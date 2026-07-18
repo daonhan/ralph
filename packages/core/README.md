@@ -39,6 +39,9 @@ await runAfk(["--agent", "codex", "<plan-and-prd>", "5"]);
 
 The CLI equivalent is `ralph-afk --agent codex "<plan-and-prd>" 5` (or
 `ralph-ghafk --agent codex 5`). `RALPH_AGENT=codex` provides an environment fallback.
+On Windows, Codex is supported only when Ralph, the pinned host Codex CLI, and
+`codex login` all run from WSL with `~/.codex` in the WSL Linux home; the target
+workspace may remain under `/mnt/c` or `/mnt/d`. Native Windows remains supported for Claude.
 See the root README's [Codex login](https://github.com/daonhan/ralph#codex-login) and
 [provider selection](https://github.com/daonhan/ralph#choose-the-coding-agent) sections,
 including isolated configuration, `--codex-user-config`, and model precedence.
