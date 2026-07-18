@@ -1,7 +1,7 @@
 {
   "name": "@daonhan/ralph",
   "version": "0.6.3",
-  "description": "CLI for the ralph AFK loop (ralph-afk, ralph-ghafk).",
+  "description": "CLI for Ralph's Claude Code and Codex AFK loops (ralph-afk, ralph-ghafk).",
   "type": "module",
   "license": "MIT",
   "author": "Paul Nguyen <daonhan@gmail.com>",
@@ -17,6 +17,8 @@
   "keywords": [
     "claude-code",
     "claude",
+    "codex",
+    "openai",
     "ai-agent",
     "afk",
     "docker",

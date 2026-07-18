@@ -17,10 +17,14 @@ and by exact version for the packages if you need reproducibility.
 
 ## Threat model — read before running
 
-Ralph is an **autonomous agent harness**. By design it runs the Claude Code CLI with
-`--permission-mode bypassPermissions` inside the sandbox container, so the agent executes
-bash, edits, and tool calls **without interactive approval**. Treat everything it ingests as
-instructions it may act on. The trust boundary is:
+Ralph is an **autonomous agent harness**. By design it runs the selected coding
+agent without interactive approval inside the sandbox container:
+
+- Claude uses `--permission-mode bypassPermissions`.
+- Codex uses `--dangerously-bypass-approvals-and-sandbox`.
+
+Treat everything Ralph ingests as instructions the selected agent may execute.
+The trust boundary is:
 
 - **Only run Ralph against repositories, plans/PRDs, and GitHub issues you trust.** The plan/PRD
   string (`{{ INPUTS }}`), issue bodies/comments (`ralph-ghafk`), and commit messages are all
@@ -35,9 +39,12 @@ instructions it may act on. The trust boundary is:
   do not fully trust. With it disabled, the blast radius is bounded to the bind-mounted
   workspace tree (git-recoverable).
 
-- **Host credentials are bind-mounted.** `~/.claude` and `~/.claude.json` are mounted
-  **read-write** (Claude refreshes its OAuth token by writing back), so the agent can read and
-  overwrite your Claude credentials. `~/.config/gh` is mounted read-only.
+- **Selected-provider host credentials are bind-mounted read-write.** Claude
+  mounts `~/.claude` and `~/.claude.json`; Codex mounts `~/.codex`. The agent
+  can read or overwrite the selected provider's reusable credentials.
+  `~/.config/gh` is mounted read-only. Isolated Codex configuration prevents
+  personal config, MCP, and hook loading; it does not conceal `auth.json` from
+  the process.
 
 ### Reducing blast radius
 

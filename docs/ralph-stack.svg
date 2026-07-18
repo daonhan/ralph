@@ -45,7 +45,7 @@
 
   <!-- title -->
   <text x="40" y="62" class="h1">The Ralph AFK Stack, Explained</text>
-  <text x="40" y="92" class="sub">This diagram shows how Ralph drives the Claude Code CLI against a target repo while you're AFK.</text>
+  <text x="40" y="92" class="sub">This diagram shows how Ralph drives Claude Code or Codex against a target repo while you're AFK.</text>
   <text x="40" y="110" class="sub">Each iteration renders prompt templates, then runs implementer → reviewer stages inside an ephemeral Docker sandbox.</text>
   <text x="40" y="128" class="sub">The loop exits early when the gate stage returns &lt;promise&gt;NO MORE TASKS&lt;/promise&gt;.</text>
   <text x="1250" y="62" class="brand">🛠 daonhan/ralph</text>
@@ -69,13 +69,13 @@
 
   <rect x="56" y="316" width="304" height="92" rx="10" class="card-cli"/>
   <text x="72" y="342" class="card-t">⚑ Flags (cli-help.ts)</text>
-  <text x="72" y="362" class="card-d">--detach · --notify · --max-retries</text>
+  <text x="72" y="362" class="card-d">--agent · --codex-user-config · --detach · --notify</text>
   <text x="72" y="378" class="card-d">--no-keep-alive · --log · --print-config</text>
 
   <rect x="376" y="316" width="304" height="92" rx="10" class="card-cli"/>
   <text x="392" y="342" class="card-t">⚙ Env knobs</text>
-  <text x="392" y="362" class="card-d">RALPH_WORKSPACE · RALPH_IMAGE · RALPH_MODEL</text>
-  <text x="392" y="378" class="card-d">RALPH_DOCKER_SOCK · RALPH_RESULT_GRACE_MS</text>
+  <text x="392" y="362" class="card-d">RALPH_AGENT · RALPH_WORKSPACE ·</text>
+  <text x="392" y="378" class="card-d">RALPH_IMAGE · RALPH_MODEL</text>
 
   <!-- Template Layer -->
   <rect x="736" y="160" width="672" height="270" rx="16" class="layer"/>
@@ -111,19 +111,19 @@
   <rect x="32" y="470" width="1376" height="300" rx="16" class="layer"/>
   <rect x="635" y="456" width="170" height="30" rx="15" fill="#111"/>
   <text x="720" y="476" text-anchor="middle" class="pill-t">Sandbox Layer</text>
-  <text x="720" y="510" text-anchor="middle" class="layer-cap">runStage / streamDocker: write .run prompt → docker run --rm -i → parse stream-json NDJSON · ensureImage: inspect → pull → build fallback</text>
+  <text x="720" y="510" text-anchor="middle" class="layer-cap">runStage / streamDocker: write .run prompt → docker run --rm -i → parse provider JSONL · ensureImage: inspect → pull → build fallback</text>
 
   <rect x="56" y="528" width="432" height="106" rx="10" class="card-sbx"/>
   <text x="72" y="554" class="card-t">🐳 ralph-sandbox image</text>
-  <text x="72" y="574" class="card-d">Node 22 · .NET SDK 10 · gh · jq · git · Claude Code CLI.</text>
+  <text x="72" y="574" class="card-d">Node 22 · Python 3.11 · .NET SDK 10 · gh · Claude Code · Codex.</text>
   <text x="72" y="590" class="card-d">Runs as user agent (UID 1000) with</text>
   <text x="72" y="606" class="card-d">safe.directory='*' for bind-mount UID mismatch.</text>
 
   <rect x="504" y="528" width="432" height="106" rx="10" class="card-sbx"/>
-  <text x="520" y="554" class="card-t">🤖 Claude Code invocation</text>
-  <text x="520" y="574" class="card-d">claude --verbose --print --output-format stream-json</text>
-  <text x="520" y="590" class="card-d">--permission-mode bypassPermissions — AFK requires</text>
-  <text x="520" y="606" class="card-d">non-interactive approval; final result event = stage output.</text>
+  <text x="520" y="554" class="card-t">🤖 Selected agent invocation</text>
+  <text x="520" y="574" class="card-d">Claude: claude --print --output-format stream-json</text>
+  <text x="520" y="590" class="card-d">Codex: codex exec --json --ephemeral</text>
+  <text x="520" y="606" class="card-d">Both bypass approval; terminal message = stage output.</text>
 
   <rect x="952" y="528" width="432" height="106" rx="10" class="card-sbx"/>
   <text x="968" y="554" class="card-t">🧰 In-sandbox tools</text>
@@ -133,7 +133,7 @@
 
   <rect x="56" y="650" width="432" height="106" rx="10" class="card-sbx"/>
   <text x="72" y="676" class="card-t">🔑 Credential mounts</text>
-  <text x="72" y="696" class="card-d">~/.claude · ~/.claude.json · ~/.config/gh (read-only).</text>
+  <text x="72" y="696" class="card-d">Selected: ~/.claude* or ~/.codex · ~/.config/gh (ro).</text>
   <text x="72" y="712" class="card-d">Same-shell rule: PowerShell and WSL $HOME are</text>
   <text x="72" y="728" class="card-d">separate stores — log in from the shell you run from.</text>
 
@@ -296,7 +296,7 @@
 
   <rect x="1064" y="1468" width="320" height="92" rx="10" class="card-obs"/>
   <text x="1080" y="1494" class="card-t">🖥 stream-render</text>
-  <text x="1080" y="1514" class="card-d">Live console rendering of stream-json events.</text>
+  <text x="1080" y="1514" class="card-d">Live console rendering of normalized provider events.</text>
   <text x="1080" y="1530" class="card-d">NO_COLOR / TERM=dumb disable ANSI.</text>
 
   <rect x="56" y="1574" width="320" height="92" rx="10" class="card-obs"/>
@@ -305,9 +305,9 @@
   <text x="72" y="1636" class="card-d">build context, image — without running the loop.</text>
 
   <rect x="392" y="1574" width="320" height="92" rx="10" class="card-obs"/>
-  <text x="408" y="1600" class="card-t">⏲ Result grace timer</text>
+  <text x="408" y="1600" class="card-t">⏲ Completion grace timer</text>
   <text x="408" y="1620" class="card-d">RALPH_RESULT_GRACE_MS (default 30000) — window</text>
-  <text x="408" y="1636" class="card-d">after the result event before container cut-off.</text>
+  <text x="408" y="1636" class="card-d">after the completion event before container cut-off.</text>
 
   <rect x="728" y="1574" width="656" height="92" rx="10" class="card-safe"/>
   <text x="744" y="1600" class="card-t">🛡 Safety boundaries</text>

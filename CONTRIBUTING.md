@@ -91,14 +91,21 @@ for image changes as described in [Verify sandbox image changes](#verify-sandbox
 
 Vitest unit tests, `packages/core/src/__tests__/` (pure logic, mocked I/O):
 
-| File                | Covers                                                                                                         |
-| ------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `loop.test.ts`      | `runLoop` iteration walk, the gate sentinel, wake-lock acquire/release, per-stage retry, SIGINT/SIGTERM abort. |
-| `runner.test.ts`    | `parseGraceMs` (post-result grace timer env parsing).                                                          |
-| `retry.test.ts`     | `withRetries` / `backoffFor` (per-stage retry policy).                                                         |
-| `detach.test.ts`    | `stripDetachFlags` / `detachAndExit` (`--detach` flag handling).                                               |
-| `keepalive.test.ts` | `acquire` (host wake-lock spawning).                                                                           |
-| `notify.test.ts`    | `notify` (`--notify` completion hook spawning).                                                                |
+| File                        | Covers                                                                                                         |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `agents.test.ts`            | Provider selection, Claude/Codex command construction, credential mounts, and model/config precedence.         |
+| `agent-decoders.test.ts`    | Claude and Codex JSONL decoding, normalized events, completion, and failure contracts.                         |
+| `loop.test.ts`              | `runLoop` iteration walk, the gate sentinel, wake-lock acquire/release, per-stage retry, SIGINT/SIGTERM abort. |
+| `runner.test.ts`            | `parseGraceMs` (post-completion grace timer env parsing).                                                      |
+| `runner-stream.test.ts`     | Selected-provider streaming, credential isolation, completion, and process-exit behavior.                      |
+| `stream-render.test.ts`     | Console rendering of normalized provider events.                                                               |
+| `run-bin.test.ts`           | CLI provider selection and selected-agent wiring into the loop.                                                |
+| `cli-help.test.ts`          | `--agent`, `--codex-user-config`, help, and resolved config output.                                            |
+| `retry.test.ts`             | `withRetries` / `backoffFor` (per-stage retry policy).                                                         |
+| `detach.test.ts`            | `stripDetachFlags` / `detachAndExit` (`--detach` flag handling).                                               |
+| `keepalive.test.ts`         | `acquire` (host wake-lock spawning).                                                                           |
+| `notify.test.ts`            | `notify` (`--notify` completion hook spawning).                                                                |
+| `template-contract.test.ts` | Shared reviewer conventions for `AGENTS.md` and `CLAUDE.md`.                                                   |
 
 Root `node --test`, `scripts/*.test.mjs` (contract + pure-render tests):
 
@@ -132,8 +139,10 @@ pnpm smoke:image
 The default command builds `ralph-sandbox:smoke` from
 `packages/core/templates/Dockerfile` with the repository root as its Docker build
 context, then checks the default `agent` user, `python`, `python3`, venv creation,
-pip inside the venv, recognizable `uv --version` and `uvx --version` output, and an
-`uv` install of the pure-Python `six` package from PyPI.
+pip inside the venv, recognizable `uv --version` and `uvx --version` output, the
+pinned Codex binary and its required `exec --json --ephemeral`,
+`--dangerously-bypass-approvals-and-sandbox`, and `--ignore-user-config`
+automation flags, and an `uv` install of the pure-Python `six` package from PyPI.
 
 To smoke an already-built release candidate without rebuilding it, pass its tag:
 
@@ -173,7 +182,8 @@ bypass. If hooks didn't install (e.g. you cloned without `pnpm install`), run
 
 ```
 packages/core/          @daonhan/ralph-core (library; the only built package)
-  src/                  12 TS modules + __tests__/  (see docs/ARCHITECTURE.md)
+  src/                  TS modules + __tests__/  (see docs/ARCHITECTURE.md)
+    agents/             types.ts, claude.ts, codex.ts, index.ts
   templates/            prompt.md, ghprompt.md, afk.md, ghafk.md, review.md, Dockerfile
   dist/                 tsc output (gitignored)
 apps/cli/               @daonhan/ralph (hand-written JS bins; no build)
@@ -188,8 +198,17 @@ RELEASING.md            release/publish source of truth
 (bin entrypoints), [`loop.ts`](./packages/core/src/loop.ts),
 [`render.ts`](./packages/core/src/render.ts), [`runner.ts`](./packages/core/src/runner.ts),
 [`stages.ts`](./packages/core/src/stages.ts), [`index.ts`](./packages/core/src/index.ts)
-(public surface), plus internals `cli-help`, `retry`, `keepalive`, `detach`, `notify`.
+(public surface), provider adapters under `agents/` (`types`, `claude`, `codex`, `index`),
+plus internals `cli-help`, `retry`, `keepalive`, `detach`, `notify`.
 See [`./docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full runtime model.
+
+## Adding a coding-agent provider
+
+A provider implements the adapter contracts in `agents/types.ts`: command construction,
+selected-provider credential mounts and environment, and a JSONL decoder that emits normalized
+events plus one terminal completion or failure. Register it in `agents/index.ts`; do not branch
+the loop or renderer by provider. `runLoop` remains provider-neutral and continues to gate only
+on the first stage's returned completion text.
 
 ## Adding a pipeline stage
 

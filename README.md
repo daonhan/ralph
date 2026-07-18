@@ -1,13 +1,15 @@
-# Ralph — Autonomous Claude Code Loop
+# Ralph — Autonomous Coding-Agent Loop
 
 [![@daonhan/ralph](https://img.shields.io/npm/v/@daonhan/ralph?label=%40daonhan%2Fralph)](https://www.npmjs.com/package/@daonhan/ralph)
 [![@daonhan/ralph-core](https://img.shields.io/npm/v/@daonhan/ralph-core?label=%40daonhan%2Fralph-core)](https://www.npmjs.com/package/@daonhan/ralph-core)
 [![CI](https://github.com/daonhan/ralph/actions/workflows/ci.yml/badge.svg)](https://github.com/daonhan/ralph/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-Ralph drives [Claude Code](https://docs.anthropic.com/claude/docs/claude-code) against a target repository in an iterating implementer → reviewer pipeline, isolated inside a custom Docker image. The harness ships as two npm packages, with thin bash shims that wire host paths + credentials into the CLI.
+Ralph drives Claude Code by default, or Codex when selected with
+`--agent codex`, against a target repository in an iterating implementer →
+reviewer pipeline isolated inside a custom Docker image.
 
-> ⚠️ **Security:** Ralph runs Claude with `--permission-mode bypassPermissions` inside the sandbox and, **by default, bind-mounts the host Docker socket — granting root-equivalent access to the host Docker daemon.** Point it only at repositories, plans, and GitHub issues you trust. Disable the socket mount with `RALPH_DOCKER_SOCK=0`. See **[SECURITY.md](./SECURITY.md)** for the full threat model.
+> ⚠️ **Security:** Ralph runs the selected agent without interactive approval inside the sandbox (`--permission-mode bypassPermissions` for Claude; `--dangerously-bypass-approvals-and-sandbox` for Codex) and, **by default, bind-mounts the host Docker socket — granting root-equivalent access to the host Docker daemon.** Point it only at repositories, plans, and GitHub issues you trust. Disable the socket mount with `RALPH_DOCKER_SOCK=0`. See **[SECURITY.md](./SECURITY.md)** for the full threat model.
 
 > **New here?** Start with **[QUICKSTART.md](./QUICKSTART.md)** (zero-to-first-loop). Hacking on Ralph itself → **[CONTRIBUTING.md](./CONTRIBUTING.md)**. Internals → **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**.
 
@@ -42,7 +44,7 @@ ralph-afk / ralph-ghafk               (bin entries from @daonhan/ralph, on PATH 
    └── runner                         (docker run → NDJSON stream → live print → final result)
    │
    ▼
-docker run ralph-sandbox claude --verbose --print --output-format stream-json …
+docker run ralph-sandbox <selected-agent> …
 ```
 
 Each iteration runs the stage chain `[implementer, reviewer]`. The implementer is the "gate": if it emits `<promise>NO MORE TASKS</promise>`, the loop exits before the reviewer runs.
@@ -87,7 +89,7 @@ At runtime, the host workspace gets a `.ralph-tmp/` directory containing the per
 - **Docker** — Docker Desktop (Windows/macOS) or Docker Engine (Linux). The orchestrator shells out to `docker build` / `docker run`.
 - **Node.js 20+** + **npm 9+** (or `pnpm`/`yarn`). For Windows: native nvm-for-windows, nvm-windows, or directly from nodejs.org; for macOS/Linux: nvm, asdf, or distro package.
 - **`gh`** authenticated (only required for `ralph-ghafk`): `gh auth login` once.
-- **Claude Code** authentication. See "First-run setup" below.
+- **Claude Code or Codex** authentication for the provider you select. See "First-run setup" below.
 - **(Windows only, optional but recommended)** `bash.exe` on PATH — comes free with [Git for Windows](https://git-scm.com/download/win). The renderer prefers it over `cmd.exe` because POSIX redirects + utilities (`git log`, `gh issue list`) are smoother. If absent, the renderer falls back to `cmd.exe` and uses the built-in try-shell tag (`!?\`cmd|||fallback\``) so commands that fail return their fallback string cleanly — no broken render.
 
 ### Supported shells / OS combinations
@@ -102,7 +104,7 @@ At runtime, the host workspace gets a `.ralph-tmp/` directory containing the per
 
 ### Windows + WSL: credentials
 
-Credentials live on the **host** at `~/.claude` and `~/.config/gh` and get bind-mounted into the container. The path resolves per the shell that launches `ralph-afk`:
+Credentials live on the **host** at `~/.claude` or `~/.codex` (for the selected provider) and `~/.config/gh`, then get bind-mounted into the container. The path resolves per the shell that launches `ralph-afk`:
 
 | Launch from              | `$HOME` is                        | Mounted into container                                                                                    |
 | ------------------------ | --------------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -132,6 +134,35 @@ cp -r "/mnt/c/Users/<WINUSER>/AppData/Roaming/GitHub CLI/." ~/.config/gh/ 2>/dev
 
 ---
 
+## Choose the coding agent
+
+Claude remains the default:
+
+```bash
+ralph-afk "./docs/plans/x.md ./docs/prd/x.md" 5
+```
+
+Select Codex per invocation:
+
+```bash
+ralph-afk --agent codex "./docs/plans/x.md ./docs/prd/x.md" 5
+ralph-ghafk --agent codex 5
+```
+
+For automation, `RALPH_AGENT=codex` is the fallback when `--agent` is absent.
+The explicit flag always wins.
+
+Codex ignores `~/.codex/config.toml` by default while still reusing its login.
+Pass `--codex-user-config` to load that configuration intentionally. This may
+start configured MCP servers and hooks, so their commands and paths must work
+inside the Linux sandbox.
+
+`RALPH_MODEL` applies to the selected agent. Isolated Codex defaults to
+`gpt-5.6-sol` with high reasoning when `RALPH_MODEL` is unset. In inherited
+configuration mode, an unset model and reasoning effort come from
+`~/.codex/config.toml`. An explicit invalid model fails; Ralph never reruns the
+stage with another model.
+
 ## First-run setup
 
 ### 1. Get the image
@@ -156,8 +187,8 @@ docker build -t docker.io/daonhan/ralph-sandbox:latest -f packages/core/template
 ```
 
 The image bundles Node 22, Debian Bookworm Python 3.11 as `python` and `python3`,
-`python -m venv`, `uv`/`uvx` 0.11.28, .NET SDK 10, `gh`, `jq`, `git`, and the
-Claude Code CLI. Basic Python repositories need no extra runtime install. Create a
+`python -m venv`, `uv`/`uvx` 0.11.28, .NET SDK 10, `gh`, `jq`, `git`, Claude Code,
+and the pinned Codex CLI. Basic Python repositories need no extra runtime install. Create a
 project-local virtual environment (for example, `.venv`) or use uv-managed
 isolation; do not install project dependencies globally into the Debian system
 Python.
@@ -184,7 +215,7 @@ Required repo secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (a Docker Hub acc
 
 ### 2. Log in to the image (one-off)
 
-The image is stateless. Credentials live on the **host** at `~/.claude` and `~/.config/gh`. The orchestrator bind-mounts those paths into every container.
+The image is stateless. Credentials live on the **host** at `~/.claude`, `~/.codex`, and `~/.config/gh`. The orchestrator mounts only the selected provider's credentials, plus GitHub CLI credentials, into each container.
 
 > **Same-shell rule.** `ralph-afk` / `ralph-ghafk` read `$HOME` of the shell that launched them. Auth from the same shell context you intend to run the bins in. PowerShell host (`C:\Users\<you>\.config\gh\`) and WSL host (`\\wsl$\Ubuntu\home\<you>\.config\gh\`) are separate stores — don't mix.
 
@@ -228,6 +259,27 @@ gh auth status        # verify
 exit
 ```
 
+### Codex login
+
+Codex credentials must be file-backed because a host OS keyring is not
+available inside Docker. In `~/.codex/config.toml`, set:
+
+```toml
+cli_auth_credentials_store = "file"
+```
+
+Then authenticate from the same PowerShell, WSL, Linux, or macOS shell context
+that will launch Ralph:
+
+```bash
+codex login
+codex login status
+```
+
+Ralph mounts `~/.codex` read-write at `/home/agent/.codex` so Codex can refresh
+the login. It runs with `--ephemeral`, so stage session transcripts are not
+persisted there.
+
 #### Verify back on the host
 
 Linux / macOS / WSL:
@@ -248,7 +300,7 @@ Expected `hosts.yml` content: a `github.com:` block with `user:` and `oauth_toke
 
 #### Re-login / token expired
 
-Re-run `claude /login` (or `gh auth login`) inside the container. Bind-mounted files are overwritten.
+Re-run `claude /login` inside the container, `codex login` from the matching host shell, or `gh auth login` as appropriate. Bind-mounted provider files are updated in place.
 
 ---
 
@@ -289,8 +341,8 @@ wsl bash -c "ralph-afk './docs/plans/inventory.md ./docs/prd/PRD-Inventory.md' 1
    - `` !?`git log -n 5 …|||No commits found` `` → recent commits (try-shell)
    - `{{ INPUTS }}` → the plan/PRD string
    - `@include:prompt.md` → the agent playbook (inlined by the Node renderer, no shell)
-2. **Implementer stage** (gate) — `docker run ralph-sandbox claude …` with the rendered prompt streamed in via a tempfile under `.ralph-tmp/` (avoids Windows 32 KB argv limit). Assistant text is rendered live; final `result` is captured.
-3. **Sentinel check** — if `result` contains `<promise>NO MORE TASKS</promise>`, print `Ralph complete after <N> iterations.` and exit 0.
+2. **Implementer stage** (gate) — `docker run ralph-sandbox <selected-agent> …` with the rendered prompt streamed in via a tempfile under `.ralph-tmp/` (avoids Windows 32 KB argv limit). Provider events are normalized and rendered live; the terminal completion is captured.
+3. **Sentinel check** — if the completion contains `<promise>NO MORE TASKS</promise>`, print `Ralph complete after <N> iterations.` and exit 0.
 4. **Reviewer stage** — runs `packages/core/templates/review.md`. Reads the HEAD commit (the `git show --stat` summary inline, the full patch spilled to `.ralph-tmp/spill-…/head.diff` via `@spill?:head.diff`), then either commits a `fix(review): …` patch or emits `<review>OK</review>` / `<review>SKIP</review>` and stops. Single pass; never amends the implementer's commit.
 
 ---
@@ -380,19 +432,20 @@ npx -y @daonhan/ralph ralph-afk "<plan-and-prd>" 5
 
 ### Environment variables
 
-| Variable                 | Default                                  | Purpose                                                                                                                                                                                                                                                                                        |
-| ------------------------ | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RALPH_WORKSPACE`        | `process.cwd()`                          | Host path bind-mounted at `/home/agent/workspace`. Also where `.ralph-tmp/` is written.                                                                                                                                                                                                        |
-| `RALPH_DOCKER_CONTEXT`   | bundled `@daonhan/ralph-core` dir        | Build context for the `docker build` fallback. Only consulted if `docker pull` fails. Must contain `Dockerfile`. Defaults to the npm-installed core dir, which ships `Dockerfile`.                                                                                                             |
-| `RALPH_IMAGE`            | `docker.io/daonhan/ralph-sandbox:latest` | Full image reference. `ensureImage` does `inspect` → `pull` → `build` (fallback).                                                                                                                                                                                                              |
-| `RALPH_IMAGE_TAG`        | _(legacy)_                               | Deprecated alias for `RALPH_IMAGE`. Honored if `RALPH_IMAGE` unset.                                                                                                                                                                                                                            |
-| `RALPH_RESULT_GRACE_MS`  | `30000`                                  | Milliseconds to wait after the final NDJSON `result` event before force-killing a docker child that fails to exit on its own. `0` disables the timer (original wait-forever behavior). Invalid values (non-finite, negative) fall back to the default.                                         |
-| `RALPH_DOCKER_SOCK`      | _(on if a socket is found)_              | Set to `0` to disable bind-mounting the host Docker socket into the sandbox. Mounted by default so Testcontainers inside the container can spawn sibling containers — this grants the sandbox **root-equivalent access to the host Docker daemon**. Disable when running untrusted prompts.    |
-| `RALPH_DOCKER_SOCK_PATH` | _(auto-detected)_                        | Explicit host `docker.sock` path. Auto-detection (when unset) tries `DOCKER_HOST` (`unix://` only), then `/var/run/docker.sock`, Docker Desktop, Colima, Rancher Desktop, and rootless Docker/Podman socket locations.                                                                         |
-| `RALPH_MODEL`            | _(unset → sandbox CLI default)_          | Pins the Claude model used inside the sandbox. When non-empty, `--model <value>` is passed through to the in-container `claude` CLI for every stage. Empty/whitespace = unset. Pass-through: the `claude` CLI owns validation (any spec it accepts — `opus`, `sonnet`, full model id — works). |
-| `DOCKER_HOST`            | _(unset)_                                | A `unix:///…` value is parsed for the docker-socket bind-mount; `tcp://` / `npipe://` / `ssh://` are not bind-mountable.                                                                                                                                                                       |
-| `XDG_RUNTIME_DIR`        | _(unset)_                                | Searched for rootless Docker/Podman sockets during auto-detection.                                                                                                                                                                                                                             |
-| `NO_COLOR` / `TERM=dumb` | _(unset)_                                | Disable ANSI color in Ralph's own output. Color is also auto-disabled when stdout/stderr is not a TTY, so piping to a file stays clean.                                                                                                                                                        |
+| Variable                 | Default                                                      | Purpose                                                                                                                                                                                                                                                                                     |
+| ------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RALPH_WORKSPACE`        | `process.cwd()`                                              | Host path bind-mounted at `/home/agent/workspace`. Also where `.ralph-tmp/` is written.                                                                                                                                                                                                     |
+| `RALPH_DOCKER_CONTEXT`   | bundled `@daonhan/ralph-core` dir                            | Build context for the `docker build` fallback. Only consulted if `docker pull` fails. Must contain `Dockerfile`. Defaults to the npm-installed core dir, which ships `Dockerfile`.                                                                                                          |
+| `RALPH_IMAGE`            | `docker.io/daonhan/ralph-sandbox:latest`                     | Full image reference. `ensureImage` does `inspect` → `pull` → `build` (fallback).                                                                                                                                                                                                           |
+| `RALPH_IMAGE_TAG`        | _(legacy)_                                                   | Deprecated alias for `RALPH_IMAGE`. Honored if `RALPH_IMAGE` unset.                                                                                                                                                                                                                         |
+| `RALPH_AGENT`            | `claude`                                                     | Agent fallback when `--agent` is absent: `claude` or `codex`.                                                                                                                                                                                                                               |
+| `RALPH_RESULT_GRACE_MS`  | `30000`                                                      | Milliseconds to wait after the provider completion event before force-killing a docker child that fails to exit on its own. `0` disables the timer (original wait-forever behavior). Invalid values (non-finite, negative) fall back to the default.                                        |
+| `RALPH_DOCKER_SOCK`      | _(on if a socket is found)_                                  | Set to `0` to disable bind-mounting the host Docker socket into the sandbox. Mounted by default so Testcontainers inside the container can spawn sibling containers — this grants the sandbox **root-equivalent access to the host Docker daemon**. Disable when running untrusted prompts. |
+| `RALPH_DOCKER_SOCK_PATH` | _(auto-detected)_                                            | Explicit host `docker.sock` path. Auto-detection (when unset) tries `DOCKER_HOST` (`unix://` only), then `/var/run/docker.sock`, Docker Desktop, Colima, Rancher Desktop, and rootless Docker/Podman socket locations.                                                                      |
+| `RALPH_MODEL`            | selected CLI default; isolated Codex uses `gpt-5.6-sol`/high | Pass-through model override for the selected agent.                                                                                                                                                                                                                                         |
+| `DOCKER_HOST`            | _(unset)_                                                    | A `unix:///…` value is parsed for the docker-socket bind-mount; `tcp://` / `npipe://` / `ssh://` are not bind-mountable.                                                                                                                                                                    |
+| `XDG_RUNTIME_DIR`        | _(unset)_                                                    | Searched for rootless Docker/Podman sockets during auto-detection.                                                                                                                                                                                                                          |
+| `NO_COLOR` / `TERM=dumb` | _(unset)_                                                    | Disable ANSI color in Ralph's own output. Color is also auto-disabled when stdout/stderr is not a TTY, so piping to a file stays clean.                                                                                                                                                     |
 
 ---
 
@@ -511,7 +564,10 @@ The agent playbooks are self-contained: `packages/core/templates/prompt.md` (pla
 
 - **`Cannot find module '@daonhan/ralph-core'`** — `@daonhan/ralph` was installed but its dep didn't resolve. Re-run `npm install` (or `pnpm install`) in the workspace, or use `npx -y @daonhan/ralph` to let npx fetch a clean copy.
 - **`@esbuild/win32-x64 package is present but this platform needs @esbuild/linux-x64`** — `node_modules/` installed from the wrong OS. Delete `node_modules/` + lockfile and reinstall under WSL.
-- **`Not logged in · Please run /login`** — Claude credentials missing inside the container. Run the interactive `docker run … claude /login` step from "First-run setup".
+- **`Not logged in · Please run /login`** — Claude credentials are missing inside the container. Run the interactive `docker run … claude /login` step from "First-run setup".
+- **Codex reports that login is missing** — ensure `cli_auth_credentials_store = "file"`, run `codex login` from the same shell context as Ralph, and confirm `codex login status` succeeds.
+- **Codex config, MCP servers, or hooks are missing** — isolated Codex intentionally ignores `~/.codex/config.toml`; opt in with `--codex-user-config` and ensure configured commands and paths work inside Linux Docker.
+- **An explicit Codex model fails** — fix or remove `RALPH_MODEL`. Ralph does not silently fall back to `gpt-5.6-sol` or another model after an explicit model failure.
 - **`gh issue list` fails with `not a git repository`** — the workspace has no `.git`. The `ghafk.md` template uses `|| echo "[]"` fallback so the iteration still proceeds, but `gh` cannot detect the target repo. Initialize the repo, or push first.
 - **`MSB3248` during `dotnet build` / `dotnet test`** — virtiofs/9p quirk on Windows-mounted source. The agent retries automatically per the recipe in `packages/core/templates/prompt.md`; manual repro:
   ```bash
@@ -529,7 +585,7 @@ The agent playbooks are self-contained: `packages/core/templates/prompt.md` (pla
   ```
 - **`docker pull failed … and no Dockerfile at …`** — the default image ref isn't reachable (offline, registry down, or you set a custom `$RALPH_IMAGE` that doesn't exist) AND no Dockerfile is at `$RALPH_DOCKER_CONTEXT`. Fix one of: connectivity, `RALPH_IMAGE`, or place a Dockerfile at `$RALPH_DOCKER_CONTEXT`.
 - **`pull access denied … repository does not exist`** — `$RALPH_IMAGE` points at a private repo or a typo. Either `docker login`, switch to a public image, or unset `RALPH_IMAGE` to use the default.
-- **Loop hangs after a stage's final assistant message (no next iteration, no error)** — the claude CLI inside the sandbox emitted its final NDJSON `result` event but failed to exit. On `@daonhan/ralph-core ≥ 0.6.1` the runner self-recovers within `RALPH_RESULT_GRACE_MS` (default 30000ms) — bump or disable via env var. On `@daonhan/ralph-core ≤ 0.6.0` there is no timer; recover manually from a second shell:
+- **Loop hangs after a stage's final assistant message (no next iteration, no error)** — the selected CLI inside the sandbox emitted its completion event but failed to exit. The runner self-recovers within `RALPH_RESULT_GRACE_MS` (default 30000ms); bump or disable it via the environment when diagnosing:
   ```bash
   docker ps --filter ancestor=docker.io/daonhan/ralph-sandbox:latest
   docker kill <container-id>
