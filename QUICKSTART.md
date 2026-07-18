@@ -127,29 +127,26 @@ GitHub regardless of whether you selected Claude or Codex.
 
 ```bash
 mkdir -p ~/.config/gh
-
-docker run -it --rm \
-  -v "$HOME/.config/gh:/home/agent/.config/gh" \
-  docker.io/daonhan/ralph-sandbox:latest bash
+gh auth login
+gh auth status
 ```
 
 #### Windows PowerShell
 
 ```powershell
-New-Item -ItemType Directory -Force "$HOME\.config\gh" | Out-Null
-
-docker run -it --rm `
-  -v "${HOME}\.config\gh:/home/agent/.config/gh" `
-  docker.io/daonhan/ralph-sandbox:latest bash
-```
-
-#### Inside the container
-
-```bash
+$env:GH_CONFIG_DIR = "$HOME\.config\gh"
+New-Item -ItemType Directory -Force $env:GH_CONFIG_DIR | Out-Null
 gh auth login
 gh auth status
-exit
 ```
+
+Native Windows `gh` otherwise defaults to its AppData directory, which Ralph
+does not mount. Keep `GH_CONFIG_DIR` set when you invoke `ralph-ghafk` from this
+PowerShell session; set it again before the invocation if you open a new one.
+On Linux, macOS, and WSL, `gh` uses `~/.config/gh` by default.
+
+Ralph renders GitHub issue data with the host `gh` command, then mounts the same
+configuration read-only at `/home/agent/.config/gh` for the stage.
 
 ## 5. First run
 
@@ -188,6 +185,7 @@ ralph-ghafk --agent codex 5
 PowerShell:
 
 ```powershell
+$env:GH_CONFIG_DIR = "$HOME\.config\gh"
 ralph-ghafk 5
 ralph-ghafk --agent codex 5
 ```

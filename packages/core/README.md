@@ -43,8 +43,9 @@ See the root README's [Codex login](https://github.com/daonhan/ralph#codex-login
 [provider selection](https://github.com/daonhan/ralph#choose-the-coding-agent) sections,
 including isolated configuration, `--codex-user-config`, and model precedence.
 
-Public surface: `runAfk`, `runGhAfk`, `runLoop`, `STAGES`, `Stage`, `AgentName`,
-`AgentSelection`, `AgentSelectionSource`, `renderTemplate`, `ensureImage`, `runStage`.
+Public surface: `runAfk`, `runGhAfk`, `AgentName`, `AgentSelection`,
+`AgentSelectionSource`, `runLoop`, `LoopOptions`, `STAGES`, `Stage`, `renderTemplate`,
+`RenderOptions`, `RenderVars`, `ensureImage`, `runStage`.
 Subpath exports: `./loop`, `./runner`, `./stages`.
 
 The `templates/` directory (prompt playbooks + the `ralph-sandbox` `Dockerfile`) ships in the

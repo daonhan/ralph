@@ -120,7 +120,7 @@ mkdir -p ~/.claude
 cp -r /mnt/c/Users/<WINUSER>/.claude/. ~/.claude/
 cp /mnt/c/Users/<WINUSER>/.claude.json ~/.claude.json 2>/dev/null || true
 mkdir -p ~/.config/gh
-cp -r "/mnt/c/Users/<WINUSER>/AppData/Roaming/GitHub CLI/." ~/.config/gh/ 2>/dev/null || true
+cp -r /mnt/c/Users/<WINUSER>/.config/gh/. ~/.config/gh/ 2>/dev/null || true
 ```
 
 - Launching from PowerShell after a global install — just call the bin directly:
@@ -213,40 +213,39 @@ Triggers:
 
 Required repo secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (a Docker Hub access token with `Read & Write` scope on the `daonhan/ralph-sandbox` repository).
 
-### 2. Authenticate the selected provider (one-off)
+### 2. Authenticate (one-off)
 
-The image is stateless. Credentials live on the **host** at `~/.claude`, `~/.codex`, and `~/.config/gh`. The orchestrator mounts only the selected provider's credentials, plus GitHub CLI credentials, into each container.
+The image is stateless. Provider credentials live on the **host** at `~/.claude` or `~/.codex`. If you use `ralph-ghafk`, its provider-independent GitHub CLI credentials live at `~/.config/gh`. The orchestrator mounts only the selected provider's credentials, plus GitHub CLI credentials when present, into each container.
 
 > **Same-shell rule.** `ralph-afk` / `ralph-ghafk` read `$HOME` of the shell that launched them. Auth from the same shell context you intend to run the bins in. PowerShell host (`C:\Users\<you>\.config\gh\`) and WSL host (`\\wsl$\Ubuntu\home\<you>\.config\gh\`) are separate stores — don't mix.
 
-Choose one provider login path below. `claude /login` is required only when you
-run Ralph with Claude.
+Choose one provider login path below. Claude and Codex authentication are
+mutually exclusive; GitHub authentication is provider-independent and required
+only for `ralph-ghafk`.
 
 #### Claude login
 
 ##### Linux / macOS / WSL bash
 
 ```bash
-mkdir -p ~/.claude ~/.config/gh
+mkdir -p ~/.claude
 touch ~/.claude.json
 
 docker run -it --rm \
   -v "$HOME/.claude:/home/agent/.claude" \
   -v "$HOME/.claude.json:/home/agent/.claude.json" \
-  -v "$HOME/.config/gh:/home/agent/.config/gh" \
   docker.io/daonhan/ralph-sandbox:latest bash
 ```
 
 ##### Windows PowerShell
 
 ```powershell
-New-Item -ItemType Directory -Force "$HOME\.claude","$HOME\.config\gh" | Out-Null
+New-Item -ItemType Directory -Force "$HOME\.claude" | Out-Null
 if (-not (Test-Path "$HOME\.claude.json")) { New-Item -ItemType File "$HOME\.claude.json" | Out-Null }
 
 docker run -it --rm `
   -v "${HOME}\.claude:/home/agent/.claude" `
   -v "${HOME}\.claude.json:/home/agent/.claude.json" `
-  -v "${HOME}\.config\gh:/home/agent/.config/gh" `
   docker.io/daonhan/ralph-sandbox:latest bash
 ```
 
@@ -254,13 +253,6 @@ docker run -it --rm `
 
 ```bash
 claude /login         # browser flow; Claude only
-gh auth login         # only needed for ralph-ghafk
-```
-
-For `gh auth login` pick: `GitHub.com` → `HTTPS` → `Y` (authenticate Git) → `Login with web browser`. Copy the one-time code, open `https://github.com/login/device` on the host browser, paste, approve. Container prints `✓ Authentication complete`.
-
-```bash
-gh auth status        # verify
 exit
 ```
 
@@ -292,6 +284,39 @@ codex login status
 Ralph mounts `~/.codex` read-write at `/home/agent/.codex` so Codex can refresh
 the login. It runs with `--ephemeral`, so stage session transcripts are not
 persisted there.
+
+#### GitHub login (`ralph-ghafk` only)
+
+Skip this section when you use only `ralph-afk`. For `ralph-ghafk`, authenticate
+GitHub regardless of whether you selected Claude or Codex. Ralph renders issue
+data with the host `gh` command, then mounts the same configuration read-only at
+`/home/agent/.config/gh` for the stage.
+
+##### Linux / macOS / WSL bash
+
+```bash
+mkdir -p ~/.config/gh
+gh auth login
+gh auth status
+```
+
+##### Windows PowerShell
+
+```powershell
+$env:GH_CONFIG_DIR = "$HOME\.config\gh"
+New-Item -ItemType Directory -Force $env:GH_CONFIG_DIR | Out-Null
+gh auth login
+gh auth status
+```
+
+Native Windows `gh` otherwise defaults to its AppData directory, which Ralph
+does not mount. Keep `GH_CONFIG_DIR` set when you invoke `ralph-ghafk` from this
+PowerShell session; set it again before the invocation if you open a new one.
+On Linux, macOS, and WSL, `gh` uses `~/.config/gh` by default.
+
+For `gh auth login` pick: `GitHub.com` → `HTTPS` → `Y` (authenticate Git) →
+`Login with web browser`. Copy the one-time code, open
+`https://github.com/login/device` in the host browser, paste it, and approve.
 
 #### Verify back on the host
 
@@ -334,16 +359,30 @@ Get-ChildItem "$HOME\.codex\auth.json"
 
 ##### GitHub credentials (`ralph-ghafk` only)
 
+Linux / macOS / WSL:
+
 ```bash
 gh auth status
 ```
 
-Run this from the same shell context as Ralph. It verifies the active GitHub
-account without displaying the reusable credential stored in `hosts.yml`.
+PowerShell:
+
+```powershell
+$env:GH_CONFIG_DIR = "$HOME\.config\gh"
+gh auth status
+```
+
+Run the matching command from the same shell context as Ralph. On PowerShell,
+keep `GH_CONFIG_DIR` set for the subsequent `ralph-ghafk` invocation. These
+commands verify the active GitHub account without displaying the reusable
+credential stored in `hosts.yml`.
 
 #### Re-login / token expired
 
-Re-run `claude /login` inside the container, `codex login` from the matching host shell, or `gh auth login` as appropriate. Bind-mounted provider files are updated in place.
+Re-run `claude /login` inside the container, `codex login` from the matching host
+shell, or the host `gh auth login` flow above as appropriate. Provider login
+updates the selected provider's writable host store; host GitHub login updates
+`~/.config/gh`, which Ralph later mounts read-only.
 
 ---
 
