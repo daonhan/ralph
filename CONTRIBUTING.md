@@ -222,9 +222,11 @@ Three steps:
 
 Hard invariants:
 
-- **`permissionMode` must be `"bypassPermissions"`** — never `acceptEdits`. AFK
-  requires non-interactive bash/edit approval; blast radius is bounded to the
-  bind-mounted workspace tree and is git-recoverable.
+- **`permissionMode` must be `"bypassPermissions"`** — never `acceptEdits`. It
+  supplies Claude's no-approval mode; Codex uses its own no-approval flag. With
+  the Docker socket disabled, persistent host writes still include the workspace
+  and selected provider's read-write credential store; GitHub CLI config is
+  read-only.
 - **The first stage of a chain is the gate.** Only index 0 is sentinel-checked for
   the exact literal `<promise>NO MORE TASKS</promise>`; the reviewer never gates.
   Place any gating stage at index 0.
@@ -331,7 +333,8 @@ overrides, the rollback runbook, and the compatibility matrix.
 - **No TS / no build in `apps/cli`.** Keep the bin layer flat hand-written JS.
 - **First stage is the gate.** Gating stages go at index 0; sentinel is the exact
   literal `<promise>NO MORE TASKS</promise>`.
-- **`bypassPermissions` for every sandbox stage.** Never `acceptEdits`.
+- **`bypassPermissions` for every sandbox stage.** Never `acceptEdits`; this is
+  Claude's stage setting, while Codex uses its provider-specific no-approval flag.
 - **Templates ship in the core tarball** (`@daonhan/ralph-core` `files: ["dist",
 "templates", "README.md"]`). A new stage means a new `templates/*.md` plus the
   `STAGES` + chain wiring.

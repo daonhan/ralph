@@ -46,7 +46,12 @@ Credentials live on the **host** (`~/.claude` or `~/.codex`, plus `~/.config/gh`
 
 **Same-shell rule:** credentials resolve against `$HOME` of the shell that launches the bin, and PowerShell `$HOME` (`C:\Users\<you>`) and WSL `$HOME` (`/home/<you>`) are separate stores — auth from the same shell context you will run the bins from.
 
-### Linux / macOS / WSL bash
+Choose one provider login path below. `claude /login` is required only when you
+run Ralph with Claude.
+
+### Claude login
+
+#### Linux / macOS / WSL bash
 
 ```bash
 mkdir -p ~/.claude ~/.config/gh
@@ -59,7 +64,7 @@ docker run -it --rm \
   docker.io/daonhan/ralph-sandbox:latest bash
 ```
 
-### Windows PowerShell
+#### Windows PowerShell
 
 ```powershell
 New-Item -ItemType Directory -Force "$HOME\.claude","$HOME\.config\gh" | Out-Null
@@ -72,25 +77,33 @@ docker run -it --rm `
   docker.io/daonhan/ralph-sandbox:latest bash
 ```
 
-### Inside the container
+#### Inside the container
 
 ```bash
-claude /login         # browser flow — required
+claude /login         # browser flow; Claude only
 gh auth login         # only needed for ralph-ghafk
 exit
 ```
 
 ### Codex login
 
+Use this path instead when you select Codex. Install the host CLI version pinned
+in Ralph's sandbox from the same PowerShell, WSL, Linux, or macOS shell that
+will launch Ralph:
+
+```bash
+npm install --global @openai/codex@0.144.4
+codex --version
+```
+
 Codex credentials must be file-backed because a host OS keyring is not
-available inside Docker. In `~/.codex/config.toml`, set:
+available inside Docker. Create `~/.codex/config.toml` if needed and set:
 
 ```toml
 cli_auth_credentials_store = "file"
 ```
 
-Then authenticate from the same PowerShell, WSL, Linux, or macOS shell context
-that will launch Ralph:
+Then authenticate in that same shell:
 
 ```bash
 codex login

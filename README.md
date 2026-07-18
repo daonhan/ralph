@@ -106,11 +106,11 @@ At runtime, the host workspace gets a `.ralph-tmp/` directory containing the per
 
 Credentials live on the **host** at `~/.claude` or `~/.codex` (for the selected provider) and `~/.config/gh`, then get bind-mounted into the container. The path resolves per the shell that launches `ralph-afk`:
 
-| Launch from              | `$HOME` is                        | Mounted into container                                                                                    |
-| ------------------------ | --------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Windows PowerShell / cmd | `C:\Users\<name>`                 | Yes, if `claude /login` was run inside a WSL/native shell on Windows or via the bootstrap container below |
-| WSL bash                 | `/home/<linuxname>`               | Yes — canonical WSL credential store                                                                      |
-| Linux / macOS            | `/home/<name>` or `/Users/<name>` | Yes                                                                                                       |
+| Launch from              | `$HOME` is                        | Mounted into container                                              |
+| ------------------------ | --------------------------------- | ------------------------------------------------------------------- |
+| Windows PowerShell / cmd | `C:\Users\<name>`                 | The selected provider's credential store under this home is mounted |
+| WSL bash                 | `/home/<linuxname>`               | The selected provider's credential store under this home is mounted |
+| Linux / macOS            | `/home/<name>` or `/Users/<name>` | The selected provider's credential store under this home is mounted |
 
 If you already logged in via PowerShell `claude.exe` and want WSL to use those creds too:
 
@@ -213,13 +213,18 @@ Triggers:
 
 Required repo secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (a Docker Hub access token with `Read & Write` scope on the `daonhan/ralph-sandbox` repository).
 
-### 2. Log in to the image (one-off)
+### 2. Authenticate the selected provider (one-off)
 
 The image is stateless. Credentials live on the **host** at `~/.claude`, `~/.codex`, and `~/.config/gh`. The orchestrator mounts only the selected provider's credentials, plus GitHub CLI credentials, into each container.
 
 > **Same-shell rule.** `ralph-afk` / `ralph-ghafk` read `$HOME` of the shell that launched them. Auth from the same shell context you intend to run the bins in. PowerShell host (`C:\Users\<you>\.config\gh\`) and WSL host (`\\wsl$\Ubuntu\home\<you>\.config\gh\`) are separate stores — don't mix.
 
-#### Linux / macOS / WSL bash
+Choose one provider login path below. `claude /login` is required only when you
+run Ralph with Claude.
+
+#### Claude login
+
+##### Linux / macOS / WSL bash
 
 ```bash
 mkdir -p ~/.claude ~/.config/gh
@@ -232,7 +237,7 @@ docker run -it --rm \
   docker.io/daonhan/ralph-sandbox:latest bash
 ```
 
-#### Windows PowerShell
+##### Windows PowerShell
 
 ```powershell
 New-Item -ItemType Directory -Force "$HOME\.claude","$HOME\.config\gh" | Out-Null
@@ -245,10 +250,10 @@ docker run -it --rm `
   docker.io/daonhan/ralph-sandbox:latest bash
 ```
 
-#### Inside the container
+##### Inside the container
 
 ```bash
-claude /login         # browser flow
+claude /login         # browser flow; Claude only
 gh auth login         # only needed for ralph-ghafk
 ```
 
@@ -259,17 +264,25 @@ gh auth status        # verify
 exit
 ```
 
-### Codex login
+#### Codex login
+
+Use this path instead when you select Codex. Install the host CLI version pinned
+in Ralph's sandbox from the same PowerShell, WSL, Linux, or macOS shell that
+will launch Ralph:
+
+```bash
+npm install --global @openai/codex@0.144.4
+codex --version
+```
 
 Codex credentials must be file-backed because a host OS keyring is not
-available inside Docker. In `~/.codex/config.toml`, set:
+available inside Docker. Create `~/.codex/config.toml` if needed and set:
 
 ```toml
 cli_auth_credentials_store = "file"
 ```
 
-Then authenticate from the same PowerShell, WSL, Linux, or macOS shell context
-that will launch Ralph:
+Then authenticate in that same shell:
 
 ```bash
 codex login
@@ -527,7 +540,7 @@ Use the pack-then-install path above. It exposes `ralph-afk` / `ralph-ghafk` glo
    ```
 4. `pnpm -r build` and republish.
 
-Only the first stage is the gate (sentinel-checked). Subsequent stages always run after a non-sentinel gate result. Sandbox stages always use `permissionMode: "bypassPermissions"` — AFK runs non-interactively, so bash/edit approval must be automatic; the blast radius is bounded to the workspace mount and is git-recoverable.
+Only the first stage is the gate (sentinel-checked). Subsequent stages always run after a non-sentinel gate result. Ralph runs the selected provider without interactive approval (`permissionMode: "bypassPermissions"` for Claude; `--dangerously-bypass-approvals-and-sandbox` for Codex). With the Docker socket disabled, persistent host-write exposure still includes the workspace mount and selected provider's read-write credential store; GitHub CLI config is read-only.
 
 ### Change the template syntax
 
@@ -602,7 +615,7 @@ The agent playbooks are self-contained: `packages/core/templates/prompt.md` (pla
 | [`apps/cli/scripts/ghafk.sh`](./apps/cli/scripts/ghafk.sh)                       | Optional shim — GitHub-issue loop. Calls `ralph-ghafk`.                                                                                                                      |
 | [`packages/core/templates/prompt.md`](./packages/core/templates/prompt.md)       | Agent playbook for `ralph-afk`. Shipped in core tarball.                                                                                                                     |
 | [`packages/core/templates/ghprompt.md`](./packages/core/templates/ghprompt.md)   | Agent playbook for `ralph-ghafk`. Shipped in core tarball.                                                                                                                   |
-| [`packages/core/templates/Dockerfile`](./packages/core/templates/Dockerfile)     | Builds `ralph-sandbox` image: Node 22 + Python 3.11/venv + `uv`/`uvx` + .NET SDK 10 + `gh` + `claude`. Shipped in `@daonhan/ralph-core` tarball.                             |
+| [`packages/core/templates/Dockerfile`](./packages/core/templates/Dockerfile)     | Builds `ralph-sandbox` image: Node 22 + Python 3.11/venv + `uv`/`uvx` + .NET SDK 10 + `gh` + Claude Code + pinned Codex CLI. Shipped in `@daonhan/ralph-core` tarball.       |
 | [`.dockerignore`](./.dockerignore)                                               | Shrinks build context (consumed at repo root for CI builds).                                                                                                                 |
 | [`package.json`](./package.json)                                                 | Monorepo root (private). Shared devDeps + pnpm workspace scripts.                                                                                                            |
 | [`pnpm-workspace.yaml`](./pnpm-workspace.yaml)                                   | Declares `apps/*` and `packages/*` as workspace members.                                                                                                                     |

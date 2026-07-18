@@ -18,7 +18,7 @@ Ralph ships as a pnpm monorepo (Node >= 20, pnpm >= 9, root `packageManager pnpm
 
 Both packages are **ESM only** (`"type": "module"`). Relative imports inside [`../packages/core/src`](../packages/core/src) end in `.js` (compiled-output extension required by `moduleResolution: NodeNext`).
 
-The harness drives a selectable Claude Code or Codex CLI against a target repository in an iterating **implementer → reviewer** loop. Claude is the default; `--agent codex` opts into Codex, and `RALPH_AGENT` is the fallback when the flag is absent. Every stage runs inside an **ephemeral `--rm` container** with the host workspace bind-mounted; nothing persists between stages except the git history written into that mounted workspace.
+The harness drives a selectable Claude Code or Codex CLI against a target repository in an iterating **implementer → reviewer** loop. Claude is the default; `--agent codex` opts into Codex, and `RALPH_AGENT` is the fallback when the flag is absent. Every stage runs inside an **ephemeral `--rm` container** whose container filesystem is discarded. The host-mounted workspace, including scratch logs and uncommitted changes, and the selected provider's credential store persist across stages.
 
 ---
 
@@ -287,9 +287,9 @@ owns validation and a failure is terminal for that stage attempt—Ralph never r
 another model. `--codex-user-config` removes `--ignore-user-config`; when `RALPH_MODEL` is
 also unset, both model and reasoning effort come from `~/.codex/config.toml`.
 
-- **Workspace mount + `-w`:** the host workspace is the only writable surface; the container's working dir is set to it.
+- **Workspace mount + `-w`:** the host workspace is mounted read-write and set as the container's working directory. The selected provider's credential store is a separate writable host mount.
 - **Git env injection:** `GIT_CONFIG_COUNT/KEY_0/VALUE_0` forces `safe.directory=*` so git works against a bind-mount whose UID differs from the container user (a Windows-host pain point).
-- **Credential mounts** (only if the host path exists, resolved against `HOME || USERPROFILE`) are selected-provider-only: Claude mounts `~/.claude` and `~/.claude.json` (**rw**); Codex mounts only `~/.codex` (**rw**) and injects `CODEX_HOME=/home/agent/.codex`. Both may mount `~/.config/gh` (**ro**).
+- **Credential mounts** (only if the host path exists, resolved against `HOME || USERPROFILE`) are selected-provider-only: Claude mounts `~/.claude` and `~/.claude.json` (**rw**); Codex mounts only `~/.codex` (**rw**) and injects `CODEX_HOME=/home/agent/.codex`. Codex's `~/.codex/auth.json` is a reusable secret available to the process. Both may mount `~/.config/gh` (**ro**).
 - **Approval bypass** is provider-specific: Claude receives stage `permissionMode=bypassPermissions`; Codex receives `--dangerously-bypass-approvals-and-sandbox`.
 
 ### Docker socket mount (default ON)
@@ -309,7 +309,7 @@ also unset, both model and reasoning effort come from `~/.codex/config.toml`.
 
 On Windows only the explicit overrides are considered, then it returns `/var/run/docker.sock` (Docker Desktop translates it via the WSL2 backend). **Group fixup:** on Linux it `statSync`es the socket and passes `--group-add <gid>` matching the host docker group; on Docker Desktop (macOS/Windows) the socket surfaces as `root:root 0660`, so it passes `--group-add 0` (file-access group only — the agent process still runs as UID 1000).
 
-**Opt-out:** `RALPH_DOCKER_SOCK=0`. **Security note:** mounting `docker.sock` grants the sandbox root-equivalent access to the host Docker daemon; combined with `bypassPermissions`, the blast radius is "anything docker can do on this host." Disable it for untrusted prompts.
+**Opt-out:** `RALPH_DOCKER_SOCK=0`. **Security note:** mounting `docker.sock` grants the selected agent, which runs without interactive approval, root-equivalent access to the host Docker daemon. Disabling the mount removes host-Docker control, but persistent host-write exposure still includes the workspace and selected provider's read-write credential store; `~/.config/gh` remains read-only.
 
 ### Image resolution — `ensureImage`
 
@@ -353,7 +353,7 @@ Everything lands under `<workspace>/.ralph-tmp/` (gitignored):
 - **ESM only.** Both packages are `"type": "module"`; relative imports in `packages/core/src` end in `.js` (NodeNext).
 - **First stage is the gate.** Place gating stages at index 0 of any chain. The sentinel `<promise>NO MORE TASKS</promise>` is hardcoded in [`../packages/core/src/loop.ts`](../packages/core/src/loop.ts).
 - **No build step for `apps/cli`.** Bins are hand-written JS that `import { runAfk } from "@daonhan/ralph-core"`. Keep the bin layer flat — don't add TS there.
-- **`permissionMode` is always `bypassPermissions`** for sandbox stages — AFK requires non-interactive bash/edit approval; blast radius is bounded to the bind-mounted workspace tree and is git-recoverable. Never `acceptEdits`.
+- **`permissionMode` is always `bypassPermissions`** for sandbox stages — never `acceptEdits`. This supplies Claude's no-approval mode; Codex receives its provider-specific no-approval flag. With the Docker socket disabled, persistent host writes still include the workspace and selected provider's read-write credential store; GitHub CLI config is read-only.
 - **Templates ship in the core tarball.** `packages/core/package.json` `files` includes `dist` and `templates` (the `Dockerfile` lives under `templates/`).
 - **Adding a stage** = (1) extend `STAGES` in [`../packages/core/src/stages.ts`](../packages/core/src/stages.ts), (2) drop a new `*.md` in [`../packages/core/templates`](../packages/core/templates), (3) wire it into the chain in `main.ts` / `gh-main.ts`.
 

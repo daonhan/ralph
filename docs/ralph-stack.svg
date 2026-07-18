@@ -134,14 +134,14 @@
   <rect x="56" y="650" width="432" height="106" rx="10" class="card-sbx"/>
   <text x="72" y="676" class="card-t">🔑 Credential mounts</text>
   <text x="72" y="696" class="card-d">Selected: ~/.claude* or ~/.codex · ~/.config/gh (ro).</text>
-  <text x="72" y="712" class="card-d">Same-shell rule: PowerShell and WSL $HOME are</text>
-  <text x="72" y="728" class="card-d">separate stores — log in from the shell you run from.</text>
+  <text x="72" y="712" class="card-d">~/.codex/auth.json is a reusable secret.</text>
+  <text x="72" y="728" class="card-d">PowerShell and WSL $HOME differ — use the launch shell.</text>
 
   <rect x="504" y="650" width="432" height="106" rx="10" class="card-sbx"/>
   <text x="520" y="676" class="card-t">📁 Workspace bind-mount</text>
-  <text x="520" y="696" class="card-d">$RALPH_WORKSPACE (or cwd) mounted as working dir —</text>
-  <text x="520" y="712" class="card-d">the loop's entire blast radius. Git env vars injected</text>
-  <text x="520" y="728" class="card-d">(safe.directory=*) so git trusts the mount.</text>
+  <text x="520" y="696" class="card-d">$RALPH_WORKSPACE (or cwd) mounted read-write.</text>
+  <text x="520" y="712" class="card-d">Selected credentials use a separate writable mount.</text>
+  <text x="520" y="728" class="card-d">Git safe.directory=* injected for the workspace.</text>
 
   <rect x="952" y="650" width="432" height="106" rx="10" class="card-sbx"/>
   <text x="968" y="676" class="card-t">🔌 Docker socket (default on)</text>
@@ -311,8 +311,8 @@
 
   <rect x="728" y="1574" width="656" height="92" rx="10" class="card-safe"/>
   <text x="744" y="1600" class="card-t">🛡 Safety boundaries</text>
-  <text x="744" y="1620" class="card-d">Ephemeral --rm container · blast radius = the workspace bind-mount · bypassPermissions confined to it ·</text>
-  <text x="744" y="1636" class="card-d">mounted docker.sock is root-equivalent host access — opt out with RALPH_DOCKER_SOCK=0.</text>
+  <text x="744" y="1620" class="card-d">Both providers run without approval · socket off removes host-Docker control.</text>
+  <text x="744" y="1636" class="card-d">Persistent host writes: workspace + selected credentials · GitHub config is read-only.</text>
 
   <!-- connector observability → release -->
   <line x1="720" y1="1686" x2="720" y2="1714" class="conn" marker-start="url(#arr)" marker-end="url(#arr)"/>
