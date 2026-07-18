@@ -89,6 +89,27 @@ describe("streamDocker", () => {
     expect(child.kill).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["", "   "])(
+    "rejects a provider failure with an empty message before later completion",
+    async (message) => {
+      const run = streamDocker(
+        [],
+        join(root, "empty-failure.ndjson"),
+        createCodexDecoder()
+      );
+      writeJson(child, { type: "error", message });
+      writeJson(child, {
+        type: "item.completed",
+        item: { type: "agent_message", text: "finished" },
+      });
+      writeJson(child, { type: "turn.completed" });
+      child.emit("close", 0);
+
+      await expect(run).rejects.toThrow("codex error");
+      expect(child.kill).toHaveBeenCalledTimes(1);
+    }
+  );
+
   it("rejects exit zero when the Codex terminal record is absent", async () => {
     const run = streamDocker(
       [],

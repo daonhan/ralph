@@ -16,10 +16,15 @@ function failureMessage(
   event: Record<string, unknown>,
   fallback: string
 ): string {
-  if (typeof event.message === "string") return event.message;
-  if (typeof event.error === "string") return event.error;
+  if (typeof event.message === "string") {
+    return event.message.trim() ? event.message : fallback;
+  }
+  if (typeof event.error === "string") {
+    return event.error.trim() ? event.error : fallback;
+  }
   const error = record(event.error);
-  return stringValue(error?.message) ?? fallback;
+  const message = stringValue(error?.message);
+  return message?.trim() ? message : fallback;
 }
 
 const TOOL_ITEM_TYPES = new Set([

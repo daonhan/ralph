@@ -556,7 +556,7 @@ export function streamDocker(
         renderEvent(event, toolMap);
       }
 
-      if (decoded.failure) {
+      if (decoded.failure !== undefined) {
         try {
           child.kill();
         } catch {
