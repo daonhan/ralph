@@ -42,38 +42,37 @@ support is added.
 
 ## 4. One-off auth
 
-Credentials live on the **host** (`~/.claude` or `~/.codex`, plus `~/.config/gh`) and the selected provider's credentials get bind-mounted into each container. Log in once for the provider you will use.
+Credentials live on the **host** (`~/.claude` or `~/.codex`, plus `~/.config/gh`) and the selected provider's credentials get bind-mounted into each container. Log in once for the provider you will use. If you will run `ralph-ghafk`, authenticate GitHub separately after the provider login.
 
 **Same-shell rule:** credentials resolve against `$HOME` of the shell that launches the bin, and PowerShell `$HOME` (`C:\Users\<you>`) and WSL `$HOME` (`/home/<you>`) are separate stores — auth from the same shell context you will run the bins from.
 
-Choose one provider login path below. `claude /login` is required only when you
-run Ralph with Claude.
+Choose one provider login path below. Claude and Codex authentication are
+mutually exclusive; GitHub authentication is provider-independent and required
+only for `ralph-ghafk`.
 
 ### Claude login
 
 #### Linux / macOS / WSL bash
 
 ```bash
-mkdir -p ~/.claude ~/.config/gh
+mkdir -p ~/.claude
 touch ~/.claude.json
 
 docker run -it --rm \
   -v "$HOME/.claude:/home/agent/.claude" \
   -v "$HOME/.claude.json:/home/agent/.claude.json" \
-  -v "$HOME/.config/gh:/home/agent/.config/gh" \
   docker.io/daonhan/ralph-sandbox:latest bash
 ```
 
 #### Windows PowerShell
 
 ```powershell
-New-Item -ItemType Directory -Force "$HOME\.claude","$HOME\.config\gh" | Out-Null
+New-Item -ItemType Directory -Force "$HOME\.claude" | Out-Null
 if (-not (Test-Path "$HOME\.claude.json")) { New-Item -ItemType File "$HOME\.claude.json" | Out-Null }
 
 docker run -it --rm `
   -v "${HOME}\.claude:/home/agent/.claude" `
   -v "${HOME}\.claude.json:/home/agent/.claude.json" `
-  -v "${HOME}\.config\gh:/home/agent/.config/gh" `
   docker.io/daonhan/ralph-sandbox:latest bash
 ```
 
@@ -81,7 +80,6 @@ docker run -it --rm `
 
 ```bash
 claude /login         # browser flow; Claude only
-gh auth login         # only needed for ralph-ghafk
 exit
 ```
 
@@ -119,6 +117,39 @@ Codex ignores the rest of `~/.codex/config.toml` by default. Use
 servers, and hooks inside the Linux sandbox. `RALPH_MODEL` applies to either
 provider; without it, isolated Codex uses `gpt-5.6-sol` with high reasoning.
 An explicit invalid model fails the stage rather than falling back.
+
+### GitHub login (`ralph-ghafk` only)
+
+Skip this section when you use only `ralph-afk`. For `ralph-ghafk`, authenticate
+GitHub regardless of whether you selected Claude or Codex.
+
+#### Linux / macOS / WSL bash
+
+```bash
+mkdir -p ~/.config/gh
+
+docker run -it --rm \
+  -v "$HOME/.config/gh:/home/agent/.config/gh" \
+  docker.io/daonhan/ralph-sandbox:latest bash
+```
+
+#### Windows PowerShell
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.config\gh" | Out-Null
+
+docker run -it --rm `
+  -v "${HOME}\.config\gh:/home/agent/.config/gh" `
+  docker.io/daonhan/ralph-sandbox:latest bash
+```
+
+#### Inside the container
+
+```bash
+gh auth login
+gh auth status
+exit
+```
 
 ## 5. First run
 

@@ -334,20 +334,12 @@ Get-ChildItem "$HOME\.codex\auth.json"
 
 ##### GitHub credentials (`ralph-ghafk` only)
 
-Linux / macOS / WSL:
-
 ```bash
-cat ~/.config/gh/hosts.yml | head
+gh auth status
 ```
 
-PowerShell:
-
-```powershell
-Get-Content "$HOME\.config\gh\hosts.yml"
-```
-
-Expected `hosts.yml` content: a `github.com:` block with `user:` and
-`oauth_token:` keys.
+Run this from the same shell context as Ralph. It verifies the active GitHub
+account without displaying the reusable credential stored in `hosts.yml`.
 
 #### Re-login / token expired
 
@@ -629,7 +621,7 @@ The agent playbooks are self-contained: `packages/core/templates/prompt.md` (pla
     /p:BaseIntermediateOutputPath=/tmp/ralph-obj/<name>/ \
     /p:BaseOutputPath=/tmp/ralph-bin/<name>/
   ```
-- **`docker run` exit 1 with no claude output** — image stale. Force refresh:
+- **`docker run` exit 1 with no selected-agent output** — image stale. Force refresh:
   ```bash
   docker rmi docker.io/daonhan/ralph-sandbox:latest
   docker pull docker.io/daonhan/ralph-sandbox:latest
