@@ -126,7 +126,8 @@ GitHub regardless of whether you selected Claude or Codex.
 #### Linux / macOS / WSL bash
 
 ```bash
-mkdir -p ~/.config/gh
+export GH_CONFIG_DIR="$HOME/.config/gh"
+mkdir -p "$GH_CONFIG_DIR"
 gh auth login
 gh auth status
 ```
@@ -143,7 +144,10 @@ gh auth status
 Native Windows `gh` otherwise defaults to its AppData directory, which Ralph
 does not mount. Keep `GH_CONFIG_DIR` set when you invoke `ralph-ghafk` from this
 PowerShell session; set it again before the invocation if you open a new one.
-On Linux, macOS, and WSL, `gh` uses `~/.config/gh` by default.
+On Linux, macOS, and WSL, keep the exported `GH_CONFIG_DIR` in the same shell for
+`gh auth status` and `ralph-ghafk`; export it again in a new shell before either
+command. This pins `gh` to the configuration directory Ralph mounts even when
+`XDG_CONFIG_HOME` differs.
 
 Ralph renders GitHub issue data with the host `gh` command, then mounts the same
 configuration read-only at `/home/agent/.config/gh` for the stage.
@@ -178,6 +182,7 @@ No plan/PRD arg — context comes from open GitHub issues (`gh issue list`).
 bash:
 
 ```bash
+export GH_CONFIG_DIR="$HOME/.config/gh"
 ralph-ghafk 5
 ralph-ghafk --agent codex 5
 ```

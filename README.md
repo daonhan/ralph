@@ -295,7 +295,8 @@ data with the host `gh` command, then mounts the same configuration read-only at
 ##### Linux / macOS / WSL bash
 
 ```bash
-mkdir -p ~/.config/gh
+export GH_CONFIG_DIR="$HOME/.config/gh"
+mkdir -p "$GH_CONFIG_DIR"
 gh auth login
 gh auth status
 ```
@@ -312,7 +313,10 @@ gh auth status
 Native Windows `gh` otherwise defaults to its AppData directory, which Ralph
 does not mount. Keep `GH_CONFIG_DIR` set when you invoke `ralph-ghafk` from this
 PowerShell session; set it again before the invocation if you open a new one.
-On Linux, macOS, and WSL, `gh` uses `~/.config/gh` by default.
+On Linux, macOS, and WSL, keep the exported `GH_CONFIG_DIR` in the same shell for
+`gh auth status` and `ralph-ghafk`; export it again in a new shell before either
+command. This pins `gh` to the configuration directory Ralph mounts even when
+`XDG_CONFIG_HOME` differs.
 
 For `gh auth login` pick: `GitHub.com` → `HTTPS` → `Y` (authenticate Git) →
 `Login with web browser`. Copy the one-time code, open
@@ -362,6 +366,7 @@ Get-ChildItem "$HOME\.codex\auth.json"
 Linux / macOS / WSL:
 
 ```bash
+export GH_CONFIG_DIR="$HOME/.config/gh"
 gh auth status
 ```
 
@@ -434,6 +439,7 @@ wsl bash -c "ralph-afk './docs/plans/inventory.md ./docs/prd/PRD-Inventory.md' 1
 ### Usage
 
 ```bash
+export GH_CONFIG_DIR="$HOME/.config/gh"
 ralph-ghafk <iterations>
 ```
 
