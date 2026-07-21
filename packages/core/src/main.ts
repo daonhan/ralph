@@ -10,7 +10,7 @@ export async function runAfk(
   await runBin(argv, {
     bin: "ralph-afk",
     usage: "<plan-and-prd> <iterations>",
-    desc: "plan/PRD-driven Claude Code AFK loop",
+    desc: "plan/PRD-driven coding-agent AFK loop",
     stages: [STAGES.implementer, STAGES.reviewer],
     takesInputArg: true,
     cliVersion: opts.cliVersion,

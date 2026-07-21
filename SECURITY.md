@@ -17,27 +17,35 @@ and by exact version for the packages if you need reproducibility.
 
 ## Threat model — read before running
 
-Ralph is an **autonomous agent harness**. By design it runs the Claude Code CLI with
-`--permission-mode bypassPermissions` inside the sandbox container, so the agent executes
-bash, edits, and tool calls **without interactive approval**. Treat everything it ingests as
-instructions it may act on. The trust boundary is:
+Ralph is an **autonomous agent harness**. By design it runs the selected coding
+agent without interactive approval inside the sandbox container:
+
+- Claude uses `--permission-mode bypassPermissions`.
+- Codex uses `--dangerously-bypass-approvals-and-sandbox`.
+
+Treat everything Ralph ingests as instructions the selected agent may execute.
+The trust boundary is:
 
 - **Only run Ralph against repositories, plans/PRDs, and GitHub issues you trust.** The plan/PRD
   string (`{{ INPUTS }}`), issue bodies/comments (`ralph-ghafk`), and commit messages are all
-  fed to a `bypassPermissions` agent. `ralph-ghafk` in particular pulls **public GitHub issues**
-  — text authored by strangers — into that agent. Do not point it at a repo whose open issues
-  you have not vetted.
+  fed to the selected agent running without interactive approval. `ralph-ghafk` in particular
+  pulls **public GitHub issues** — text authored by strangers — into that agent. Do not point it
+  at a repo whose open issues you have not vetted.
 
 - **The host Docker socket is bind-mounted by default**, which grants the sandbox
   **root-equivalent access to the host Docker daemon** (it can start a sibling container that
   bind-mounts the host filesystem as root). This is on so Testcontainers inside the sandbox can
   spawn sibling containers. **Disable it with `RALPH_DOCKER_SOCK=0`** when running anything you
-  do not fully trust. With it disabled, the blast radius is bounded to the bind-mounted
-  workspace tree (git-recoverable).
+  do not fully trust. Disabling it removes host-Docker control, but persistent host-write
+  exposure still includes the bind-mounted workspace and the selected provider's read-write
+  credential store. `~/.config/gh` remains read-only.
 
-- **Host credentials are bind-mounted.** `~/.claude` and `~/.claude.json` are mounted
-  **read-write** (Claude refreshes its OAuth token by writing back), so the agent can read and
-  overwrite your Claude credentials. `~/.config/gh` is mounted read-only.
+- **Selected-provider host credentials are bind-mounted read-write.** Claude
+  mounts `~/.claude` and `~/.claude.json`; Codex mounts `~/.codex`. The agent
+  can read or overwrite the selected provider's reusable credentials.
+  `~/.config/gh` is mounted read-only. Isolated Codex configuration prevents
+  personal config, MCP, and hook loading; it does not conceal
+  `~/.codex/auth.json`, which is a reusable secret, from the process.
 
 ### Reducing blast radius
 

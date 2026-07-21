@@ -12,6 +12,12 @@ import {
 import { createInterface } from "node:readline";
 import { join, posix } from "node:path";
 
+import {
+  getAgentAdapter,
+  type AgentAdapter,
+  type AgentName,
+  type AgentStreamDecoder,
+} from "./agents/index.js";
 import type { Stage } from "./stages.js";
 import {
   bold,
@@ -19,12 +25,15 @@ import {
   red,
   renderEvent,
   SYM,
-  type StreamJson,
   type ToolTrack,
 } from "./stream-render.js";
 
+export { buildClaudeArgs, resolveModelArgs } from "./agents/claude.js";
+
 export type RunStageOptions = {
   signal?: AbortSignal;
+  agent?: AgentName;
+  codexUserConfig?: boolean;
 };
 
 export const IMAGE_REF =
@@ -53,19 +62,6 @@ export function parseGraceMs(
   if (!Number.isFinite(n)) return defaultMs;
   if (n < 0) return defaultMs;
   return Math.floor(n);
-}
-
-/**
- * Resolve `RALPH_MODEL` into a `claude` argv fragment. Returns
- * `["--model", trimmed]` for a non-empty value, or `[]` for unset / empty /
- * whitespace-only input. Pass-through: ralph never validates the model spec,
- * the `claude` CLI owns that.
- */
-export function resolveModelArgs(raw: string | undefined): string[] {
-  if (raw == null) return [];
-  const trimmed = raw.trim();
-  if (trimmed === "") return [];
-  return ["--model", trimmed];
 }
 
 /**
@@ -377,37 +373,28 @@ export function stageLogPath(
   );
 }
 
-/**
- * Build the `claude` argv fragment that follows the image ref in a `docker run`
- * invocation. Extracted as a pure helper so callers can unit-test the argv
- * without spawning docker.
- *
- * @param stage - The stage configuration (name, permissionMode, etc.).
- * @param promptContainerPath - The in-container path to the rendered prompt file.
- * @param modelArgs - The `["--model", "<spec>"]` fragment from {@link resolveModelArgs},
- *   or `[]` when `RALPH_MODEL` is unset.
- * @returns The argv fragment starting with `"claude"` and ending with the prompt
- *   instruction string, ready to be appended after the image ref.
- */
-export function buildClaudeArgs(
-  stage: Stage,
-  promptContainerPath: string,
-  modelArgs: string[]
+export function resolveAgentRuntimeArgs(
+  adapter: AgentAdapter,
+  home: string
 ): string[] {
-  const args = [
-    "claude",
-    "--verbose",
-    "--print",
-    "--output-format",
-    "stream-json",
-  ];
-  if (stage.permissionMode) {
-    args.push("--permission-mode", stage.permissionMode);
+  const args: string[] = [];
+  if (home) {
+    for (const mount of adapter.credentialMounts(home)) {
+      if (!existsSync(mount.hostPath)) continue;
+      const spec = `${mount.hostPath}:${mount.containerPath}${
+        mount.readOnly ? ":ro" : ""
+      }`;
+      args.push("-v", spec);
+    }
+    const ghConfigDir =
+      process.env.GH_CONFIG_DIR?.trim() || join(home, ".config", "gh");
+    if (existsSync(ghConfigDir)) {
+      args.push("-v", `${ghConfigDir}:/home/agent/.config/gh:ro`);
+    }
   }
-  args.push(...modelArgs);
-  args.push(
-    `Read the full instructions from the file ./${promptContainerPath} in the current workspace and execute them.`
-  );
+  for (const [name, value] of Object.entries(adapter.containerEnv)) {
+    args.push("-e", `${name}=${value}`);
+  }
   return args;
 }
 
@@ -420,6 +407,7 @@ export async function runStage(
   logPathOverride?: string,
   options: RunStageOptions = {}
 ): Promise<string> {
+  const adapter = getAgentAdapter(options.agent ?? "claude");
   const tmpHostDir = join(workspaceDir, ".ralph-tmp");
   mkdirSync(tmpHostDir, { recursive: true });
 
@@ -454,20 +442,7 @@ export async function runStage(
     ];
 
     const home = process.env.HOME || process.env.USERPROFILE || "";
-    if (home) {
-      const claudeDir = join(home, ".claude");
-      const claudeJson = join(home, ".claude.json");
-      const ghConfigDir = join(home, ".config", "gh");
-      if (existsSync(claudeDir)) {
-        args.push("-v", `${claudeDir}:/home/agent/.claude`);
-      }
-      if (existsSync(claudeJson)) {
-        args.push("-v", `${claudeJson}:/home/agent/.claude.json`);
-      }
-      if (existsSync(ghConfigDir)) {
-        args.push("-v", `${ghConfigDir}:/home/agent/.config/gh:ro`);
-      }
-    }
+    args.push(...resolveAgentRuntimeArgs(adapter, home));
 
     const sockMount = resolveDockerSocketMount();
     if (sockMount) {
@@ -481,25 +456,28 @@ export async function runStage(
       args.push(...sockMount);
     }
 
+    const promptInstruction = `Read the full instructions from the file ./${promptContainerPath} in the current workspace and execute them.`;
     args.push(
       IMAGE_REF,
-      ...buildClaudeArgs(
+      ...adapter.buildCommand({
         stage,
-        promptContainerPath,
-        resolveModelArgs(process.env.RALPH_MODEL)
-      )
+        promptInstruction,
+        rawModel: process.env.RALPH_MODEL,
+        codexUserConfig: options.codexUserConfig ?? false,
+      })
     );
 
-    return await streamDocker(args, logPath, options);
+    return await streamDocker(args, logPath, adapter.createDecoder(), options);
   } finally {
     rmSync(promptHostPath, { force: true });
     if (spillHostDir) rmSync(spillHostDir, { recursive: true, force: true });
   }
 }
 
-function streamDocker(
+export function streamDocker(
   args: string[],
   logPath: string,
+  decoder: AgentStreamDecoder,
   options: RunStageOptions = {}
 ): Promise<string> {
   if (options.signal?.aborted) {
@@ -563,38 +541,44 @@ function streamDocker(
 
     rl = createInterface({ input: child.stdout });
     rl.on("line", (line) => {
-      if (settled) return;
-      if (!line.startsWith("{")) return;
+      if (settled || !line.startsWith("{")) return;
 
       appendFileSync(logFd, line + "\n");
 
-      let parsed: StreamJson;
+      let parsed: unknown;
       try {
-        parsed = JSON.parse(line) as StreamJson;
+        parsed = JSON.parse(line);
       } catch {
         return;
       }
-      renderEvent(parsed, toolMap);
-      if (parsed.type === "result") {
-        const r = (parsed as { result?: string }).result;
-        if (typeof r === "string") finalResult = r;
-        // Arm one-shot post-result grace timer to recover from claude-CLI
-        // self-deadlocks where the child emits its final NDJSON but never
-        // exits. See docs/prd/result-grace-timer.md. Operators still on
-        // @daonhan/ralph-core <= 0.6.0 must recover manually via
-        // `docker ps --filter ancestor=docker.io/daonhan/ralph-sandbox:latest`
-        // + `docker kill <id>` (the --rm container is removed and the loop
-        // aborts the current iteration; prior committed work is preserved).
+
+      const decoded = decoder.decode(parsed);
+      for (const event of decoded.events) {
+        renderEvent(event, toolMap);
+      }
+
+      if (decoded.failure !== undefined) {
+        try {
+          child.kill();
+        } catch {
+          // Child already exited; rejectOnce remains authoritative.
+        }
+        rejectOnce(new Error(decoded.failure));
+        return;
+      }
+
+      if (decoded.completion !== undefined) {
+        finalResult = decoded.completion;
         if (!graceTimer && graceMs > 0) {
           graceTimer = setTimeout(() => {
             if (settled) return;
             process.stderr.write(
-              `${dim(`grace timer fired after ${graceMs}ms post-result — killing docker child`)}\n`
+              `${dim(`grace timer fired after ${graceMs}ms post-completion — killing docker child`)}\n`
             );
             try {
               child.kill();
             } catch {
-              // Already dead; close handler will be a no-op via settle guard.
+              // Child already exited; resolveOnce remains authoritative.
             }
             resolveOnce(finalResult);
           }, graceMs);
@@ -627,7 +611,11 @@ function streamDocker(
         );
         return;
       }
-      resolveOnce(finalResult);
+      try {
+        resolveOnce(decoder.finish());
+      } catch (error) {
+        rejectOnce(error);
+      }
     });
   });
 }

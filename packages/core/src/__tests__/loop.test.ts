@@ -159,6 +159,51 @@ describe("runLoop", () => {
     expect(mocks.acquire).toHaveBeenCalledWith({ reason: "ralph-ghafk loop" });
   });
 
+  it("forwards provider settings to every stage", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(sentinel);
+
+    await runLoop(
+      loopOptions(dirs, {
+        agent: "codex",
+        codexUserConfig: true,
+      })
+    );
+
+    expect(mocks.runStage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      dirs.workspaceDir,
+      1,
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({
+        agent: "codex",
+        codexUserConfig: true,
+        signal: expect.any(AbortSignal),
+      })
+    );
+  });
+
+  it("rejects Codex user config with Claude before image setup", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+
+    await expect(
+      runLoop(
+        loopOptions(dirs, {
+          agent: "claude",
+          codexUserConfig: true,
+        })
+      )
+    ).rejects.toThrow(
+      "--codex-user-config requires Codex; select it with --agent codex or RALPH_AGENT=codex"
+    );
+    expect(mocks.ensureImage).not.toHaveBeenCalled();
+    expect(mocks.runStage).not.toHaveBeenCalled();
+  });
+
   it("logs terminal stage failure and continues with the next iteration", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);

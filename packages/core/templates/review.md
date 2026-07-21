@@ -30,7 +30,7 @@ If `<head>` shows `(no commits)` or HEAD is unchanged from the previous iteratio
 
 1. Bugs and regressions
 2. Test coverage gaps for the changed code
-3. Style violations vs `CLAUDE.md` or project conventions
+3. Style violations vs `AGENTS.md`, `CLAUDE.md`, or project conventions
 4. Security issues (input validation, secrets, injection, auth bypass)
 5. Half-finished implementations, dead code, leftover TODO from this commit
 
