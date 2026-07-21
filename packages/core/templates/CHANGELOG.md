@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.3.0...ralph-sandbox-v0.4.0) (2026-07-21)
+
+
+### Features
+
+* **sandbox:** install Codex CLI ([73f0b01](https://github.com/daonhan/ralph/commit/73f0b017f819d9df55637fac6021d0ed460d0497))
+
 ## [0.3.0](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.2.3...ralph-sandbox-v0.3.0) (2026-07-16)
 
 
