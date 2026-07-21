@@ -65,6 +65,6 @@
     "access": "public"
   },
   "devDependencies": {
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.10"
   }
 }
