@@ -128,6 +128,8 @@ mkdir -p ~/.claude
 cp -r /mnt/c/Users/<WINUSER>/.claude/. ~/.claude/
 cp /mnt/c/Users/<WINUSER>/.claude.json ~/.claude.json 2>/dev/null || true
 mkdir -p ~/.config/gh
+# gh on native Windows stores config in AppData/Roaming/GitHub CLI; fall back to .config/gh
+cp -r "/mnt/c/Users/<WINUSER>/AppData/Roaming/GitHub CLI/." ~/.config/gh/ 2>/dev/null || \
 cp -r /mnt/c/Users/<WINUSER>/.config/gh/. ~/.config/gh/ 2>/dev/null || true
 ```
 
