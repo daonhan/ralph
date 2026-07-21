@@ -332,7 +332,7 @@ On Windows only the explicit overrides are considered, then it returns `/var/run
 - **assistant text** → printed to **stdout** with a `●` bullet (the visible answer stream).
 - **tools / thinking / init / diagnostics** → rendered to **stderr** (tool name + truncated input/result preview + elapsed ms).
 - **Claude terminal contract:** a `result` event supplies its `result` string as completion.
-- **Codex terminal contract:** the last completed `agent_message` becomes the completion only when `turn.completed` arrives. `turn.failed` and `error` reject immediately; `turn.completed` without a final agent message rejects; a clean process exit without `turn.completed` also rejects.
+- **Codex terminal contract:** the last completed `agent_message` becomes the completion only when `turn.completed` arrives. `turn.failed` and fatal `error` records reject immediately; a transient `Reconnecting… X/Y` `error` notice renders as a diagnostic and the turn continues; `turn.completed` without a final agent message rejects; a clean process exit without `turn.completed` also rejects.
 
 Color is **TTY-gated and stream-split**: `USE_COLOR` (stderr) and `USE_COLOR_STDOUT` (stdout) are independent, so `ralph-ghafk 1 > out.txt` stays clean even on a TTY. ANSI is disabled when `NO_COLOR` is set or `TERM=dumb`.
 

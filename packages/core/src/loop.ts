@@ -1,7 +1,10 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 
-import type { AgentName } from "./agents/index.js";
+import {
+  CODEX_USER_CONFIG_REQUIRES_CODEX,
+  type AgentName,
+} from "./agents/index.js";
 import { readCoreVersion } from "./cli-help.js";
 import { acquire, type Releaser } from "./keepalive.js";
 import { notifyComplete, notifyError } from "./notify.js";
@@ -76,7 +79,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
   } = opts;
 
   if (codexUserConfig && agent !== "codex") {
-    throw new Error("codexUserConfig requires agent=codex");
+    throw new Error(CODEX_USER_CONFIG_REQUIRES_CODEX);
   }
 
   const versionLine = `${bin} ${cliVersion} (core ${readCoreVersion()})`;

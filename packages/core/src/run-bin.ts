@@ -7,7 +7,10 @@ import {
   printHelp,
   printVersion,
 } from "./cli-help.js";
-import { resolveAgentSelection } from "./agents/index.js";
+import {
+  CODEX_USER_CONFIG_REQUIRES_CODEX,
+  resolveAgentSelection,
+} from "./agents/index.js";
 import { detachAndExit } from "./detach.js";
 import { runLoop } from "./loop.js";
 import type { Stage } from "./stages.js";
@@ -49,9 +52,7 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
 
   const selection = resolveAgentSelection(flags.agent, process.env.RALPH_AGENT);
   if (flags.codexUserConfig && selection.agent !== "codex") {
-    throw new Error(
-      "--codex-user-config requires Codex; select it with --agent codex or RALPH_AGENT=codex"
-    );
+    throw new Error(CODEX_USER_CONFIG_REQUIRES_CODEX);
   }
 
   // run-bin.js ships in the same dist/ dir as the bin entrypoints, so ".." is

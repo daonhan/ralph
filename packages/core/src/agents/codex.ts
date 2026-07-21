@@ -27,6 +27,11 @@ function failureMessage(
   return message?.trim() ? message : fallback;
 }
 
+// Codex emits transient "Reconnecting... X/Y" notices as type:"error" while it
+// retries a dropped stream; the turn continues afterward, so these must render
+// as progress and not abort the stage. Every other error is a fatal failure.
+const RECONNECT_NOTICE = /^\s*reconnecting\b/i;
+
 const TOOL_ITEM_TYPES = new Set([
   "command_execution",
   "file_change",
@@ -98,6 +103,10 @@ function toolFailed(item: Record<string, unknown>): boolean {
 }
 
 export function createCodexDecoder(): AgentStreamDecoder {
+  // The final agent message is the stage's completion string — for the gate
+  // stage, loop.ts sentinel-checks it for `<promise>NO MORE TASKS</promise>`.
+  // Codex must therefore emit the sentinel in its terminal message (Claude
+  // returns it via the `result` record).
   let lastAgentMessage: string | undefined;
   let turnCompleted = false;
 
@@ -189,10 +198,11 @@ export function createCodexDecoder(): AgentStreamDecoder {
       }
 
       if (event.type === "error") {
-        return {
-          events: [],
-          failure: failureMessage(event, "codex error"),
-        };
+        const message = failureMessage(event, "codex error");
+        if (RECONNECT_NOTICE.test(message)) {
+          return { events: [{ type: "diagnostic", message }] };
+        }
+        return { events: [], failure: message };
       }
 
       return { events: [] };

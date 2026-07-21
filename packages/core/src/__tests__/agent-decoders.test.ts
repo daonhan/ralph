@@ -224,6 +224,28 @@ describe("Codex stream decoder", () => {
     ).toBe("auth missing");
   });
 
+  it("treats a transient reconnect notice as non-fatal and keeps the turn", () => {
+    const decoder = createCodexDecoder();
+    const reconnect = decoder.decode({
+      type: "error",
+      message: "Reconnecting... 1/5",
+    });
+    expect(reconnect.failure).toBeUndefined();
+    expect(reconnect.events).toEqual([
+      { type: "diagnostic", message: "Reconnecting... 1/5" },
+    ]);
+
+    decoder.decode({
+      type: "item.completed",
+      item: { type: "agent_message", text: "finished" },
+    });
+    expect(decoder.decode({ type: "turn.completed" })).toEqual({
+      events: [],
+      completion: "finished",
+    });
+    expect(decoder.finish()).toBe("finished");
+  });
+
   it("rejects completion without a final agent message", () => {
     expect(createCodexDecoder().decode({ type: "turn.completed" })).toEqual({
       events: [],

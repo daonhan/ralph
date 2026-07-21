@@ -197,7 +197,9 @@ describe("runLoop", () => {
           codexUserConfig: true,
         })
       )
-    ).rejects.toThrow("codexUserConfig requires agent=codex");
+    ).rejects.toThrow(
+      "--codex-user-config requires Codex; select it with --agent codex or RALPH_AGENT=codex"
+    );
     expect(mocks.ensureImage).not.toHaveBeenCalled();
     expect(mocks.runStage).not.toHaveBeenCalled();
   });

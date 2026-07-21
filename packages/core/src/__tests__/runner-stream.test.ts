@@ -89,6 +89,24 @@ describe("streamDocker", () => {
     expect(child.kill).toHaveBeenCalledTimes(1);
   });
 
+  it("survives a transient reconnect notice and still completes", async () => {
+    const run = streamDocker(
+      [],
+      join(root, "reconnect.ndjson"),
+      createCodexDecoder()
+    );
+    writeJson(child, { type: "error", message: "Reconnecting... 1/5" });
+    writeJson(child, {
+      type: "item.completed",
+      item: { type: "agent_message", text: "finished" },
+    });
+    writeJson(child, { type: "turn.completed" });
+    child.emit("close", 0);
+
+    await expect(run).resolves.toBe("finished");
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
   it.each(["", "   "])(
     "rejects a provider failure with an empty message before later completion",
     async (message) => {

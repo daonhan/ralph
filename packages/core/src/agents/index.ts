@@ -19,6 +19,10 @@ const ADAPTERS: Record<AgentName, AgentAdapter> = {
   codex: codexAdapter,
 };
 
+/** Single source of truth for the `--codex-user-config` + non-Codex invariant. */
+export const CODEX_USER_CONFIG_REQUIRES_CODEX =
+  "--codex-user-config requires Codex; select it with --agent codex or RALPH_AGENT=codex";
+
 export function parseAgentName(raw: string): AgentName {
   const value = raw.trim();
   if (value === "claude" || value === "codex") return value;
