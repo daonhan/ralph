@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.6.3...ralph-core-v0.7.0) (2026-07-21)
+
+
+### Features
+
+* **cli:** select Claude or Codex ([306be0d](https://github.com/daonhan/ralph/commit/306be0da76febadb2201c83ba62f2791c7e882a0))
+* **core:** add agent provider adapters ([3a54ab5](https://github.com/daonhan/ralph/commit/3a54ab5818afc0ee26c575c55a6c1b77dd221a40))
+* **core:** decode Claude and Codex streams ([f030bb8](https://github.com/daonhan/ralph/commit/f030bb8061a410cb2a3860e53ce86890bf1459f0))
+* **core:** run stages through agent adapters ([c17fc1b](https://github.com/daonhan/ralph/commit/c17fc1b7ebedbe98f1e5b0431686df03f67d64f3))
+
+
+### Bug Fixes
+
+* **core:** handle Codex tool terminal states ([3c6eb9d](https://github.com/daonhan/ralph/commit/3c6eb9df546c9f4fa580ab457b83955e72904ddd))
+* **core:** keep Codex turn alive on transient reconnect notices ([343891f](https://github.com/daonhan/ralph/commit/343891f28eff1df7c5e1b751172f5e1d5d1d8988))
+* **core:** reject empty provider failures ([e09b520](https://github.com/daonhan/ralph/commit/e09b520e65187fd3a141ecb4bdb607f28cb87e77))
+
 ## [0.6.3](https://github.com/daonhan/ralph/compare/ralph-core-v0.6.2...ralph-core-v0.6.3) (2026-06-05)
 
 

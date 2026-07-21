@@ -1,6 +1,6 @@
 {
   "name": "@daonhan/ralph-core",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "description": "Claude Code and Codex AFK orchestration: iteration loop, Docker runner, template renderer.",
   "type": "module",
   "license": "MIT",
