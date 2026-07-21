@@ -386,7 +386,8 @@ export function resolveAgentRuntimeArgs(
       }`;
       args.push("-v", spec);
     }
-    const ghConfigDir = join(home, ".config", "gh");
+    const ghConfigDir =
+      process.env.GH_CONFIG_DIR?.trim() || join(home, ".config", "gh");
     if (existsSync(ghConfigDir)) {
       args.push("-v", `${ghConfigDir}:/home/agent/.config/gh:ro`);
     }
