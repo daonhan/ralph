@@ -255,8 +255,28 @@ export function resolveCodexModel(
   };
 }
 
+// CODEX_HOME must stay off the credential bind mount: Codex creates a unix
+// socket and symlinks in its home at startup, which Docker Desktop for
+// Windows bind mounts reject with "Operation not permitted (os error 1)"
+// (fatal at app-server init). The host ~/.codex is instead mounted read-only
+// at this staging path and the setup script copies the credential files into
+// a container-local CODEX_HOME before exec'ing codex ($0="codex", $@=rest).
+// Trade-off: an OAuth token refresh inside the container is not written back
+// to the host; the host CLI re-refreshes on its next use.
+const CODEX_CREDS_MOUNT = "/mnt/codex-creds";
+
+const CODEX_SETUP_SCRIPT =
+  'mkdir -p "$CODEX_HOME"; ' +
+  "for f in auth.json config.toml AGENTS.md; do " +
+  `if [ -f "${CODEX_CREDS_MOUNT}/$f" ]; then cp "${CODEX_CREDS_MOUNT}/$f" "$CODEX_HOME/"; fi; ` +
+  "done; " +
+  'exec "$0" "$@"';
+
 export function buildCodexArgs(context: AgentCommandContext): string[] {
   const args = [
+    "bash",
+    "-c",
+    CODEX_SETUP_SCRIPT,
     "codex",
     "exec",
     "--json",
@@ -290,7 +310,8 @@ export const codexAdapter = {
     return [
       {
         hostPath: joinHome(home, ".codex"),
-        containerPath: "/home/agent/.codex",
+        containerPath: CODEX_CREDS_MOUNT,
+        readOnly: true,
       },
     ];
   },

@@ -37,15 +37,18 @@ The trust boundary is:
   bind-mounts the host filesystem as root). This is on so Testcontainers inside the sandbox can
   spawn sibling containers. **Disable it with `RALPH_DOCKER_SOCK=0`** when running anything you
   do not fully trust. Disabling it removes host-Docker control, but persistent host-write
-  exposure still includes the bind-mounted workspace and the selected provider's read-write
+  exposure still includes the bind-mounted workspace and, for Claude, the read-write
   credential store. `~/.config/gh` remains read-only.
 
-- **Selected-provider host credentials are bind-mounted read-write.** Claude
-  mounts `~/.claude` and `~/.claude.json`; Codex mounts `~/.codex`. The agent
-  can read or overwrite the selected provider's reusable credentials.
+- **Selected-provider host credentials are bind-mounted.** Claude mounts
+  `~/.claude` and `~/.claude.json` read-write; the agent can read or overwrite
+  those reusable credentials. Codex mounts `~/.codex` read-only at
+  `/mnt/codex-creds` and copies `auth.json` (plus `config.toml` and `AGENTS.md`
+  when present) into a container-local `CODEX_HOME`; the agent cannot modify
+  the host Codex store, but `auth.json` remains a readable reusable secret.
   `~/.config/gh` is mounted read-only. Isolated Codex configuration prevents
   personal config, MCP, and hook loading; it does not conceal
-  `~/.codex/auth.json`, which is a reusable secret, from the process.
+  `~/.codex/auth.json` from the process.
 
 ### Reducing blast radius
 
