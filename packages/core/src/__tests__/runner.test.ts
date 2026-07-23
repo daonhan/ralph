@@ -147,7 +147,8 @@ describe("resolveAgentRuntimeArgs", () => {
       expect(claudeArgs.join(" ")).not.toContain(".codex");
 
       const codexArgs = resolveAgentRuntimeArgs(getAgentAdapter("codex"), home);
-      expect(codexArgs.join(" ")).toContain("/home/agent/.codex");
+      expect(codexArgs.join(" ")).toContain("/mnt/codex-creds:ro");
+      expect(codexArgs.join(" ")).not.toContain(":/home/agent/.codex");
       expect(codexArgs.join(" ")).not.toContain(".claude");
       expect(codexArgs).toContain("CODEX_HOME=/home/agent/.codex");
       expect(codexArgs.join(" ")).toContain("/home/agent/.config/gh:ro");

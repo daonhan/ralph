@@ -102,12 +102,12 @@ Every run writes to `<workspaceDir>/.ralph-tmp/` on the host (gitignored): the r
 `runStage` reads `process.env.HOME || USERPROFILE` and mounts only the selected provider's credentials when present:
 
 - Claude: `~/.claude` → `/home/agent/.claude` and `~/.claude.json` → `/home/agent/.claude.json`
-- Codex: `~/.codex` → `/home/agent/.codex`, with `CODEX_HOME=/home/agent/.codex`
+- Codex: `~/.codex` → `/mnt/codex-creds:ro`, with `CODEX_HOME=/home/agent/.codex`; a setup script copies `auth.json`/`config.toml`/`AGENTS.md` into the container-local `CODEX_HOME` before exec'ing `codex` (a bind-mounted `CODEX_HOME` fails with EPERM on Windows)
 - Shared when present: `~/.config/gh` → `/home/agent/.config/gh:ro`
 
 `runStage` also injects git env vars (`GIT_CONFIG_COUNT/KEY_0=safe.directory/VALUE_0=*`) so git trusts the bind-mounted workspace, and — **by default** — bind-mounts the host Docker socket (`-v <sock>:/var/run/docker.sock` + a `--group-add` fixup, via `resolveDockerSocketMount`) so Testcontainers inside the sandbox can spawn sibling containers. That grants the sandbox root-equivalent host Docker access; disable with `RALPH_DOCKER_SOCK=0`, or set an explicit path with `RALPH_DOCKER_SOCK_PATH`.
 
-**Same-shell rule:** these paths resolve against the shell that invoked the bin. PowerShell `$HOME` (`C:\Users\<you>`) and WSL `$HOME` (`/home/<you>`) are separate stores — install/login to the selected host CLI and run Ralph from the same environment. Claude supports native Windows or WSL. Codex on Windows is supported only through WSL: install Ralph and Codex, use file-backed Codex credentials, and run both from the same WSL distro. Keep `gh auth login` in that environment too (see README "Windows + WSL: credentials").
+**Same-shell rule:** these paths resolve against the shell that invoked the bin. PowerShell `$HOME` (`C:\Users\<you>`) and WSL `$HOME` (`/home/<you>`) are separate stores — install/login to the selected host CLI and run Ralph from the same environment. Both providers support native Windows and WSL; Codex needs file-backed credentials (`cli_auth_credentials_store = "file"`). Keep `gh auth login` in that environment too (see README "Windows + WSL: credentials").
 
 ### Sandbox image
 

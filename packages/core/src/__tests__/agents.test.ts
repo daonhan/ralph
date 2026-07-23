@@ -124,6 +124,17 @@ describe("Codex adapter", () => {
     });
   });
 
+  // CODEX_HOME lives inside the container; the setup script copies credentials
+  // from the read-only staging mount before exec'ing codex ($0="codex",
+  // $@=rest). A bind-mounted CODEX_HOME breaks on Docker Desktop for Windows
+  // (EPERM on the unix socket / symlinks Codex creates at startup).
+  const setupScript =
+    'mkdir -p "$CODEX_HOME"; ' +
+    "for f in auth.json config.toml AGENTS.md; do " +
+    'if [ -f "/mnt/codex-creds/$f" ]; then cp "/mnt/codex-creds/$f" "$CODEX_HOME/"; fi; ' +
+    "done; " +
+    'exec "$0" "$@"';
+
   it("builds isolated default args", () => {
     expect(
       buildCodexArgs({
@@ -133,6 +144,9 @@ describe("Codex adapter", () => {
         codexUserConfig: false,
       })
     ).toEqual([
+      "bash",
+      "-c",
+      setupScript,
       "codex",
       "exec",
       "--json",
@@ -156,6 +170,9 @@ describe("Codex adapter", () => {
         codexUserConfig: true,
       })
     ).toEqual([
+      "bash",
+      "-c",
+      setupScript,
       "codex",
       "exec",
       "--json",
@@ -174,6 +191,9 @@ describe("Codex adapter", () => {
         codexUserConfig: false,
       })
     ).toEqual([
+      "bash",
+      "-c",
+      setupScript,
       "codex",
       "exec",
       "--json",
@@ -191,7 +211,8 @@ describe("Codex adapter", () => {
     expect(adapter.credentialMounts("/home/me")).toEqual([
       {
         hostPath: "/home/me/.codex",
-        containerPath: "/home/agent/.codex",
+        containerPath: "/mnt/codex-creds",
+        readOnly: true,
       },
     ]);
     expect(adapter.containerEnv).toEqual({

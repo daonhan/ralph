@@ -37,9 +37,8 @@ Claude is the default; `RALPH_AGENT=codex` is the fallback when `--agent` is abs
 Docker and a login for the selected provider (and `gh` for `ralph-ghafk`). Codex users should
 follow the root README's [file-backed login](https://github.com/daonhan/ralph#codex-login) and
 [provider configuration](https://github.com/daonhan/ralph#choose-the-coding-agent) instructions.
-On Windows, Codex requires Ralph, the pinned host Codex CLI, and `codex login` to run from WSL
-with `~/.codex` in the WSL Linux home; workspaces under `/mnt/c` or `/mnt/d` are supported.
-Native PowerShell, cmd, and Git Bash remain supported for Claude.
+Both providers run from native Windows shells (PowerShell, cmd, Git Bash) or WSL; log in with
+the host CLI from the same shell environment that launches Ralph.
 First-run setup, per-OS notes, and the full flag/env reference are in the
 **[main README](https://github.com/daonhan/ralph#readme)** and
 **[QUICKSTART](https://github.com/daonhan/ralph/blob/main/QUICKSTART.md)**.

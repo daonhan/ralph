@@ -287,18 +287,17 @@ owns validation and a failure is terminal for that stage attempt—Ralph never r
 another model. `--codex-user-config` removes `--ignore-user-config`; when `RALPH_MODEL` is
 also unset, both model and reasoning effort come from `~/.codex/config.toml`.
 
-- **Workspace mount + `-w`:** the host workspace is mounted read-write and set as the container's working directory. The selected provider's credential store is a separate writable host mount.
+- **Workspace mount + `-w`:** the host workspace is mounted read-write and set as the container's working directory.
 - **Git env injection:** `GIT_CONFIG_COUNT/KEY_0/VALUE_0` forces `safe.directory=*` so git works against a bind-mount whose UID differs from the container user (a Windows-host pain point).
-- **Credential mounts** (only if the host path exists, resolved against `HOME || USERPROFILE`) are selected-provider-only: Claude mounts `~/.claude` and `~/.claude.json` (**rw**); Codex mounts only `~/.codex` (**rw**) and injects `CODEX_HOME=/home/agent/.codex`. Codex's `~/.codex/auth.json` is a reusable secret available to the process. Both may mount `~/.config/gh` (**ro**).
+- **Credential mounts** (only if the host path exists, resolved against `HOME || USERPROFILE`) are selected-provider-only: Claude mounts `~/.claude` and `~/.claude.json` (**rw**); Codex mounts `~/.codex` (**ro**) at `/mnt/codex-creds` and injects `CODEX_HOME=/home/agent/.codex` — a setup script wrapped around the `codex` invocation copies `auth.json`, `config.toml`, and `AGENTS.md` (when present) into the container-local `CODEX_HOME` before exec, because a bind-mounted `CODEX_HOME` cannot host the unix socket / symlinks Codex creates at startup (EPERM on Docker Desktop for Windows). Codex's `auth.json` is a reusable secret available to the process. Both may mount `~/.config/gh` (**ro**).
 - **Approval bypass** is provider-specific: Claude receives stage `permissionMode=bypassPermissions`; Codex receives `--dangerously-bypass-approvals-and-sandbox`.
 
 On Windows, the generic `HOME || USERPROFILE` resolution is a supported native
-launch path for Claude only. Codex requires Ralph, the pinned host Codex CLI,
-and `codex login` to run from the same WSL shell, with `~/.codex` in the WSL
-Linux home. A Windows/NTFS-backed Codex home cannot satisfy Codex's required
-`chmod`/`fchmod` calls and fails with `EPERM`; changing only the command shell
-does not relocate the credential home. The workspace may still be mounted from
-`/mnt/c` or `/mnt/d`. For `ralph-ghafk`, the same WSL shell must export
+launch path for both providers: the Codex credential home never sits on the
+NTFS bind mount (credentials are copied into the container-local `CODEX_HOME`
+instead), so the historical `chmod`/`fchmod`/unix-socket `EPERM` failures do
+not apply. Follow the same-shell rule — log in with the host CLI from the same
+environment that launches Ralph. For `ralph-ghafk` under WSL, export
 `GH_CONFIG_DIR="$HOME/.config/gh"` so the provider-independent GitHub config is
 the one mounted read-only.
 
@@ -363,7 +362,7 @@ Everything lands under `<workspace>/.ralph-tmp/` (gitignored):
 - **ESM only.** Both packages are `"type": "module"`; relative imports in `packages/core/src` end in `.js` (NodeNext).
 - **First stage is the gate.** Place gating stages at index 0 of any chain. The sentinel `<promise>NO MORE TASKS</promise>` is hardcoded in [`../packages/core/src/loop.ts`](../packages/core/src/loop.ts).
 - **No build step for `apps/cli`.** Bins are hand-written JS that `import { runAfk } from "@daonhan/ralph-core"`. Keep the bin layer flat — don't add TS there.
-- **`permissionMode` is always `bypassPermissions`** for sandbox stages — never `acceptEdits`. This supplies Claude's no-approval mode; Codex receives its provider-specific no-approval flag. With the Docker socket disabled, persistent host writes still include the workspace and selected provider's read-write credential store; GitHub CLI config is read-only.
+- **`permissionMode` is always `bypassPermissions`** for sandbox stages — never `acceptEdits`. This supplies Claude's no-approval mode; Codex receives its provider-specific no-approval flag. With the Docker socket disabled, persistent host writes still include the workspace and, for Claude, the read-write credential store (Codex credentials are mounted read-only); GitHub CLI config is read-only.
 - **Templates ship in the core tarball.** `packages/core/package.json` `files` includes `dist` and `templates` (the `Dockerfile` lives under `templates/`).
 - **Adding a stage** = (1) extend `STAGES` in [`../packages/core/src/stages.ts`](../packages/core/src/stages.ts), (2) drop a new `*.md` in [`../packages/core/templates`](../packages/core/templates), (3) wire it into the chain in `main.ts` / `gh-main.ts`.
 
