@@ -31,7 +31,7 @@ Release PR appears.
 <!-- status-table:start -->
 | Component | Artifact | Version | Released | Tag |
 | --- | --- | --- | --- | --- |
-| `ralph-core` | npm `@daonhan/ralph-core` | `0.7.0` | — | — |
+| `ralph-core` | npm `@daonhan/ralph-core` | `0.7.1` | — | — |
 | `ralph` | npm `@daonhan/ralph` | `0.6.3` | 2026-06-05 | [`ralph-v0.6.3`](https://github.com/daonhan/ralph/releases/tag/ralph-v0.6.3) |
 | `ralph-sandbox` | Docker `daonhan/ralph-sandbox` | `0.4.0` | 2026-07-21 | [`ralph-sandbox-v0.4.0`](https://github.com/daonhan/ralph/releases/tag/ralph-sandbox-v0.4.0) |
 <!-- status-table:end -->
