@@ -7,7 +7,7 @@
 
 * The following workspace dependencies were updated
   * dependencies
-    * @daonhan/ralph-core bumped to 0.7.1
+    * @daonhan/ralph-core bumped to 0.7.0
 
 ## [0.6.3](https://github.com/daonhan/ralph/compare/ralph-v0.6.2...ralph-v0.6.3) (2026-06-05)
 
