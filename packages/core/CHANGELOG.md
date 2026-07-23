@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/daonhan/ralph/compare/ralph-core-v0.7.1...ralph-core-v0.7.2) (2026-07-23)
+
+
+### Miscellaneous Chores
+
+* merge main into release PR and resolve conflicts ([e30eca6](https://github.com/daonhan/ralph/commit/e30eca6e65dac52844f5e949df8e149cecb6b402))
+
 ## [0.7.1](https://github.com/daonhan/ralph/compare/ralph-core-v0.7.0...ralph-core-v0.7.1) (2026-07-23)
 
 
