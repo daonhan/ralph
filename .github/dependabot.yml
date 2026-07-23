@@ -6,6 +6,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # TypeScript 7 (native compiler) drops the implicit parent-dir @types
+      # scan our pnpm workspace relies on; hold at 5.x until we migrate.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     groups:
       dev-dependencies:
         dependency-type: development
