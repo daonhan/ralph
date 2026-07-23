@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.2](https://github.com/daonhan/ralph/compare/ralph-core-v0.7.1...ralph-core-v0.7.2) (2026-07-23)
+
+
+### Bug Fixes
+
+* **core:** keep CODEX_HOME off the credential bind mount ([59c652f](https://github.com/daonhan/ralph/commit/59c652f9352cb94fcac74986619516c776753b21))
+
+
+### Miscellaneous Chores
+
+* merge main into release PR and resolve conflicts ([e30eca6](https://github.com/daonhan/ralph/commit/e30eca6e65dac52844f5e949df8e149cecb6b402))
+
 ## [0.7.1](https://github.com/daonhan/ralph/compare/ralph-core-v0.7.0...ralph-core-v0.7.1) (2026-07-23)
 
 
