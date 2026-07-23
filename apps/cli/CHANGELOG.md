@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.6](https://github.com/daonhan/ralph/compare/ralph-v0.6.5...ralph-v0.6.6) (2026-07-23)
+
+
+### Miscellaneous Chores
+
+* merge origin/main and resolve release conflicts ([c963ab5](https://github.com/daonhan/ralph/commit/c963ab54578ad7cb8807387323cf1bd852b9b473))
+
 ## [0.6.5](https://github.com/daonhan/ralph/compare/ralph-v0.6.4...ralph-v0.6.5) (2026-07-23)
 
 
