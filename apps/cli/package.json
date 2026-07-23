@@ -1,6 +1,6 @@
 {
   "name": "@daonhan/ralph",
-  "version": "0.6.4",
+  "version": "0.5.1",
   "description": "CLI for Ralph's Claude Code and Codex AFK loops (ralph-afk, ralph-ghafk).",
   "type": "module",
   "license": "MIT",
