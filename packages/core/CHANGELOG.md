@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.1](https://github.com/daonhan/ralph/compare/ralph-core-v0.7.0...ralph-core-v0.7.1) (2026-07-23)
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** bump the dev-dependencies group with 4 updates ([6ba9caf](https://github.com/daonhan/ralph/commit/6ba9caf292f142a7df468ef7e5bc49b8707aae69))
+* **deps-dev:** bump the dev-dependencies group with 4 updates ([e4b6eb4](https://github.com/daonhan/ralph/commit/e4b6eb4afd90888863dfb4c4ed9a2f8e32fb0dcc))
+
 ## [0.7.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.6.3...ralph-core-v0.7.0) (2026-07-21)
 
 
