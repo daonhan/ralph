@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.4](https://github.com/daonhan/ralph/compare/ralph-v0.6.3...ralph-v0.6.4) (2026-07-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @daonhan/ralph-core bumped to 0.7.1
+
 ## [0.6.3](https://github.com/daonhan/ralph/compare/ralph-v0.6.2...ralph-v0.6.3) (2026-06-05)
 
 
