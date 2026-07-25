@@ -18,6 +18,7 @@ import {
   type AgentName,
   type AgentStreamDecoder,
 } from "./agents/index.js";
+import { resolveHostHome } from "./agents/shared.js";
 import type { Stage } from "./stages.js";
 import {
   bold,
@@ -441,7 +442,7 @@ export async function runStage(
       "GIT_CONFIG_VALUE_0=*",
     ];
 
-    const home = process.env.HOME || process.env.USERPROFILE || "";
+    const home = resolveHostHome();
     args.push(...resolveAgentRuntimeArgs(adapter, home));
 
     const sockMount = resolveDockerSocketMount();

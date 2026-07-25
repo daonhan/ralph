@@ -125,36 +125,107 @@ describe("Claude host model resolution", () => {
 
   it("reads the model the host /model picker stored", () => {
     const home = makeHome('{ "model": " claude-opus-5[1m] " }');
-    expect(readHostClaudeModel(home)).toBe("claude-opus-5[1m]");
+    expect(readHostClaudeModel(home)).toEqual({ model: "claude-opus-5[1m]" });
   });
 
-  it("returns undefined for missing, malformed, or non-string settings", () => {
-    expect(readHostClaudeModel("")).toBeUndefined();
-    expect(readHostClaudeModel(makeHome())).toBeUndefined();
-    expect(readHostClaudeModel(makeHome("not json"))).toBeUndefined();
-    expect(readHostClaudeModel(makeHome('{ "model": 5 }'))).toBeUndefined();
-    expect(readHostClaudeModel(makeHome("{}"))).toBeUndefined();
+  it("reports no model for missing or non-string settings", () => {
+    expect(readHostClaudeModel("")).toEqual({});
+    expect(readHostClaudeModel(makeHome())).toEqual({});
+    expect(readHostClaudeModel(makeHome('{ "model": 5 }'))).toEqual({});
+    expect(readHostClaudeModel(makeHome("{}"))).toEqual({});
   });
 
   it("skips blank models and the default sentinel", () => {
-    expect(readHostClaudeModel(makeHome('{ "model": "  " }'))).toBeUndefined();
+    expect(readHostClaudeModel(makeHome('{ "model": "  " }'))).toEqual({});
+    expect(readHostClaudeModel(makeHome('{ "model": "default" }'))).toEqual({});
+  });
+
+  // A present-but-broken settings file must not look like "user chose
+  // nothing": that would silently swap their model for Ralph's default, the
+  // exact failure this resolution chain exists to prevent.
+  it("distinguishes an unusable settings file from an absent one", () => {
+    const home = makeHome("not json");
+    const result = readHostClaudeModel(home);
+    expect(result.model).toBeUndefined();
+    expect(result.unreadable).toContain("invalid JSON");
+    expect(readHostClaudeModel(makeHome()).unreadable).toBeUndefined();
+  });
+
+  // ANTHROPIC_MODEL in the settings env block reaches the container through
+  // the bind-mounted settings file, and --model outranks it — so ignoring it
+  // would silently override the user's own pin.
+  it("honors env.ANTHROPIC_MODEL over the model key", () => {
     expect(
-      readHostClaudeModel(makeHome('{ "model": "default" }'))
-    ).toBeUndefined();
+      readHostClaudeModel(
+        makeHome(
+          '{ "model": "claude-opus-5", "env": { "ANTHROPIC_MODEL": " claude-fable-5[1m] " } }'
+        )
+      )
+    ).toEqual({ model: "claude-fable-5[1m]", providerFlag: undefined });
+  });
+
+  it("detects third-party provider routing in the settings env block", () => {
+    expect(
+      readHostClaudeModel(
+        makeHome('{ "env": { "CLAUDE_CODE_USE_BEDROCK": "1" } }')
+      )
+    ).toEqual({ providerFlag: "CLAUDE_CODE_USE_BEDROCK" });
+    expect(
+      readHostClaudeModel(
+        makeHome('{ "env": { "CLAUDE_CODE_USE_VERTEX": "true" } }')
+      )
+    ).toEqual({ providerFlag: "CLAUDE_CODE_USE_VERTEX" });
+    expect(
+      readHostClaudeModel(
+        makeHome('{ "env": { "CLAUDE_CODE_USE_BEDROCK": "0" } }')
+      )
+    ).toEqual({ providerFlag: undefined });
   });
 
   it("prefers RALPH_MODEL, then host settings, then the Ralph default", () => {
-    expect(resolveClaudeModel(" claude-opus-5 ", "claude-fable-5[1m]")).toEqual(
-      { model: "claude-opus-5", modelSource: "RALPH_MODEL" }
-    );
-    expect(resolveClaudeModel(undefined, "claude-opus-5[1m]")).toEqual({
-      model: "claude-opus-5[1m]",
-      modelSource: "host settings",
-    });
+    expect(
+      resolveClaudeModel(" claude-opus-5 ", { model: "claude-fable-5[1m]" })
+    ).toEqual({ model: "claude-opus-5", modelSource: "RALPH_MODEL" });
+    expect(
+      resolveClaudeModel(undefined, { model: "claude-opus-5[1m]" })
+    ).toEqual({ model: "claude-opus-5[1m]", modelSource: "host settings" });
     expect(resolveClaudeModel("   ", undefined)).toEqual({
       model: DEFAULT_CLAUDE_MODEL,
       modelSource: "Ralph default",
     });
+  });
+
+  // Bedrock and friends use provider-specific model IDs, so forcing a
+  // first-party default would fail a setup that worked before.
+  it("leaves model resolution to the container under third-party routing", () => {
+    expect(
+      resolveClaudeModel(undefined, {
+        providerFlag: "CLAUDE_CODE_USE_BEDROCK",
+      })
+    ).toEqual({ modelSource: "host provider config" });
+    expect(
+      resolveClaudeModel("us.anthropic.claude-opus-4-8", {
+        providerFlag: "CLAUDE_CODE_USE_BEDROCK",
+      })
+    ).toEqual({
+      model: "us.anthropic.claude-opus-4-8",
+      modelSource: "RALPH_MODEL",
+    });
+    expect(
+      resolveClaudeModel(undefined, {
+        model: "us.anthropic.claude-opus-4-8",
+        providerFlag: "CLAUDE_CODE_USE_BEDROCK",
+      })
+    ).toEqual({
+      model: "us.anthropic.claude-opus-4-8",
+      modelSource: "host settings",
+    });
+  });
+
+  // The constant is the whole safety net; referencing it everywhere else means
+  // only this assertion would catch an accidental edit.
+  it("pins the Ralph default model value", () => {
+    expect(DEFAULT_CLAUDE_MODEL).toBe("claude-opus-5[1m]");
   });
 
   it("passes the host-selected model to the sandbox argv", () => {
@@ -208,6 +279,17 @@ describe("Claude host model resolution", () => {
       expect(args).toContain("--model");
       expect(args[args.indexOf("--model") + 1]).toBe(DEFAULT_CLAUDE_MODEL);
     }
+  });
+
+  it("omits --model when host settings route to a third-party provider", () => {
+    const args = getAgentAdapter("claude").buildCommand({
+      stage,
+      promptInstruction,
+      rawModel: undefined,
+      codexUserConfig: false,
+      home: makeHome('{ "env": { "CLAUDE_CODE_USE_BEDROCK": "1" } }'),
+    });
+    expect(args).not.toContain("--model");
   });
 });
 

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join, posix } from "node:path";
 
 import type { Stage } from "../stages.js";
+import { bold, dim, red, SYM } from "../stream-render.js";
 import { record } from "./shared.js";
 import type {
   AgentAdapter,
@@ -103,51 +104,119 @@ export function resolveModelArgs(raw: string | undefined): string[] {
 export const DEFAULT_CLAUDE_MODEL = "claude-opus-5[1m]";
 
 export type ClaudeModelResolution = {
-  model: string;
-  modelSource: "RALPH_MODEL" | "host settings" | "Ralph default";
+  /** Undefined means: send no `--model` and let the container CLI resolve. */
+  model?: string;
+  modelSource:
+    | "RALPH_MODEL"
+    | "host settings"
+    | "Ralph default"
+    | "host provider config";
 };
 
 /**
- * Read the model the host `/model` picker saved to `~/.claude/settings.json`.
- * The picker only stores a `model` key for an explicit pick: choosing its
+ * Third-party routing flags. When one is enabled in the host settings, model
+ * identifiers are provider-specific (Bedrock uses inference-profile IDs such
+ * as `us.anthropic.claude-opus-4-8`), so a first-party ID like
+ * DEFAULT_CLAUDE_MODEL would be rejected.
+ */
+const PROVIDER_FLAGS = [
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLAUDE_CODE_USE_FOUNDRY",
+] as const;
+
+export type HostClaudeModel = {
+  /** Explicit model from the host settings, if any. */
+  model?: string;
+  /** Name of a third-party provider flag enabled in the host settings. */
+  providerFlag?: string;
+  /**
+   * Set when a settings file exists but is unusable. Kept distinct from an
+   * absent file because the two mean opposite things: no file means the user
+   * chose nothing, while an unreadable one means their choice exists and Ralph
+   * is about to override it with a default.
+   */
+  unreadable?: string;
+};
+
+function envValue(env: unknown, key: string): string {
+  const table = record(env);
+  const value = table?.[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * Read the model the host chose from `~/.claude/settings.json`. The `/model`
+ * picker only stores a `model` key for an explicit pick: choosing its
  * "(default)" entry deletes the key, which leaves the host's effective model
  * unreadable from disk (`claude doctor` and `~/.claude.json` don't expose it
  * either). The literal "default" sentinel is treated the same as an absent
  * key.
+ *
+ * The settings `env` block is read too: it applies to the container session
+ * through the bind-mounted settings file, and `ANTHROPIC_MODEL` set there
+ * outranks the `model` key — but is itself outranked by the `--model` flag
+ * Ralph passes, so it has to be honored here or it would be silently
+ * overridden.
+ *
+ * Only `$HOME/.claude` is consulted; a host that relocates its config with
+ * CLAUDE_CONFIG_DIR is not supported here, matching `credentialMounts`.
  */
-export function readHostClaudeModel(home: string): string | undefined {
-  if (!home) return undefined;
+export function readHostClaudeModel(home: string): HostClaudeModel {
+  if (!home) return {};
   const joinHome = home.startsWith("/") ? posix.join : join;
+  const settingsPath = joinHome(home, ".claude", "settings.json");
+
+  let raw: string;
   try {
-    const raw = readFileSync(
-      joinHome(home, ".claude", "settings.json"),
-      "utf8"
-    );
-    const parsed = JSON.parse(raw) as { model?: unknown };
-    const model = typeof parsed.model === "string" ? parsed.model.trim() : "";
-    if (!model || model === "default") return undefined;
-    return model;
-  } catch {
-    return undefined;
+    raw = readFileSync(settingsPath, "utf8");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return {};
+    return { unreadable: `${settingsPath} (${code ?? "read failed"})` };
   }
+
+  let parsed: { model?: unknown; env?: unknown };
+  try {
+    parsed = JSON.parse(raw) as { model?: unknown; env?: unknown };
+  } catch {
+    return { unreadable: `${settingsPath} (invalid JSON)` };
+  }
+
+  const providerFlag = PROVIDER_FLAGS.find((flag) => {
+    const value = envValue(parsed.env, flag);
+    return value !== "" && value !== "0" && value !== "false";
+  });
+
+  const envModel = envValue(parsed.env, "ANTHROPIC_MODEL");
+  const settingsModel =
+    typeof parsed.model === "string" ? parsed.model.trim() : "";
+  const model = envModel || settingsModel;
+  if (!model || model === "default") return { providerFlag };
+  return { model, providerFlag };
 }
 
 /**
- * Resolve the model the sandbox should run: RALPH_MODEL, then the host's
- * explicit `/model` pick, then Ralph's own default. Ralph always sends
- * `--model` because the sandbox image's claude CLI is frozen at image build
- * time and its built-in default lags the host's (observed: host 2.1.220
- * defaults to Opus 5 while the image's 2.1.216 defaults to Opus 4.8), so
- * letting the container pick silently downgrades the model.
+ * Resolve the model the sandbox should run: RALPH_MODEL, then whatever the
+ * host settings pin, then Ralph's own default. The default exists because the
+ * sandbox image's claude CLI is frozen at image build time and its built-in
+ * default lags the host's (observed: host 2.1.220 defaults to Opus 5 while the
+ * image's 2.1.216 defaults to Opus 4.8), so leaving the choice to the
+ * container silently downgrades the model.
+ *
+ * The one case that still defers to the container is third-party routing,
+ * where a first-party model ID would be rejected outright — there, the
+ * container CLI resolves a provider-appropriate model as it did before.
  */
 export function resolveClaudeModel(
   rawModel: string | undefined,
-  hostModel: string | undefined
+  host: HostClaudeModel | undefined
 ): ClaudeModelResolution {
   const explicit = rawModel?.trim();
   if (explicit) return { model: explicit, modelSource: "RALPH_MODEL" };
-  const host = hostModel?.trim();
-  if (host) return { model: host, modelSource: "host settings" };
+  const hostModel = host?.model?.trim();
+  if (hostModel) return { model: hostModel, modelSource: "host settings" };
+  if (host?.providerFlag) return { modelSource: "host provider config" };
   return { model: DEFAULT_CLAUDE_MODEL, modelSource: "Ralph default" };
 }
 
@@ -182,15 +251,24 @@ export function buildClaudeArgs(
   );
 }
 
+let unreadableSettingsWarned = false;
+
 function buildFromContext(context: AgentCommandContext): string[] {
-  const resolution = resolveClaudeModel(
-    context.rawModel,
-    readHostClaudeModel(context.home)
+  const host = readHostClaudeModel(context.home);
+  if (host.unreadable && !unreadableSettingsWarned) {
+    unreadableSettingsWarned = true;
+    process.stderr.write(
+      `${red(SYM.bullet)} ${bold("host claude settings unreadable")} ${dim(
+        `(${host.unreadable}) — any model set there is being ignored; pin one with RALPH_MODEL.`
+      )}\n`
+    );
+  }
+  const resolution = resolveClaudeModel(context.rawModel, host);
+  return buildClaudeCommand(
+    context.stage,
+    context.promptInstruction,
+    resolution.model ? ["--model", resolution.model] : []
   );
-  return buildClaudeCommand(context.stage, context.promptInstruction, [
-    "--model",
-    resolution.model,
-  ]);
 }
 
 export const claudeAdapter = {

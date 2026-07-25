@@ -269,7 +269,7 @@ The selected-provider argv is one of:
 # Claude (default)
 claude --verbose --print --output-format stream-json \
   --permission-mode bypassPermissions \
-  --model "${RALPH_MODEL:-<host ~/.claude/settings.json model, else claude-opus-5[1m]>}" \
+  [--model "${RALPH_MODEL:-<host ~/.claude/settings.json model, else claude-opus-5[1m]>}"] \
   "Read the full instructions from the file ./.ralph-tmp/<run-file> in the current workspace and execute them."
 
 # Codex (isolated configuration by default)
@@ -281,11 +281,22 @@ codex exec --json --ephemeral \
   "Read the full instructions from the file ./.ralph-tmp/<run-file> in the current workspace and execute them."
 ```
 
-For Claude, the `--model` value resolves as `RALPH_MODEL` → the `model` saved in the
-host's `~/.claude/settings.json` (what `/model` stored; its "(default)" entry stores
-no model) → `DEFAULT_CLAUDE_MODEL` (`claude-opus-5[1m]`). The flag is always sent: the
+For Claude, the `--model` value resolves as `RALPH_MODEL` → the model pinned by the
+host's `~/.claude/settings.json` (`env.ANTHROPIC_MODEL`, else the `model` key `/model`
+stored; its "(default)" entry stores no model) → `DEFAULT_CLAUDE_MODEL`
+(`claude-opus-5[1m]`). Ralph sends the flag rather than deferring to the container: the
 sandbox CLI's own built-in default is frozen at image build time and can lag the host
 CLI's across model transitions, so an omitted `--model` silently downgrades the run.
+`env.ANTHROPIC_MODEL` is read because the bind-mounted settings file applies it inside
+the container, where `--model` would otherwise outrank it.
+
+The flag is omitted in exactly one case: host settings that enable
+`CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, or `CLAUDE_CODE_USE_FOUNDRY`. Those
+providers use their own model identifiers (Bedrock inference-profile IDs such as
+`us.anthropic.claude-opus-4-8`), so a first-party default would be rejected and the
+container CLI resolves the model as it did before. A settings file that exists but
+cannot be read or parsed is reported on stderr and in `--print-config` instead of being
+treated as "no model chosen".
 
 For isolated Codex, `-c 'model_reasoning_effort="high"'` is supplied with Ralph's
 `gpt-5.6-sol` default when `RALPH_MODEL` is unset. With an explicit `RALPH_MODEL`, Codex
@@ -441,17 +452,17 @@ Release/publishing (release-please → tag-driven npm + image workflows) is the 
 
 ## Environment variables
 
-| Variable                 | Default                                                       | Effect                                                                                                                                                                             |
-| ------------------------ | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RALPH_WORKSPACE`        | `process.cwd()`                                               | Host dir bind-mounted at `/home/agent/workspace`; root for `.ralph-tmp/`.                                                                                                          |
-| `RALPH_AGENT`            | `claude`                                                      | Provider fallback when `--agent` is absent: `claude` or `codex`.                                                                                                                   |
-| `RALPH_DOCKER_CONTEXT`   | bundled core dir                                              | `docker build` fallback context (must contain a Dockerfile).                                                                                                                       |
-| `RALPH_IMAGE`            | `docker.io/daonhan/ralph-sandbox:latest`                      | Sandbox image ref.                                                                                                                                                                 |
-| `RALPH_IMAGE_TAG`        | —                                                             | Legacy alias for `RALPH_IMAGE`.                                                                                                                                                    |
-| `RALPH_MODEL`            | Claude `claude-opus-5[1m]`; isolated Codex `gpt-5.6-sol`/high | Model override for the selected provider. Claude falls back to the `model` in host `~/.claude/settings.json`, then Ralph's default. Explicit invalid models fail without fallback. |
-| `RALPH_RESULT_GRACE_MS`  | `30000`                                                       | Post-completion kill timer; `0` disables. Invalid/negative → default.                                                                                                              |
-| `RALPH_DOCKER_SOCK`      | on                                                            | `0` disables the host `docker.sock` bind-mount.                                                                                                                                    |
-| `RALPH_DOCKER_SOCK_PATH` | auto-detect                                                   | Explicit host socket path.                                                                                                                                                         |
-| `DOCKER_HOST`            | —                                                             | `unix://…` parsed as a socket candidate.                                                                                                                                           |
-| `XDG_RUNTIME_DIR`        | —                                                             | Rootless Docker/Podman socket candidates.                                                                                                                                          |
-| `NO_COLOR` / `TERM=dumb` | —                                                             | Disable ANSI on both streams.                                                                                                                                                      |
+| Variable                 | Default                                                       | Effect                                                                                                                                                                                                                                                                           |
+| ------------------------ | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RALPH_WORKSPACE`        | `process.cwd()`                                               | Host dir bind-mounted at `/home/agent/workspace`; root for `.ralph-tmp/`.                                                                                                                                                                                                        |
+| `RALPH_AGENT`            | `claude`                                                      | Provider fallback when `--agent` is absent: `claude` or `codex`.                                                                                                                                                                                                                 |
+| `RALPH_DOCKER_CONTEXT`   | bundled core dir                                              | `docker build` fallback context (must contain a Dockerfile).                                                                                                                                                                                                                     |
+| `RALPH_IMAGE`            | `docker.io/daonhan/ralph-sandbox:latest`                      | Sandbox image ref.                                                                                                                                                                                                                                                               |
+| `RALPH_IMAGE_TAG`        | —                                                             | Legacy alias for `RALPH_IMAGE`.                                                                                                                                                                                                                                                  |
+| `RALPH_MODEL`            | Claude `claude-opus-5[1m]`; isolated Codex `gpt-5.6-sol`/high | Model override for the selected provider. Claude falls back to the model pinned in host `~/.claude/settings.json`, then Ralph's default; under `CLAUDE_CODE_USE_BEDROCK`/`_VERTEX`/`_FOUNDRY` the container CLI resolves instead. Explicit invalid models fail without fallback. |
+| `RALPH_RESULT_GRACE_MS`  | `30000`                                                       | Post-completion kill timer; `0` disables. Invalid/negative → default.                                                                                                                                                                                                            |
+| `RALPH_DOCKER_SOCK`      | on                                                            | `0` disables the host `docker.sock` bind-mount.                                                                                                                                                                                                                                  |
+| `RALPH_DOCKER_SOCK_PATH` | auto-detect                                                   | Explicit host socket path.                                                                                                                                                                                                                                                       |
+| `DOCKER_HOST`            | —                                                             | `unix://…` parsed as a socket candidate.                                                                                                                                                                                                                                         |
+| `XDG_RUNTIME_DIR`        | —                                                             | Rootless Docker/Podman socket candidates.                                                                                                                                                                                                                                        |
+| `NO_COLOR` / `TERM=dumb` | —                                                             | Disable ANSI on both streams.                                                                                                                                                                                                                                                    |

@@ -41,7 +41,9 @@ describe("describeAgentConfig", () => {
 
   it("describes the host-settings Claude model", () => {
     expect(
-      describeAgentConfig("claude", false, undefined, "claude-opus-5[1m]")
+      describeAgentConfig("claude", false, undefined, {
+        model: "claude-opus-5[1m]",
+      })
     ).toEqual({
       model: "claude-opus-5[1m] (host ~/.claude/settings.json)",
     });
@@ -49,14 +51,32 @@ describe("describeAgentConfig", () => {
 
   it("lets RALPH_MODEL win over the host-settings Claude model", () => {
     expect(
-      describeAgentConfig(
-        "claude",
-        false,
-        " claude-opus-5 ",
-        "claude-fable-5[1m]"
-      )
+      describeAgentConfig("claude", false, " claude-opus-5 ", {
+        model: "claude-fable-5[1m]",
+      })
     ).toEqual({
       model: "claude-opus-5 (RALPH_MODEL)",
+    });
+  });
+
+  it("reports that third-party routing leaves the model to the container", () => {
+    expect(
+      describeAgentConfig("claude", false, undefined, {
+        providerFlag: "CLAUDE_CODE_USE_BEDROCK",
+      })
+    ).toEqual({
+      model:
+        "container CLI default (host settings enable CLAUDE_CODE_USE_BEDROCK)",
+    });
+  });
+
+  it("flags an unreadable host settings file next to the fallback model", () => {
+    expect(
+      describeAgentConfig("claude", false, undefined, {
+        unreadable: "/home/me/.claude/settings.json (invalid JSON)",
+      })
+    ).toEqual({
+      model: `${DEFAULT_CLAUDE_MODEL} (Ralph default; host settings unreadable: /home/me/.claude/settings.json (invalid JSON))`,
     });
   });
 

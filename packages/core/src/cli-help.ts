@@ -7,7 +7,12 @@ import {
   type AgentName,
   type AgentSelectionSource,
 } from "./agents/index.js";
-import { readHostClaudeModel, resolveClaudeModel } from "./agents/claude.js";
+import {
+  readHostClaudeModel,
+  resolveClaudeModel,
+  type HostClaudeModel,
+} from "./agents/claude.js";
+import { resolveHostHome } from "./agents/shared.js";
 import { resolveCodexModel } from "./agents/codex.js";
 import { DEFAULT_MAX_RETRIES } from "./retry.js";
 import {
@@ -168,11 +173,15 @@ Environment variables:
                         root-equivalent host access.
   RALPH_AGENT           fallback agent selection when --agent is absent
   RALPH_MODEL           model override for the selected agent. Claude resolves
-                        RALPH_MODEL, then the model saved in host
-                        ~/.claude/settings.json (what /model stored; its
-                        "(default)" entry stores none), then claude-opus-5[1m]
-                        (Ralph default). Isolated Codex defaults to gpt-5.6-sol
-                        with high reasoning when this variable is unset.
+                        RALPH_MODEL, then the model pinned by host
+                        ~/.claude/settings.json (env.ANTHROPIC_MODEL, else the
+                        model key /model stored; its "(default)" entry stores
+                        none), then claude-opus-5[1m] (Ralph default). Host
+                        settings that enable CLAUDE_CODE_USE_BEDROCK / _VERTEX
+                        / _FOUNDRY keep the container CLI's own resolution,
+                        since those providers use their own model IDs. Isolated
+                        Codex defaults to gpt-5.6-sol with high reasoning when
+                        this variable is unset.
   RALPH_DOCKER_SOCK_PATH explicit docker.sock host path. When unset, auto-detected via
                         DOCKER_HOST (unix:// only), then a candidate list:
                           /var/run/docker.sock
@@ -197,15 +206,23 @@ export function describeAgentConfig(
   agent: AgentName,
   codexUserConfig: boolean,
   rawModel: string | undefined,
-  hostClaudeModel?: string
+  hostClaudeModel?: HostClaudeModel
 ): AgentConfigDescription {
   if (agent === "claude") {
     const resolution = resolveClaudeModel(rawModel, hostClaudeModel);
+    if (!resolution.model) {
+      return {
+        model: `container CLI default (host settings enable ${hostClaudeModel?.providerFlag})`,
+      };
+    }
     const source =
       resolution.modelSource === "host settings"
         ? "host ~/.claude/settings.json"
         : resolution.modelSource;
-    return { model: `${resolution.model} (${source})` };
+    const warning = hostClaudeModel?.unreadable
+      ? `; host settings unreadable: ${hostClaudeModel.unreadable}`
+      : "";
+    return { model: `${resolution.model} (${source}${warning})` };
   }
 
   const resolution = resolveCodexModel(rawModel, codexUserConfig);
@@ -287,9 +304,7 @@ export function printConfig(
     agent,
     codexUserConfig,
     process.env.RALPH_MODEL,
-    agent === "claude"
-      ? readHostClaudeModel(process.env.HOME || process.env.USERPROFILE || "")
-      : undefined
+    agent === "claude" ? readHostClaudeModel(resolveHostHome()) : undefined
   );
   const providerLines = [
     `  agent                 ${agent} (${agentSource})`,
