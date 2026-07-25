@@ -19,6 +19,8 @@ export type AgentCommandContext = {
   promptInstruction: string;
   rawModel: string | undefined;
   codexUserConfig: boolean;
+  /** Host home dir (HOME || USERPROFILE); "" when neither is set. */
+  home: string;
 };
 
 export type AgentRenderEvent =

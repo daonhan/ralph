@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { DEFAULT_CLAUDE_MODEL } from "../agents/claude.js";
 import { describeAgentConfig, parseFlags, printHelp } from "../cli-help.js";
 
 afterEach(() => {
@@ -32,9 +33,50 @@ describe("parseFlags agent options", () => {
 });
 
 describe("describeAgentConfig", () => {
-  it("describes the unchanged Claude default", () => {
+  it("describes the Ralph Claude default when no model is set anywhere", () => {
     expect(describeAgentConfig("claude", false, undefined)).toEqual({
-      model: "sandbox CLI default (RALPH_MODEL unset)",
+      model: `${DEFAULT_CLAUDE_MODEL} (Ralph default)`,
+    });
+  });
+
+  it("describes the host-settings Claude model", () => {
+    expect(
+      describeAgentConfig("claude", false, undefined, {
+        model: "claude-opus-5[1m]",
+      })
+    ).toEqual({
+      model: "claude-opus-5[1m] (host ~/.claude/settings.json)",
+    });
+  });
+
+  it("lets RALPH_MODEL win over the host-settings Claude model", () => {
+    expect(
+      describeAgentConfig("claude", false, " claude-opus-5 ", {
+        model: "claude-fable-5[1m]",
+      })
+    ).toEqual({
+      model: "claude-opus-5 (RALPH_MODEL)",
+    });
+  });
+
+  it("reports that third-party routing leaves the model to the container", () => {
+    expect(
+      describeAgentConfig("claude", false, undefined, {
+        providerFlag: "CLAUDE_CODE_USE_BEDROCK",
+      })
+    ).toEqual({
+      model:
+        "container CLI default (host settings enable CLAUDE_CODE_USE_BEDROCK)",
+    });
+  });
+
+  it("flags an unreadable host settings file next to the fallback model", () => {
+    expect(
+      describeAgentConfig("claude", false, undefined, {
+        unreadable: "/home/me/.claude/settings.json (invalid JSON)",
+      })
+    ).toEqual({
+      model: `${DEFAULT_CLAUDE_MODEL} (Ralph default; host settings unreadable: /home/me/.claude/settings.json (invalid JSON))`,
     });
   });
 
