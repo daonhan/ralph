@@ -1,11 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   getAgentAdapter,
   parseAgentName,
   resolveAgentSelection,
 } from "../agents/index.js";
-import { buildClaudeArgs, resolveModelArgs } from "../agents/claude.js";
+import {
+  buildClaudeArgs,
+  readHostClaudeModel,
+  resolveClaudeModel,
+  resolveModelArgs,
+} from "../agents/claude.js";
 import {
   buildCodexArgs,
   DEFAULT_CODEX_MODEL,
@@ -94,6 +103,100 @@ describe("Claude adapter", () => {
   });
 });
 
+describe("Claude host model resolution", () => {
+  const homes: string[] = [];
+
+  const makeHome = (settingsJson?: string): string => {
+    const home = mkdtempSync(join(tmpdir(), "ralph-claude-home-"));
+    homes.push(home);
+    if (settingsJson !== undefined) {
+      mkdirSync(join(home, ".claude"), { recursive: true });
+      writeFileSync(join(home, ".claude", "settings.json"), settingsJson);
+    }
+    return home;
+  };
+
+  afterEach(() => {
+    while (homes.length > 0) {
+      rmSync(homes.pop() as string, { recursive: true, force: true });
+    }
+  });
+
+  it("reads the model the host /model picker stored", () => {
+    const home = makeHome('{ "model": " claude-opus-5[1m] " }');
+    expect(readHostClaudeModel(home)).toBe("claude-opus-5[1m]");
+  });
+
+  it("returns undefined for missing, malformed, or non-string settings", () => {
+    expect(readHostClaudeModel("")).toBeUndefined();
+    expect(readHostClaudeModel(makeHome())).toBeUndefined();
+    expect(readHostClaudeModel(makeHome("not json"))).toBeUndefined();
+    expect(readHostClaudeModel(makeHome('{ "model": 5 }'))).toBeUndefined();
+    expect(readHostClaudeModel(makeHome("{}"))).toBeUndefined();
+  });
+
+  it("skips blank models and the default sentinel", () => {
+    expect(readHostClaudeModel(makeHome('{ "model": "  " }'))).toBeUndefined();
+    expect(
+      readHostClaudeModel(makeHome('{ "model": "default" }'))
+    ).toBeUndefined();
+  });
+
+  it("prefers RALPH_MODEL, then host settings, then the sandbox default", () => {
+    expect(resolveClaudeModel(" claude-opus-5 ", "claude-fable-5[1m]")).toEqual(
+      { model: "claude-opus-5", modelSource: "RALPH_MODEL" }
+    );
+    expect(resolveClaudeModel(undefined, "claude-opus-5[1m]")).toEqual({
+      model: "claude-opus-5[1m]",
+      modelSource: "host settings",
+    });
+    expect(resolveClaudeModel("   ", undefined)).toEqual({
+      modelSource: "sandbox CLI default",
+    });
+  });
+
+  it("passes the host-selected model to the sandbox argv", () => {
+    const home = makeHome('{ "model": "claude-opus-5[1m]" }');
+    const args = getAgentAdapter("claude").buildCommand({
+      stage,
+      promptInstruction,
+      rawModel: undefined,
+      codexUserConfig: false,
+      home,
+    });
+    expect(args).toEqual(
+      buildClaudeArgs(stage, ".ralph-tmp/prompt.md", [
+        "--model",
+        "claude-opus-5[1m]",
+      ])
+    );
+  });
+
+  it("lets RALPH_MODEL override the host settings model in argv", () => {
+    const home = makeHome('{ "model": "claude-fable-5[1m]" }');
+    const args = getAgentAdapter("claude").buildCommand({
+      stage,
+      promptInstruction,
+      rawModel: " claude-opus-5 ",
+      codexUserConfig: false,
+      home,
+    });
+    expect(args).toContain("--model");
+    expect(args[args.indexOf("--model") + 1]).toBe("claude-opus-5");
+  });
+
+  it("omits --model when neither RALPH_MODEL nor host settings set one", () => {
+    const args = getAgentAdapter("claude").buildCommand({
+      stage,
+      promptInstruction,
+      rawModel: undefined,
+      codexUserConfig: false,
+      home: makeHome(),
+    });
+    expect(args).not.toContain("--model");
+  });
+});
+
 describe("Codex adapter", () => {
   it("resolves the isolated Sol/high default", () => {
     expect(resolveCodexModel(undefined, false)).toEqual({
@@ -142,6 +245,7 @@ describe("Codex adapter", () => {
         promptInstruction,
         rawModel: undefined,
         codexUserConfig: false,
+        home: "",
       })
     ).toEqual([
       "bash",
@@ -168,6 +272,7 @@ describe("Codex adapter", () => {
         promptInstruction,
         rawModel: undefined,
         codexUserConfig: true,
+        home: "",
       })
     ).toEqual([
       "bash",
@@ -189,6 +294,7 @@ describe("Codex adapter", () => {
         promptInstruction,
         rawModel: " gpt-custom ",
         codexUserConfig: false,
+        home: "",
       })
     ).toEqual([
       "bash",

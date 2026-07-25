@@ -166,7 +166,12 @@ Pass `--codex-user-config` to load that configuration intentionally. This may
 start configured MCP servers and hooks, so their commands and paths must work
 inside the Linux sandbox.
 
-`RALPH_MODEL` applies to the selected agent. Isolated Codex defaults to
+`RALPH_MODEL` applies to the selected agent. For Claude the model resolves as
+`RALPH_MODEL` → the `model` saved in the host's `~/.claude/settings.json` (what
+`/model` stored; its "(default)" entry stores no model) → the sandbox CLI's
+built-in default. The built-in default is frozen at image build time, so it can
+lag what the host CLI shows as default — set `RALPH_MODEL` (or pick an explicit
+model with `/model`) to pin it. Isolated Codex defaults to
 `gpt-5.6-sol` with high reasoning when `RALPH_MODEL` is unset. In inherited
 configuration mode, an unset model and reasoning effort come from
 `~/.codex/config.toml`. An explicit invalid model fails; Ralph never reruns the
@@ -535,7 +540,7 @@ npx -y @daonhan/ralph ralph-afk "<plan-and-prd>" 5
 | `RALPH_RESULT_GRACE_MS`  | `30000`                                                      | Milliseconds to wait after the provider completion event before force-killing a docker child that fails to exit on its own. `0` disables the timer (original wait-forever behavior). Invalid values (non-finite, negative) fall back to the default.                                        |
 | `RALPH_DOCKER_SOCK`      | _(on if a socket is found)_                                  | Set to `0` to disable bind-mounting the host Docker socket into the sandbox. Mounted by default so Testcontainers inside the container can spawn sibling containers — this grants the sandbox **root-equivalent access to the host Docker daemon**. Disable when running untrusted prompts. |
 | `RALPH_DOCKER_SOCK_PATH` | _(auto-detected)_                                            | Explicit host `docker.sock` path. Auto-detection (when unset) tries `DOCKER_HOST` (`unix://` only), then `/var/run/docker.sock`, Docker Desktop, Colima, Rancher Desktop, and rootless Docker/Podman socket locations.                                                                      |
-| `RALPH_MODEL`            | selected CLI default; isolated Codex uses `gpt-5.6-sol`/high | Pass-through model override for the selected agent.                                                                                                                                                                                                                                         |
+| `RALPH_MODEL`            | selected CLI default; isolated Codex uses `gpt-5.6-sol`/high | Model override for the selected agent. Claude falls back to the `model` in host `~/.claude/settings.json`, then the sandbox CLI default.                                                                                                                                                    |
 | `DOCKER_HOST`            | _(unset)_                                                    | A `unix:///…` value is parsed for the docker-socket bind-mount; `tcp://` / `npipe://` / `ssh://` are not bind-mountable.                                                                                                                                                                    |
 | `XDG_RUNTIME_DIR`        | _(unset)_                                                    | Searched for rootless Docker/Podman sockets during auto-detection.                                                                                                                                                                                                                          |
 | `NO_COLOR` / `TERM=dumb` | _(unset)_                                                    | Disable ANSI color in Ralph's own output. Color is also auto-disabled when stdout/stderr is not a TTY, so piping to a file stays clean.                                                                                                                                                     |

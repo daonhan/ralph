@@ -32,9 +32,31 @@ describe("parseFlags agent options", () => {
 });
 
 describe("describeAgentConfig", () => {
-  it("describes the unchanged Claude default", () => {
+  it("describes the Claude sandbox default when no model is set anywhere", () => {
     expect(describeAgentConfig("claude", false, undefined)).toEqual({
-      model: "sandbox CLI default (RALPH_MODEL unset)",
+      model:
+        "sandbox CLI default (RALPH_MODEL unset; no model in host ~/.claude/settings.json)",
+    });
+  });
+
+  it("describes the host-settings Claude model", () => {
+    expect(
+      describeAgentConfig("claude", false, undefined, "claude-opus-5[1m]")
+    ).toEqual({
+      model: "claude-opus-5[1m] (host ~/.claude/settings.json)",
+    });
+  });
+
+  it("lets RALPH_MODEL win over the host-settings Claude model", () => {
+    expect(
+      describeAgentConfig(
+        "claude",
+        false,
+        " claude-opus-5 ",
+        "claude-fable-5[1m]"
+      )
+    ).toEqual({
+      model: "claude-opus-5 (RALPH_MODEL)",
     });
   });
 

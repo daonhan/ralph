@@ -464,6 +464,7 @@ export async function runStage(
         promptInstruction,
         rawModel: process.env.RALPH_MODEL,
         codexUserConfig: options.codexUserConfig ?? false,
+        home,
       })
     );
 

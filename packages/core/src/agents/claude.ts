@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { join, posix } from "node:path";
 
 import type { Stage } from "../stages.js";
@@ -99,6 +100,48 @@ export function resolveModelArgs(raw: string | undefined): string[] {
   return model ? ["--model", model] : [];
 }
 
+export type ClaudeModelResolution = {
+  model?: string;
+  modelSource: "RALPH_MODEL" | "host settings" | "sandbox CLI default";
+};
+
+/**
+ * Read the model the host `/model` picker saved to `~/.claude/settings.json`.
+ * The picker's "(default)" entry stores no `model` key, and the sandbox
+ * image's claude CLI is frozen at image build time — its built-in default can
+ * lag the host CLI's (observed: host 2.1.220 defaults to Opus 5 while the
+ * image's 2.1.216 defaults to Opus 4.8). Forwarding the host's explicit
+ * choice as `--model` pins the sandbox to what the host shows. The literal
+ * "default" sentinel is skipped so the sandbox CLI keeps resolving it itself.
+ */
+export function readHostClaudeModel(home: string): string | undefined {
+  if (!home) return undefined;
+  const joinHome = home.startsWith("/") ? posix.join : join;
+  try {
+    const raw = readFileSync(
+      joinHome(home, ".claude", "settings.json"),
+      "utf8"
+    );
+    const parsed = JSON.parse(raw) as { model?: unknown };
+    const model = typeof parsed.model === "string" ? parsed.model.trim() : "";
+    if (!model || model === "default") return undefined;
+    return model;
+  } catch {
+    return undefined;
+  }
+}
+
+export function resolveClaudeModel(
+  rawModel: string | undefined,
+  hostModel: string | undefined
+): ClaudeModelResolution {
+  const explicit = rawModel?.trim();
+  if (explicit) return { model: explicit, modelSource: "RALPH_MODEL" };
+  const host = hostModel?.trim();
+  if (host) return { model: host, modelSource: "host settings" };
+  return { modelSource: "sandbox CLI default" };
+}
+
 function buildClaudeCommand(
   stage: Stage,
   promptInstruction: string,
@@ -131,10 +174,14 @@ export function buildClaudeArgs(
 }
 
 function buildFromContext(context: AgentCommandContext): string[] {
+  const resolution = resolveClaudeModel(
+    context.rawModel,
+    readHostClaudeModel(context.home)
+  );
   return buildClaudeCommand(
     context.stage,
     context.promptInstruction,
-    resolveModelArgs(context.rawModel)
+    resolution.model ? ["--model", resolution.model] : []
   );
 }
 

@@ -7,6 +7,7 @@ import {
   type AgentName,
   type AgentSelectionSource,
 } from "./agents/index.js";
+import { readHostClaudeModel, resolveClaudeModel } from "./agents/claude.js";
 import { resolveCodexModel } from "./agents/codex.js";
 import { DEFAULT_MAX_RETRIES } from "./retry.js";
 import {
@@ -166,9 +167,12 @@ Environment variables:
                         sandbox spawn sibling containers on the host daemon. Grants
                         root-equivalent host access.
   RALPH_AGENT           fallback agent selection when --agent is absent
-  RALPH_MODEL           model override for the selected agent. Claude passes it
-                        through. Isolated Codex defaults to gpt-5.6-sol with high
-                        reasoning when this variable is unset.
+  RALPH_MODEL           model override for the selected agent. Claude resolves
+                        RALPH_MODEL, then the model saved in host
+                        ~/.claude/settings.json (what /model stored; its
+                        "(default)" entry stores none), then the sandbox CLI
+                        default. Isolated Codex defaults to gpt-5.6-sol with
+                        high reasoning when this variable is unset.
   RALPH_DOCKER_SOCK_PATH explicit docker.sock host path. When unset, auto-detected via
                         DOCKER_HOST (unix:// only), then a candidate list:
                           /var/run/docker.sock
@@ -192,15 +196,22 @@ export type AgentConfigDescription = {
 export function describeAgentConfig(
   agent: AgentName,
   codexUserConfig: boolean,
-  rawModel: string | undefined
+  rawModel: string | undefined,
+  hostClaudeModel?: string
 ): AgentConfigDescription {
-  const explicit = rawModel?.trim();
   if (agent === "claude") {
-    return {
-      model: explicit
-        ? `${explicit} (RALPH_MODEL)`
-        : "sandbox CLI default (RALPH_MODEL unset)",
-    };
+    const resolution = resolveClaudeModel(rawModel, hostClaudeModel);
+    if (!resolution.model) {
+      return {
+        model:
+          "sandbox CLI default (RALPH_MODEL unset; no model in host ~/.claude/settings.json)",
+      };
+    }
+    const source =
+      resolution.modelSource === "host settings"
+        ? "host ~/.claude/settings.json"
+        : resolution.modelSource;
+    return { model: `${resolution.model} (${source})` };
   }
 
   const resolution = resolveCodexModel(rawModel, codexUserConfig);
@@ -281,7 +292,10 @@ export function printConfig(
   const provider = describeAgentConfig(
     agent,
     codexUserConfig,
-    process.env.RALPH_MODEL
+    process.env.RALPH_MODEL,
+    agent === "claude"
+      ? readHostClaudeModel(process.env.HOME || process.env.USERPROFILE || "")
+      : undefined
   );
   const providerLines = [
     `  agent                 ${agent} (${agentSource})`,
