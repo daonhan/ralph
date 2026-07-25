@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { DEFAULT_CLAUDE_MODEL } from "../agents/claude.js";
 import { describeAgentConfig, parseFlags, printHelp } from "../cli-help.js";
 
 afterEach(() => {
@@ -32,10 +33,9 @@ describe("parseFlags agent options", () => {
 });
 
 describe("describeAgentConfig", () => {
-  it("describes the Claude sandbox default when no model is set anywhere", () => {
+  it("describes the Ralph Claude default when no model is set anywhere", () => {
     expect(describeAgentConfig("claude", false, undefined)).toEqual({
-      model:
-        "sandbox CLI default (RALPH_MODEL unset; no model in host ~/.claude/settings.json)",
+      model: `${DEFAULT_CLAUDE_MODEL} (Ralph default)`,
     });
   });
 

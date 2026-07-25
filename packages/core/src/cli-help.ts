@@ -170,9 +170,9 @@ Environment variables:
   RALPH_MODEL           model override for the selected agent. Claude resolves
                         RALPH_MODEL, then the model saved in host
                         ~/.claude/settings.json (what /model stored; its
-                        "(default)" entry stores none), then the sandbox CLI
-                        default. Isolated Codex defaults to gpt-5.6-sol with
-                        high reasoning when this variable is unset.
+                        "(default)" entry stores none), then claude-opus-5[1m]
+                        (Ralph default). Isolated Codex defaults to gpt-5.6-sol
+                        with high reasoning when this variable is unset.
   RALPH_DOCKER_SOCK_PATH explicit docker.sock host path. When unset, auto-detected via
                         DOCKER_HOST (unix:// only), then a candidate list:
                           /var/run/docker.sock
@@ -201,12 +201,6 @@ export function describeAgentConfig(
 ): AgentConfigDescription {
   if (agent === "claude") {
     const resolution = resolveClaudeModel(rawModel, hostClaudeModel);
-    if (!resolution.model) {
-      return {
-        model:
-          "sandbox CLI default (RALPH_MODEL unset; no model in host ~/.claude/settings.json)",
-      };
-    }
     const source =
       resolution.modelSource === "host settings"
         ? "host ~/.claude/settings.json"

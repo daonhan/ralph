@@ -11,6 +11,7 @@ import {
 } from "../agents/index.js";
 import {
   buildClaudeArgs,
+  DEFAULT_CLAUDE_MODEL,
   readHostClaudeModel,
   resolveClaudeModel,
   resolveModelArgs,
@@ -142,7 +143,7 @@ describe("Claude host model resolution", () => {
     ).toBeUndefined();
   });
 
-  it("prefers RALPH_MODEL, then host settings, then the sandbox default", () => {
+  it("prefers RALPH_MODEL, then host settings, then the Ralph default", () => {
     expect(resolveClaudeModel(" claude-opus-5 ", "claude-fable-5[1m]")).toEqual(
       { model: "claude-opus-5", modelSource: "RALPH_MODEL" }
     );
@@ -151,7 +152,8 @@ describe("Claude host model resolution", () => {
       modelSource: "host settings",
     });
     expect(resolveClaudeModel("   ", undefined)).toEqual({
-      modelSource: "sandbox CLI default",
+      model: DEFAULT_CLAUDE_MODEL,
+      modelSource: "Ralph default",
     });
   });
 
@@ -185,15 +187,27 @@ describe("Claude host model resolution", () => {
     expect(args[args.indexOf("--model") + 1]).toBe("claude-opus-5");
   });
 
-  it("omits --model when neither RALPH_MODEL nor host settings set one", () => {
-    const args = getAgentAdapter("claude").buildCommand({
-      stage,
-      promptInstruction,
-      rawModel: undefined,
-      codexUserConfig: false,
-      home: makeHome(),
-    });
-    expect(args).not.toContain("--model");
+  // The host /model picker deletes the `model` key when its "(default)" entry
+  // is chosen, so an unpinned sandbox would fall back to the frozen image
+  // CLI's own default (observed: claude-opus-4-8[1m]). Ralph must always send
+  // --model so the container can never silently run an older model.
+  it("falls back to the Ralph default instead of the sandbox CLI default", () => {
+    const homes = [
+      makeHome(), // no settings.json at all
+      makeHome("{}"), // settings.json without a model key ("(default)" pick)
+      makeHome('{ "model": "default" }'),
+    ];
+    for (const home of homes) {
+      const args = getAgentAdapter("claude").buildCommand({
+        stage,
+        promptInstruction,
+        rawModel: undefined,
+        codexUserConfig: false,
+        home,
+      });
+      expect(args).toContain("--model");
+      expect(args[args.indexOf("--model") + 1]).toBe(DEFAULT_CLAUDE_MODEL);
+    }
   });
 });
 

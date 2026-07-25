@@ -100,19 +100,20 @@ export function resolveModelArgs(raw: string | undefined): string[] {
   return model ? ["--model", model] : [];
 }
 
+export const DEFAULT_CLAUDE_MODEL = "claude-opus-5[1m]";
+
 export type ClaudeModelResolution = {
-  model?: string;
-  modelSource: "RALPH_MODEL" | "host settings" | "sandbox CLI default";
+  model: string;
+  modelSource: "RALPH_MODEL" | "host settings" | "Ralph default";
 };
 
 /**
  * Read the model the host `/model` picker saved to `~/.claude/settings.json`.
- * The picker's "(default)" entry stores no `model` key, and the sandbox
- * image's claude CLI is frozen at image build time — its built-in default can
- * lag the host CLI's (observed: host 2.1.220 defaults to Opus 5 while the
- * image's 2.1.216 defaults to Opus 4.8). Forwarding the host's explicit
- * choice as `--model` pins the sandbox to what the host shows. The literal
- * "default" sentinel is skipped so the sandbox CLI keeps resolving it itself.
+ * The picker only stores a `model` key for an explicit pick: choosing its
+ * "(default)" entry deletes the key, which leaves the host's effective model
+ * unreadable from disk (`claude doctor` and `~/.claude.json` don't expose it
+ * either). The literal "default" sentinel is treated the same as an absent
+ * key.
  */
 export function readHostClaudeModel(home: string): string | undefined {
   if (!home) return undefined;
@@ -131,6 +132,14 @@ export function readHostClaudeModel(home: string): string | undefined {
   }
 }
 
+/**
+ * Resolve the model the sandbox should run: RALPH_MODEL, then the host's
+ * explicit `/model` pick, then Ralph's own default. Ralph always sends
+ * `--model` because the sandbox image's claude CLI is frozen at image build
+ * time and its built-in default lags the host's (observed: host 2.1.220
+ * defaults to Opus 5 while the image's 2.1.216 defaults to Opus 4.8), so
+ * letting the container pick silently downgrades the model.
+ */
 export function resolveClaudeModel(
   rawModel: string | undefined,
   hostModel: string | undefined
@@ -139,7 +148,7 @@ export function resolveClaudeModel(
   if (explicit) return { model: explicit, modelSource: "RALPH_MODEL" };
   const host = hostModel?.trim();
   if (host) return { model: host, modelSource: "host settings" };
-  return { modelSource: "sandbox CLI default" };
+  return { model: DEFAULT_CLAUDE_MODEL, modelSource: "Ralph default" };
 }
 
 function buildClaudeCommand(
@@ -178,11 +187,10 @@ function buildFromContext(context: AgentCommandContext): string[] {
     context.rawModel,
     readHostClaudeModel(context.home)
   );
-  return buildClaudeCommand(
-    context.stage,
-    context.promptInstruction,
-    resolution.model ? ["--model", resolution.model] : []
-  );
+  return buildClaudeCommand(context.stage, context.promptInstruction, [
+    "--model",
+    resolution.model,
+  ]);
 }
 
 export const claudeAdapter = {
