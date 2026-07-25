@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.3](https://github.com/daonhan/ralph/compare/ralph-core-v0.7.2...ralph-core-v0.7.3) (2026-07-25)
+
+
+### Bug Fixes
+
+* detect provider flags written as JSON numbers or booleans ([fd1c864](https://github.com/daonhan/ralph/commit/fd1c86436a0ce57f0b42c5a11667fa53b9effdad))
+* forward host-selected Claude model into the sandbox ([61b43ae](https://github.com/daonhan/ralph/commit/61b43ae8e0e771cbe851c6b4b98cafd0493ec2ee))
+* pin a Ralph default Claude model instead of the sandbox CLI's ([5fedafb](https://github.com/daonhan/ralph/commit/5fedafb470d80823094615cf3a3f96b79eb4f87c))
+* stop the Claude model pin from overriding host provider config ([b7ebce1](https://github.com/daonhan/ralph/commit/b7ebce1a3b9c89962f2f3afedb3c98dec2d2aca0))
+
 ## [0.7.2](https://github.com/daonhan/ralph/compare/ralph-core-v0.7.1...ralph-core-v0.7.2) (2026-07-23)
 
 
