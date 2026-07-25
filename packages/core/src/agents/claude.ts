@@ -139,10 +139,17 @@ export type HostClaudeModel = {
   unreadable?: string;
 };
 
+// Settings env values are documented as strings, but JSON makes `1` or `true`
+// an easy slip — and missing an enabled provider flag here would pin a
+// first-party model onto a Bedrock/Vertex/Foundry host, failing every stage.
 function envValue(env: unknown, key: string): string {
   const table = record(env);
   const value = table?.[key];
-  return typeof value === "string" ? value.trim() : "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return "";
 }
 
 /**

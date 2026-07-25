@@ -182,6 +182,31 @@ describe("Claude host model resolution", () => {
     ).toEqual({ providerFlag: undefined });
   });
 
+  // JSON invites unquoted `1` / `true`; missing a flag written that way would
+  // pin a first-party model onto a Bedrock host and fail every stage.
+  it("detects provider flags written as JSON numbers or booleans", () => {
+    expect(
+      readHostClaudeModel(
+        makeHome('{ "env": { "CLAUDE_CODE_USE_BEDROCK": 1 } }')
+      )
+    ).toEqual({ providerFlag: "CLAUDE_CODE_USE_BEDROCK" });
+    expect(
+      readHostClaudeModel(
+        makeHome('{ "env": { "CLAUDE_CODE_USE_VERTEX": true } }')
+      )
+    ).toEqual({ providerFlag: "CLAUDE_CODE_USE_VERTEX" });
+    expect(
+      readHostClaudeModel(
+        makeHome('{ "env": { "CLAUDE_CODE_USE_BEDROCK": 0 } }')
+      )
+    ).toEqual({ providerFlag: undefined });
+    expect(
+      readHostClaudeModel(
+        makeHome('{ "env": { "CLAUDE_CODE_USE_FOUNDRY": false } }')
+      )
+    ).toEqual({ providerFlag: undefined });
+  });
+
   it("prefers RALPH_MODEL, then host settings, then the Ralph default", () => {
     expect(
       resolveClaudeModel(" claude-opus-5 ", { model: "claude-fable-5[1m]" })
