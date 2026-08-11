@@ -32,15 +32,18 @@ the project-specific runtime only to a derivative image on this machine.
 
 ### Local build context
 
-Create a local build context under `.local/ralph-nev/` in the Ralph checkout and
-exclude that directory through `.git/info/exclude`. Its Dockerfile derives from:
+Create the local build context at
+`D:\Workspaces\nevadventuretours.com\.local\ralph-nev\`, inside the target
+checkout, and exclude `.local/ralph-nev/` through that repository's
+`.git/info/exclude`. Its Dockerfile derives from:
 
 ```text
 docker.io/daonhan/ralph-sandbox:latest
 ```
 
-The local Dockerfile and entrypoint are not tracked, packaged, published, or
-added to `packages/core/templates/Dockerfile`. The resulting image is tagged:
+The target-local Dockerfile and entrypoint are not tracked, packaged, published,
+or added to Ralph's `packages/core/templates/Dockerfile`. The resulting image is
+tagged:
 
 ```text
 ralph-nev:local
@@ -87,7 +90,14 @@ coding agent. It does not silently run a database suite that would skip because
 
 ## Selection and operation
 
-After building the image locally, the existing Ralph configuration selects it:
+Build the image from the target checkout:
+
+```powershell
+Set-Location D:\Workspaces\nevadventuretours.com
+docker build --pull --tag ralph-nev:local .local/ralph-nev
+```
+
+The existing Ralph configuration then selects it:
 
 ```powershell
 $env:RALPH_IMAGE = "ralph-nev:local"
@@ -138,7 +148,8 @@ contract. The request is local-only, so the published image remains untouched.
 
 Implementation is complete when all of the following pass:
 
-1. Build `ralph-nev:local` from the local build context.
+1. Build `ralph-nev:local` from
+   `D:\Workspaces\nevadventuretours.com\.local\ralph-nev`.
 2. Run a disposable container and verify PostgreSQL reports ready on the Unix
    socket before the supplied command executes.
 3. Bind-mount `D:\Workspaces\nevadventuretours.com` at
