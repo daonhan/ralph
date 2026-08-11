@@ -42,10 +42,18 @@ target checkout, and exclude `.local/ralph-postgres17/` through that repository'
 docker.io/daonhan/ralph-sandbox:latest
 ```
 
-The target-local Dockerfile and entrypoint are not tracked, packaged, published,
-or added to Ralph's `packages/core/templates/Dockerfile`. Their location defines
-where this machine rebuilds the image; it does not limit which workspaces can use
-the resulting Docker tag. The image is tagged by capability:
+The ignored profile contains a `Dockerfile` and `README.md` adapted from the
+existing untracked `ralph.Dockerfile` and `docs/ralph-sandbox.md`. After the
+adapted copies exist, those two obsolete root-level files are removed. The
+existing `scripts/afk-local.ps1` and `scripts/afk-local.sh` remain in place but
+are adapted to the reusable tag and build context. The profile directory and
+both wrappers are excluded through the target's `.git/info/exclude`, so none is
+tracked, packaged, or published.
+
+These local files are not added to Ralph's
+`packages/core/templates/Dockerfile`. Their location defines where this machine
+rebuilds the image; it does not limit which workspaces can use the resulting
+Docker tag. The image is tagged by capability:
 
 ```text
 ralph-postgres17:local
@@ -59,44 +67,51 @@ image resolution accepts the local image instead of attempting a registry pull.
 The derivative Dockerfile temporarily switches from the inherited `agent` user
 to `root`, configures the PostgreSQL apt repository for Debian Bookworm, and
 installs PostgreSQL 17 server and client packages. It adds
-`/usr/lib/postgresql/17/bin` to `PATH`, installs one startup entrypoint, and then
+`/usr/lib/postgresql/17/bin` to `PATH`, embeds one startup entrypoint, and then
 returns to the inherited `agent` user (UID 1000).
 
-No project `node_modules`, source files, credentials, or database data are copied
-into the image. Ralph continues to bind-mount the live target workspace and the
-selected provider credentials exactly as it does today.
+No target source, project dependencies, credentials, or pre-existing database
+contents are copied into the image. The only database contents are the empty,
+generic cluster created during the build. Ralph continues to bind-mount the live
+target workspace and selected provider credentials exactly as it does today.
 
-### Automatic database startup
+### Build-time cluster and automatic startup
 
-The local entrypoint runs as `agent` before the provider command supplied by
-Ralph. For every stage it:
+The Docker build initializes an agent-owned cluster at `/home/agent/pgdata`
+with local trust authentication, creates the generic `ralph_test` database under
+the `ralph` role, and stops PostgreSQL before committing the image layer. The
+image exports:
 
-1. initializes an agent-owned PostgreSQL cluster below `/tmp` with local trust
-   authentication;
-2. starts PostgreSQL 17 on a Unix-domain socket below `/tmp`, with TCP disabled;
-3. creates the generic `ralph_test` database under the `ralph` role;
-4. exports `PGHOST`, `PGUSER`, `PGDATABASE`, and
-   `DATABASE_URL=postgres://ralph@localhost/ralph_test?host=<socket-dir>`; and
-5. executes Ralph's original Claude or Codex command without changing its
+```text
+PGDATA=/home/agent/pgdata
+PGHOST=127.0.0.1
+PGUSER=ralph
+PGDATABASE=ralph_test
+DATABASE_URL=postgres://ralph@127.0.0.1:5432/ralph_test
+```
+
+The local entrypoint then runs as `agent` before the provider command supplied
+by Ralph. For every stage it:
+
+1. starts the pre-initialized PostgreSQL 17 cluster on container-local loopback
+   and waits for readiness;
+2. writes its readiness or failure message only to stderr because Ralph reserves
+   provider stdout for NDJSON;
+3. exits non-zero before the coding agent if PostgreSQL cannot start; and
+4. executes Ralph's original Claude or Codex command without changing its
    arguments or exit status.
 
-The database is deliberately ephemeral. Implementer and reviewer stages each
-receive a clean cluster, and Docker removes it with the stage container. The
-target's migrations create the schema, while the database tests reset it as
-they already do in CI.
-
-Bootstrap failure is fatal: if cluster initialization, server readiness, or
-database creation fails, the entrypoint exits non-zero before starting the
-coding agent. It does not silently run a database suite that would skip because
-`DATABASE_URL` is absent.
+The database is deliberately ephemeral. Docker's writable container layer gives
+every implementer and reviewer stage a pristine copy of the build-time cluster,
+and Docker removes it with the stage container. The target's migrations create
+the schema, while the database tests reset it as they already do in CI.
 
 ## Selection and operation
 
-Build the image from the target checkout:
+The canonical rebuild command works from any PowerShell directory:
 
 ```powershell
-Set-Location D:\Workspaces\nevadventuretours.com
-docker build --pull --tag ralph-postgres17:local .local/ralph-postgres17
+docker build --pull --tag ralph-postgres17:local "D:\Workspaces\nevadventuretours.com\.local\ralph-postgres17"
 ```
 
 The existing Ralph configuration then selects it:
@@ -112,6 +127,11 @@ No new Ralph flag or environment variable is introduced. Unsetting
 `RALPH_IMAGE` restores the published default image. Rebuilding the local image
 is the explicit update mechanism when the base sandbox or PostgreSQL layer must
 change.
+
+Both local wrappers default `RALPH_IMAGE` to `ralph-postgres17:local`, refuse to
+run when that image is absent, print the canonical rebuild command in the error,
+and then delegate to `ralph-afk` without changing its arguments. Projects that do
+not use these wrappers select the same image directly through `RALPH_IMAGE`.
 
 ## Reuse contract
 
@@ -132,8 +152,8 @@ an image-profile registry to Ralph; image selection remains the existing
 
 ## Security and lifecycle
 
-- PostgreSQL accepts connections only through its container-local Unix socket;
-  it exposes no host port.
+- PostgreSQL accepts connections only on container-local loopback and exposes no
+  host port.
 - Trust authentication is acceptable only because the cluster is private to a
   disposable sandbox and contains synthetic test data.
 - The database directory is not mounted and cannot persist across stages.
@@ -146,9 +166,16 @@ an image-profile registry to Ralph; image selection remains the existing
 ### Install PostgreSQL without automatic startup
 
 This changes fewer container behaviors, but every agent must rediscover the
-cluster initialization, role, database, socket, and environment setup. It keeps
-the repeated work that prompted this customization and makes verification depend
-on agent judgment, so it was rejected.
+cluster initialization, role, database, connection, and environment setup. It
+keeps the repeated work that prompted this customization and makes verification
+depend on agent judgment, so it was rejected.
+
+### Initialize the cluster at container startup
+
+Runtime initialization also produces a clean database, but repeats `initdb` and
+database creation for every implementer and reviewer stage. The existing local
+Dockerfile already proves a build-time pristine cluster works, so adapting that
+faster approach was preferred.
 
 ### Install Docker CLI and use the target's Compose service
 
@@ -175,17 +202,17 @@ contract. The request is local-only, so the published image remains untouched.
 
 Implementation is complete when all of the following pass:
 
-1. Build `ralph-postgres17:local` from
-   `D:\Workspaces\nevadventuretours.com\.local\ralph-postgres17`.
-2. Run a disposable container and verify PostgreSQL reports ready on the Unix
-   socket before the supplied command executes.
+1. Build `ralph-postgres17:local` with the documented canonical command.
+2. Run a disposable container and verify PostgreSQL reports ready on loopback
+   before the supplied command executes, while startup messages stay off stdout.
 3. Bind-mount `D:\Workspaces\nevadventuretours.com` at
    `/home/agent/workspace` and run `npm run db:migrate && npm run test:db` with
    no manual PostgreSQL installation or environment export.
-4. Run `ralph-ghafk --print-config` with
-   `RALPH_IMAGE=ralph-postgres17:local` and verify that Ralph resolves the local
-   tag and the intended target workspace.
-5. Confirm `git status --short` in both repositories has no changes caused by
+4. Run both local wrappers with `--print-config` and verify they resolve
+   `ralph-postgres17:local` and the intended target workspace.
+5. Run `ralph-ghafk --print-config` with
+   `RALPH_IMAGE=ralph-postgres17:local` and verify the same image and workspace.
+6. Confirm `git status --short` in both repositories has no changes caused by
    the local image assets or verification run, apart from the target repository's
    pre-existing work in progress.
 
@@ -198,5 +225,6 @@ Implementation is complete when all of the following pass:
 - Persisting the test database between stages.
 - Adding Docker Compose, a database volume, or host port forwarding.
 - Automatically detecting project requirements or selecting image profiles.
+- Tracking the local Docker profile or wrapper scripts in the target repository.
 - Adding unrelated runtimes such as Playwright system dependencies before a
   verified target command requires them.
