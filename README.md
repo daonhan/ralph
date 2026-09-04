@@ -11,7 +11,7 @@ reviewer pipeline isolated inside a custom Docker image.
 
 > ⚠️ **Security:** Ralph runs the selected agent without interactive approval inside the sandbox (`--permission-mode bypassPermissions` for Claude; `--dangerously-bypass-approvals-and-sandbox` for Codex) and, **by default, bind-mounts the host Docker socket — granting root-equivalent access to the host Docker daemon.** Point it only at repositories, plans, and GitHub issues you trust. Disable the socket mount with `RALPH_DOCKER_SOCK=0`. See **[SECURITY.md](./SECURITY.md)** for the full threat model.
 
-> **New here?** Start with **[QUICKSTART.md](./QUICKSTART.md)** (zero-to-first-loop). Hacking on Ralph itself → **[CONTRIBUTING.md](./CONTRIBUTING.md)**. Internals → **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**.
+> **New here?** Start with **[QUICKSTART.md](./QUICKSTART.md)** (zero-to-first-loop). Hacking on Ralph itself → **[CONTRIBUTING.md](./CONTRIBUTING.md)**. Internals → **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**. Background / design walkthrough → **[The Ralph AFK Stack, Explained](https://daonhan.substack.com/p/the-ralph-afk-stack-explained)** (Substack).
 
 - **[`@daonhan/ralph-core`](./packages/core)** — library: iteration loop, docker runner, template renderer, stage registry. Importable from any Node project.
 - **[`@daonhan/ralph`](./apps/cli)** — CLI: exposes `ralph-afk` and `ralph-ghafk` bin entries. Depends on `@daonhan/ralph-core`.
