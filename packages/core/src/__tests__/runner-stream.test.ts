@@ -73,7 +73,7 @@ describe("streamDocker", () => {
     writeJson(child, { type: "turn.completed" });
     child.emit("close", 0);
 
-    await expect(run).resolves.toBe("finished");
+    await expect(run).resolves.toEqual({ text: "finished", meta: {} });
     expect(readFileSync(logPath, "utf8")).toContain('"turn.completed"');
   });
 
@@ -103,7 +103,7 @@ describe("streamDocker", () => {
     writeJson(child, { type: "turn.completed" });
     child.emit("close", 0);
 
-    await expect(run).resolves.toBe("finished");
+    await expect(run).resolves.toEqual({ text: "finished", meta: {} });
     expect(child.kill).not.toHaveBeenCalled();
   });
 
@@ -159,7 +159,7 @@ describe("streamDocker", () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     await vi.advanceTimersByTimeAsync(10);
 
-    await expect(run).resolves.toBe("finished");
+    await expect(run).resolves.toEqual({ text: "finished", meta: {} });
     expect(child.kill).toHaveBeenCalledTimes(1);
   });
 });

@@ -4,6 +4,7 @@ import { dirname, join, posix } from "node:path";
 import {
   CODEX_USER_CONFIG_REQUIRES_CODEX,
   type AgentName,
+  type StageMeta,
 } from "./agents/index.js";
 import { readCoreVersion } from "./cli-help.js";
 import { acquire, type Releaser } from "./keepalive.js";
@@ -139,7 +140,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         const stageLog = stageLogPath(workspaceDir, i, stage.name);
         mkdirSync(dirname(stageLog), { recursive: true });
 
-        let result: string;
+        let result: { text: string; meta: StageMeta };
         try {
           result = await withRetries(
             () => {
@@ -196,7 +197,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         }
 
         if (s === 0) {
-          if (result.includes(SENTINEL)) {
+          if (result.text.includes(SENTINEL)) {
             const msg =
               greenOut(SYM_OUT.bullet) +
               " " +

@@ -58,6 +58,9 @@ import { runLoop } from "../loop.js";
 const stage: Stage = { name: "implementer", template: "stage.md" };
 const sentinel = "<promise>NO MORE TASKS</promise>";
 
+// runStage resolves { text, meta }; meta is empty in this slice.
+const ok = (text: string) => ({ text, meta: {} });
+
 type LoopDirs = {
   root: string;
   ralphDir: string;
@@ -125,7 +128,7 @@ describe("runLoop", () => {
     mocks.ensureImage.mockImplementation(() => {
       order.push("ensureImage");
     });
-    mocks.runStage.mockResolvedValue(sentinel);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
 
     await runLoop(loopOptions(dirs, { notify: true }));
 
@@ -137,7 +140,7 @@ describe("runLoop", () => {
   it("prints the cli + core version banner at loop init", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
-    mocks.runStage.mockResolvedValue(sentinel);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
 
     await runLoop(loopOptions(dirs, { bin: "ralph-afk", cliVersion: "9.9.9" }));
 
@@ -152,7 +155,7 @@ describe("runLoop", () => {
   it("uses the bin name in the wake-lock reason", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
-    mocks.runStage.mockResolvedValue(sentinel);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
 
     await runLoop(loopOptions(dirs, { bin: "ralph-ghafk" }));
 
@@ -162,7 +165,7 @@ describe("runLoop", () => {
   it("forwards provider settings to every stage", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
-    mocks.runStage.mockResolvedValue(sentinel);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
 
     await runLoop(
       loopOptions(dirs, {
@@ -209,7 +212,7 @@ describe("runLoop", () => {
     roots.push(dirs.root);
     mocks.runStage
       .mockRejectedValueOnce(new Error("boom"))
-      .mockResolvedValueOnce(sentinel);
+      .mockResolvedValueOnce(ok(sentinel));
 
     await runLoop(loopOptions(dirs, { iterations: 2, maxRetries: 0 }));
 
@@ -229,7 +232,7 @@ describe("runLoop", () => {
     roots.push(dirs.root);
     mocks.runStage
       .mockRejectedValueOnce(new Error("flaky"))
-      .mockResolvedValueOnce(sentinel);
+      .mockResolvedValueOnce(ok(sentinel));
 
     const loop = runLoop(loopOptions(dirs, { maxRetries: 1 }));
     await Promise.resolve();

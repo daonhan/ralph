@@ -12,6 +12,7 @@ export type {
   AgentSelection,
   AgentSelectionSource,
   AgentStreamDecoder,
+  StageMeta,
 } from "./types.js";
 
 const ADAPTERS: Record<AgentName, AgentAdapter> = {

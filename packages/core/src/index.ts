@@ -4,6 +4,7 @@ export type {
   AgentName,
   AgentSelection,
   AgentSelectionSource,
+  StageMeta,
 } from "./agents/index.js";
 export { runLoop, type LoopOptions } from "./loop.js";
 export { STAGES, type Stage } from "./stages.js";
