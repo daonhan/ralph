@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
@@ -10,6 +11,7 @@ import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  dirtySnapshot,
   fileTimestamp,
   formatDuration,
   headShort,
@@ -80,6 +82,46 @@ describe("formatDuration", () => {
 describe("headShort", () => {
   it("returns '-' outside a git repository", () => {
     expect(headShort(makeWorkspace())).toBe("-");
+  });
+});
+
+describe("dirtySnapshot", () => {
+  function git(cwd: string, ...args: string[]): void {
+    execFileSync("git", args, { cwd, stdio: "ignore" });
+  }
+  function makeCleanRepo(): string {
+    const root = makeWorkspace();
+    git(root, "init");
+    git(root, "config", "user.email", "t@example.com");
+    git(root, "config", "user.name", "T");
+    writeFileSync(join(root, "tracked.txt"), "committed\n", "utf8");
+    git(root, "add", "tracked.txt");
+    git(root, "commit", "-m", "init");
+    return root;
+  }
+
+  it("returns undefined outside a git repository", () => {
+    expect(dirtySnapshot(makeWorkspace())).toBeUndefined();
+  });
+
+  it("returns undefined when the tree is clean", () => {
+    expect(dirtySnapshot(makeCleanRepo())).toBeUndefined();
+  });
+
+  it("reports the count and paths when the tree is dirty", () => {
+    const root = makeCleanRepo();
+    writeFileSync(join(root, "wip.txt"), "draft\n", "utf8");
+    expect(dirtySnapshot(root)).toBe("1 files — wip.txt");
+  });
+
+  it("caps the listed paths at ten but counts them all", () => {
+    const root = makeCleanRepo();
+    for (let k = 0; k < 12; k++) {
+      writeFileSync(join(root, `f${k}.txt`), "x\n", "utf8");
+    }
+    const snap = dirtySnapshot(root)!;
+    expect(snap.startsWith("12 files — ")).toBe(true);
+    expect(snap.split(" — ")[1].split(", ")).toHaveLength(10);
   });
 });
 
@@ -188,6 +230,64 @@ describe("openHistory", () => {
     expect(text).toContain(
       "## iter 1/1 · reviewer · review-ok · 2m19s · 12.3k in / 1.1k out · grace-timer · HEAD abc1234"
     );
+  });
+
+  it("renders retries, attempt bullets, and a dirty line in contract order", () => {
+    const writer = openHistory({
+      workspaceDir: makeWorkspace(),
+      bin: "afk",
+      iterations: 1,
+      inputs: "plan",
+      now,
+    });
+
+    writer.appendEntry({
+      iteration: 1,
+      stage: "implementer",
+      status: "failed",
+      durationMs: 5_000,
+      head: "abc1234",
+      logPath: ".ralph-tmp/logs/impl.ndjson",
+      body: "final boom",
+      retries: 2,
+      attempts: ["first boom", "second boom"],
+      dirty: "1 files — wip.txt",
+    });
+
+    const text = readFileSync(writer.filePath, "utf8");
+    const body = text.slice(text.indexOf("## iter"));
+    expect(body).toBe(
+      "## iter 1/1 · implementer · failed · 5s · HEAD abc1234\n" +
+        "log: .ralph-tmp/logs/impl.ndjson\n" +
+        "retries: 2\n" +
+        "- attempt 1: first boom\n" +
+        "- attempt 2: second boom\n" +
+        "dirty: 1 files — wip.txt\n\n" +
+        "final boom\n\n"
+    );
+  });
+
+  it("omits retries, attempt, and dirty lines when they are unset", () => {
+    const writer = openHistory({
+      workspaceDir: makeWorkspace(),
+      bin: "afk",
+      iterations: 1,
+      inputs: "plan",
+      now,
+    });
+    writer.appendEntry({
+      iteration: 1,
+      stage: "implementer",
+      status: "ok",
+      durationMs: 5_000,
+      head: "abc1234",
+      logPath: ".ralph-tmp/logs/impl.ndjson",
+      body: "did the thing",
+    });
+    const text = readFileSync(writer.filePath, "utf8");
+    expect(text).not.toContain("retries:");
+    expect(text).not.toContain("- attempt");
+    expect(text).not.toContain("dirty:");
   });
 
   it("does not rewrite an existing .gitignore on a second run", () => {

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -104,6 +105,23 @@ function readHistory(workspaceDir: string): string {
   const dir = join(workspaceDir, ".ralph", "history");
   const md = readdirSync(dir).find((f) => f.endsWith(".md"));
   return readFileSync(join(dir, md!), "utf8");
+}
+
+/**
+ * Turn a workspace into a git repo with one committed `.gitignore` (so the
+ * loop's own `.ralph-tmp/` and `.ralph/` scratch never counts as dirty), then
+ * leave a single untracked file so `dirtySnapshot` reports exactly one path.
+ */
+function makeDirtyRepo(dir: string): void {
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: dir, stdio: "ignore" });
+  git("init");
+  git("config", "user.email", "t@example.com");
+  git("config", "user.name", "T");
+  writeFileSync(join(dir, ".gitignore"), ".ralph-tmp/\n.ralph/\n", "utf8");
+  git("add", ".gitignore");
+  git("commit", "-m", "init");
+  writeFileSync(join(dir, "wip.txt"), "draft\n", "utf8");
 }
 
 describe("runLoop", () => {
@@ -283,6 +301,85 @@ describe("runLoop", () => {
       "utf8"
     );
     expect(log).toContain("[failure] iteration 1 stage implementer failed");
+  });
+
+  it("records retries and attempt bullets on a stage that recovers", async () => {
+    vi.useFakeTimers();
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage
+      .mockRejectedValueOnce(new Error("e1"))
+      .mockRejectedValueOnce(new Error("e2"))
+      .mockResolvedValue(ok("recovered"));
+
+    const loop = runLoop(
+      loopOptions(dirs, { maxRetries: 2, bin: "ralph-afk" })
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(5_000); // wait before attempt 2
+    await vi.advanceTimersByTimeAsync(30_000); // wait before attempt 3
+    await loop;
+
+    expect(mocks.runStage).toHaveBeenCalledTimes(3);
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/1 · implementer · ok · ");
+    expect(text).toContain("retries: 2");
+    expect(text).toContain("- attempt 1: e1");
+    expect(text).toContain("- attempt 2: e2");
+    expect(text).toContain("recovered");
+    vi.useRealTimers();
+  });
+
+  it("records a failed entry with dirty snapshot and a failed footer", async () => {
+    vi.useFakeTimers();
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    makeDirtyRepo(dirs.workspaceDir);
+    mocks.runStage
+      .mockRejectedValueOnce(new Error("first boom"))
+      .mockRejectedValue(new Error("final boom"));
+
+    const loop = runLoop(
+      loopOptions(dirs, { maxRetries: 1, bin: "ralph-afk" })
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(5_000); // wait before the final attempt
+    await loop;
+
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/1 · implementer · failed · ");
+    expect(text).toContain("retries: 1");
+    expect(text).toContain("- attempt 1: first boom");
+    expect(text).toContain("dirty: 1 files — wip.txt");
+    expect(text).toContain("final boom"); // final error is the body
+    expect(text).toMatch(/--- ended · 1\/1 iterations · failed/);
+    vi.useRealTimers();
+  });
+
+  it("records a render failure as a failed history entry", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const failStage: Stage = { name: "implementer", template: "fail.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "fail.md"),
+      "!`exit 7`",
+      "utf8"
+    );
+
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [failStage] as [Stage],
+        maxRetries: 0,
+        bin: "ralph-afk",
+      })
+    );
+
+    expect(mocks.runStage).not.toHaveBeenCalled();
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/1 · implementer · failed · ");
+    expect(text).toMatch(/--- ended · 1\/1 iterations · failed/);
   });
 
   it("aborts the active stage and releases the wake-lock on SIGINT", async () => {

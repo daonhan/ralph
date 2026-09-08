@@ -7,7 +7,12 @@ import {
   type StageMeta,
 } from "./agents/index.js";
 import { readCoreVersion } from "./cli-help.js";
-import { headShort, loadHistoryTail, openHistory } from "./history.js";
+import {
+  dirtySnapshot,
+  headShort,
+  loadHistoryTail,
+  openHistory,
+} from "./history.js";
 import { acquire, type Releaser } from "./keepalive.js";
 import { notifyComplete, notifyError } from "./notify.js";
 import { renderTemplate } from "./render.js";
@@ -155,6 +160,9 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
 
   let completedIterations = 0;
   let sentinelHit = false;
+  // Whether the last iteration ended in a stage failure; decides the footer
+  // reason (`failed` vs `cap`). Reset at the start of every iteration.
+  let runFailed = false;
   try {
     await ensureImage(ralphDir, { signal: stageAbort.signal });
 
@@ -169,6 +177,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     });
 
     for (let i = 1; i <= iterations; i++) {
+      runFailed = false;
       for (let s = 0; s < stages.length; s++) {
         const stage = stages[s];
         const banner = USE_COLOR
@@ -188,6 +197,9 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         // review-fix (before vs after).
         const startedAt = Date.now();
         const headBefore = headShort(workspaceDir);
+        // One message per failed attempt, collected from the retry callback and
+        // rendered as `retries:` + `- attempt <k>:` bullets on the entry.
+        const attemptErrors: string[] = [];
         let result: { text: string; meta: StageMeta };
         try {
           result = await withRetries(
@@ -225,6 +237,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
               max: maxRetries,
               backoffMs: DEFAULT_BACKOFF_MS,
               onAttempt: (attempt, err) => {
+                attemptErrors.push((err as Error).message);
                 const wait = backoffFor(DEFAULT_BACKOFF_MS, attempt);
                 const marker = `[retry] attempt ${attempt} of ${maxRetries} after ${wait} ms`;
                 process.stderr.write(
@@ -247,6 +260,19 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
           }
           const msg = `${red(SYM.cross)} ${bold("iteration " + i + " stage " + stage.name + " failed")} after ${maxRetries} retries: ${(err as Error).message}`;
           process.stderr.write(msg + "\n");
+          history.appendEntry({
+            iteration: i,
+            stage: stage.name,
+            status: "failed",
+            durationMs: Date.now() - startedAt,
+            head: headShort(workspaceDir),
+            logPath: posix.join(".ralph-tmp", "logs", basename(stageLog)),
+            body: (err as Error).message,
+            retries: attemptErrors.length || undefined,
+            attempts: attemptErrors.length ? attemptErrors : undefined,
+            dirty: dirtySnapshot(workspaceDir),
+          });
+          runFailed = true;
           break;
         }
 
@@ -267,6 +293,8 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
           logPath: posix.join(".ralph-tmp", "logs", basename(stageLog)),
           body: result.text,
           meta: result.meta,
+          retries: attemptErrors.length || undefined,
+          attempts: attemptErrors.length ? attemptErrors : undefined,
         });
 
         if (hitSentinel) {
@@ -284,7 +312,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
       }
       completedIterations = i;
     }
-    history.appendFooter(completedIterations, "cap");
+    history.appendFooter(completedIterations, runFailed ? "failed" : "cap");
   } catch (err) {
     if (notify) notifyError((err as Error).message);
     throw err;

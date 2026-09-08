@@ -102,6 +102,32 @@ export function headShort(cwd: string): string {
   }
 }
 
+/**
+ * A one-line dirty-tree snapshot for a `failed` / `aborted` entry: the number of
+ * uncommitted paths in `cwd` plus the first ten, from `git status --porcelain`.
+ * Returns `undefined` when the tree is clean or git is unavailable, so the caller
+ * omits the `dirty:` line. Lives here so the abort slice can reuse it.
+ */
+export function dirtySnapshot(cwd: string): string | undefined {
+  let out: string;
+  try {
+    out = execFileSync("git", ["status", "--porcelain"], {
+      cwd,
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    });
+  } catch {
+    return undefined;
+  }
+  // Porcelain v1 lines are `XY <path>`; the path begins at column 3.
+  const paths = out
+    .split("\n")
+    .filter((l) => l.length > 0)
+    .map((l) => l.slice(3));
+  if (paths.length === 0) return undefined;
+  return `${paths.length} files — ${paths.slice(0, 10).join(", ")}`;
+}
+
 /** One completed-stage entry. `iterations` (the `/N`) is fixed by the run. */
 export type StageEntry = {
   iteration: number;
@@ -112,10 +138,16 @@ export type StageEntry = {
   head: string;
   /** Container-relative NDJSON path, e.g. `.ralph-tmp/logs/<file>.ndjson`. */
   logPath: string;
-  /** Agent's final message, verbatim. */
+  /** Agent's final message (or the final error, for a `failed` entry), verbatim. */
   body: string;
   /** Provider/runner metadata; only present fields reach the header. */
   meta?: StageMeta;
+  /** Count of failed attempts before this outcome; omitted when zero. */
+  retries?: number;
+  /** One error message per failed attempt, rendered as `- attempt <k>: …`. */
+  attempts?: string[];
+  /** Dirty-tree snapshot ({@link dirtySnapshot}); omitted when clean / no git. */
+  dirty?: string;
 };
 
 /** Tokens rendered as thousands with one decimal: 12300 → "12.3", 1100 → "1.1". */
@@ -163,7 +195,13 @@ function renderEntry(iterations: number, e: StageEntry): string {
   const head = `## iter ${e.iteration}/${iterations} · ${e.stage} · ${e.status} · ${formatDuration(
     e.durationMs
   )}${renderMetaSegments(e.meta)} · HEAD ${e.head}`;
-  return `${head}\nlog: ${e.logPath}\n\n${e.body}\n\n`;
+  const lines = [head, `log: ${e.logPath}`];
+  if (e.retries !== undefined) lines.push(`retries: ${e.retries}`);
+  if (e.attempts) {
+    e.attempts.forEach((msg, k) => lines.push(`- attempt ${k + 1}: ${msg}`));
+  }
+  if (e.dirty !== undefined) lines.push(`dirty: ${e.dirty}`);
+  return `${lines.join("\n")}\n\n${e.body}\n\n`;
 }
 
 function renderFooter(
