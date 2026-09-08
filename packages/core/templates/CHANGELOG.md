@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.4.0...ralph-sandbox-v0.5.0) (2026-09-08)
+
+
+### Features
+
+* **core:** inject iteration history into implementer prompt ([20e8604](https://github.com/daonhan/ralph/commit/20e860445cbe5500249be879a56709b71e0a7172))
+* **core:** iteration history under .ralph/history, injected as {{ HISTORY }} ([d488cb7](https://github.com/daonhan/ralph/commit/d488cb7e3bd65c0397de061f168ae69f16460bd5))
+
 ## [0.4.0](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.3.0...ralph-sandbox-v0.4.0) (2026-07-21)
 
 
