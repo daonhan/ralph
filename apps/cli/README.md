@@ -30,8 +30,12 @@ ralph-ghafk 5                     # GitHub-issue loop
 ralph-afk --agent codex "<plan-and-prd>" 5
 ralph-ghafk --agent codex 5
 ralph-afk --help                  # flags, env vars
-ralph-afk --print-config          # diagnose workspace / docker context / image / socket
+ralph-afk --print-config          # diagnose workspace / docker context / image / socket / history dir
 ```
+
+Every run appends a readable history file under `<workspace>/.ralph/history/` (one Markdown file
+per run, self-gitignored) and injects the last ten stage entries into the next implementer prompt.
+Needs `@daonhan/ralph-core` 0.8.0 or later.
 
 Claude is the default; `RALPH_AGENT=codex` is the fallback when `--agent` is absent. Requires
 Docker and a login for the selected provider (and `gh` for `ralph-ghafk`). Codex users should
