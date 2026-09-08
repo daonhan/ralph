@@ -189,7 +189,7 @@ Aborting flows the `stageAbort.signal` into `runStage` / `ensureImage`; `streamD
 
 ## Template renderer
 
-[`render.ts`](../packages/core/src/render.ts). Templates live in [`../packages/core/templates`](../packages/core/templates). `renderTemplate(templatePath, vars, opts)` reads the file and applies five tag forms **in this fixed order** (order matters — `@spill` resolves before shell tags, and the try-shell regex matches before the plain one):
+[`render.ts`](../packages/core/src/render.ts). Templates live in [`../packages/core/templates`](../packages/core/templates). `renderTemplate(templatePath, vars, opts)` reads the file and applies six tag forms **in this fixed order** (order matters — `@spill` resolves before shell tags, and the try-shell regex matches before the plain one):
 
 | #   | Tag                                        | Behavior                                                                                                                                                                                                                                          |
 | --- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -198,6 +198,7 @@ Aborting flows the `stageAbort.signal` into `runStage` / `ensureImage`; `streamD
 | 3   | `!?`<cmd[\|\|\|fallback]>``                | Try-shell. `execSync` with stderr suppressed; non-zero exit substitutes the literal `fallback` string. Matches **before** the plain `!` form.                                                                                                     |
 | 4   | `!`<cmd>``                                 | Plain shell. `execSync` with `cwd = workspaceDir`. Failure **throws and aborts the iteration**.                                                                                                                                                   |
 | 5   | `{{ INPUTS }}`                             | Replaced with `vars.INPUTS` (the `inputs` string passed to `runLoop`).                                                                                                                                                                            |
+| 6   | `{{ HISTORY }}`                            | Replaced with `vars.HISTORY` — the last ten `.ralph/history/` stage entries (non-empty only for the implementer stage), substituted after the shell tags alongside `{{ INPUTS }}`.                                                                |
 
 `resolveShell()`: `/bin/bash` on Linux/macOS; on Windows it walks `PATH` (`;`-split) for the first `bash.exe` (Git for Windows / WSL passthrough), falling back to `cmd.exe`. **Templates should prefer `!?` over `!`** for any command that may be unavailable on `cmd.exe`. Shell tags cap output at `maxBuffer = 64 MiB`.
 
@@ -371,6 +372,8 @@ Everything lands under `<workspace>/.ralph-tmp/` (gitignored):
 ```
 
 `.run-*.md` and `spill-*/` are removed in `runStage`'s `finally`; the NDJSON logs are kept for inspection. A leaked `.run-*.md` after a hard kill is safe to delete.
+
+Separately, `runLoop` writes one Markdown history file per run under `<workspace>/.ralph/history/<yyyy-MM-dd-HHmmss>-<bin>[-<branch>].md` (self-gitignored via its own `*` `.gitignore`, written once): a header on open, one entry per completed stage, a footer on exit. The last ten entries across all runs are loaded back into the implementer prompt as `{{ HISTORY }}`. This is harness-owned — only [`history.ts`](../packages/core/src/history.ts), driven by `loop.ts`, writes here (pure `fs` + tolerant `git` reads, never Docker).
 
 ---
 

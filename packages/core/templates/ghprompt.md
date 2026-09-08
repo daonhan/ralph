@@ -9,6 +9,8 @@ You will work on the AFK issues only, not the HITL ones. Label filtering uses th
 
 You've also been passed a file containing the last few commits. Review these to understand what work has been done.
 
+The `<history>` block holds the last few stage outcomes from earlier iterations and runs — each a **Done / Blocked / Next** summary plus its status (`ok`, `failed`, `aborted`, …). Read it before task selection: do not retry an approach a prior entry reports as failed unless you have a new reason.
+
 If all AFK tasks are complete, output <promise>NO MORE TASKS</promise>.
 
 # TASK SELECTION
@@ -77,6 +79,10 @@ Make a single `git commit -am` with a short message:
 If the task is complete, close the original GitHub issue.
 
 If the task is not complete, leave a comment on the GitHub issue with what was done.
+
+# FINAL MESSAGE
+
+End your turn with at most ten lines under **Done**, **Blocked**, and **Next** headings. This final message is recorded verbatim in the iteration history and shown to the next iteration — keep it concise and specific.
 
 # FINAL RULES
 

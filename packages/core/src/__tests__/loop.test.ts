@@ -1,6 +1,9 @@
+import { execFileSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -53,10 +56,13 @@ vi.mock("../stream-render.js", () => ({
   SYM_OUT: { bullet: "*" },
 }));
 
-import { runLoop } from "../loop.js";
+import { deriveStatus, runLoop } from "../loop.js";
 
 const stage: Stage = { name: "implementer", template: "stage.md" };
 const sentinel = "<promise>NO MORE TASKS</promise>";
+
+// runStage resolves { text, meta }; meta is empty in this slice.
+const ok = (text: string) => ({ text, meta: {} });
 
 type LoopDirs = {
   root: string;
@@ -95,6 +101,29 @@ function loopOptions(dirs: LoopDirs, overrides = {}) {
   };
 }
 
+function readHistory(workspaceDir: string): string {
+  const dir = join(workspaceDir, ".ralph", "history");
+  const md = readdirSync(dir).find((f) => f.endsWith(".md"));
+  return readFileSync(join(dir, md!), "utf8");
+}
+
+/**
+ * Turn a workspace into a git repo with one committed `.gitignore` (so the
+ * loop's own `.ralph-tmp/` and `.ralph/` scratch never counts as dirty), then
+ * leave a single untracked file so `dirtySnapshot` reports exactly one path.
+ */
+function makeDirtyRepo(dir: string): void {
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: dir, stdio: "ignore" });
+  git("init");
+  git("config", "user.email", "t@example.com");
+  git("config", "user.name", "T");
+  writeFileSync(join(dir, ".gitignore"), ".ralph-tmp/\n.ralph/\n", "utf8");
+  git("add", ".gitignore");
+  git("commit", "-m", "init");
+  writeFileSync(join(dir, "wip.txt"), "draft\n", "utf8");
+}
+
 describe("runLoop", () => {
   const roots: string[] = [];
 
@@ -125,7 +154,7 @@ describe("runLoop", () => {
     mocks.ensureImage.mockImplementation(() => {
       order.push("ensureImage");
     });
-    mocks.runStage.mockResolvedValue(sentinel);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
 
     await runLoop(loopOptions(dirs, { notify: true }));
 
@@ -137,7 +166,7 @@ describe("runLoop", () => {
   it("prints the cli + core version banner at loop init", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
-    mocks.runStage.mockResolvedValue(sentinel);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
 
     await runLoop(loopOptions(dirs, { bin: "ralph-afk", cliVersion: "9.9.9" }));
 
@@ -152,7 +181,7 @@ describe("runLoop", () => {
   it("uses the bin name in the wake-lock reason", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
-    mocks.runStage.mockResolvedValue(sentinel);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
 
     await runLoop(loopOptions(dirs, { bin: "ralph-ghafk" }));
 
@@ -162,7 +191,7 @@ describe("runLoop", () => {
   it("forwards provider settings to every stage", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
-    mocks.runStage.mockResolvedValue(sentinel);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
 
     await runLoop(
       loopOptions(dirs, {
@@ -209,7 +238,7 @@ describe("runLoop", () => {
     roots.push(dirs.root);
     mocks.runStage
       .mockRejectedValueOnce(new Error("boom"))
-      .mockResolvedValueOnce(sentinel);
+      .mockResolvedValueOnce(ok(sentinel));
 
     await runLoop(loopOptions(dirs, { iterations: 2, maxRetries: 0 }));
 
@@ -229,7 +258,7 @@ describe("runLoop", () => {
     roots.push(dirs.root);
     mocks.runStage
       .mockRejectedValueOnce(new Error("flaky"))
-      .mockResolvedValueOnce(sentinel);
+      .mockResolvedValueOnce(ok(sentinel));
 
     const loop = runLoop(loopOptions(dirs, { maxRetries: 1 }));
     await Promise.resolve();
@@ -272,6 +301,85 @@ describe("runLoop", () => {
       "utf8"
     );
     expect(log).toContain("[failure] iteration 1 stage implementer failed");
+  });
+
+  it("records retries and attempt bullets on a stage that recovers", async () => {
+    vi.useFakeTimers();
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage
+      .mockRejectedValueOnce(new Error("e1"))
+      .mockRejectedValueOnce(new Error("e2"))
+      .mockResolvedValue(ok("recovered"));
+
+    const loop = runLoop(
+      loopOptions(dirs, { maxRetries: 2, bin: "ralph-afk" })
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(5_000); // wait before attempt 2
+    await vi.advanceTimersByTimeAsync(30_000); // wait before attempt 3
+    await loop;
+
+    expect(mocks.runStage).toHaveBeenCalledTimes(3);
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/1 · implementer · ok · ");
+    expect(text).toContain("retries: 2");
+    expect(text).toContain("- attempt 1: e1");
+    expect(text).toContain("- attempt 2: e2");
+    expect(text).toContain("recovered");
+    vi.useRealTimers();
+  });
+
+  it("records a failed entry with dirty snapshot and a failed footer", async () => {
+    vi.useFakeTimers();
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    makeDirtyRepo(dirs.workspaceDir);
+    mocks.runStage
+      .mockRejectedValueOnce(new Error("first boom"))
+      .mockRejectedValue(new Error("final boom"));
+
+    const loop = runLoop(
+      loopOptions(dirs, { maxRetries: 1, bin: "ralph-afk" })
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(5_000); // wait before the final attempt
+    await loop;
+
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/1 · implementer · failed · ");
+    expect(text).toContain("retries: 1");
+    expect(text).toContain("- attempt 1: first boom");
+    expect(text).toContain("dirty: 1 files — wip.txt");
+    expect(text).toContain("final boom"); // final error is the body
+    expect(text).toMatch(/--- ended · 1\/1 iterations · failed/);
+    vi.useRealTimers();
+  });
+
+  it("records a render failure as a failed history entry", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const failStage: Stage = { name: "implementer", template: "fail.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "fail.md"),
+      "!`exit 7`",
+      "utf8"
+    );
+
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [failStage] as [Stage],
+        maxRetries: 0,
+        bin: "ralph-afk",
+      })
+    );
+
+    expect(mocks.runStage).not.toHaveBeenCalled();
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/1 · implementer · failed · ");
+    expect(text).toMatch(/--- ended · 1\/1 iterations · failed/);
   });
 
   it("aborts the active stage and releases the wake-lock on SIGINT", async () => {
@@ -337,5 +445,417 @@ describe("runLoop", () => {
     expect(mocks.runStage).not.toHaveBeenCalled();
     expect(mocks.release).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledWith(143);
+  });
+
+  it("records an aborted entry as the terminal marker on SIGINT mid-stage", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    makeDirtyRepo(dirs.workspaceDir);
+    const exit = vi.spyOn(process, "exit").mockImplementation(((
+      code?: number
+    ) => {
+      throw new Error(`exit ${code}`);
+    }) as never);
+    mocks.runStage.mockImplementation(
+      (_stage, _prompt, _workspace, _iteration, _spill, _log, options) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener("abort", () =>
+            reject(new Error("aborted"))
+          );
+        })
+    );
+
+    const loop = runLoop(
+      loopOptions(dirs, { maxRetries: 0, bin: "ralph-afk" })
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The handler writes the entry synchronously, before process.exit throws.
+    expect(() => process.emit("SIGINT")).toThrow("exit 130");
+
+    // Read at the exit moment: the aborted entry is the file's last content and
+    // no footer follows it (the process would have exited here in production).
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/1 · implementer · aborted · ");
+    expect(text).toContain("dirty: 1 files — wip.txt");
+    expect(text).toContain("Interrupted (SIGINT).");
+    expect(text).not.toMatch(/--- ended/);
+
+    await loop; // let the aborted stage's rejection settle
+    expect(exit).toHaveBeenCalledWith(130);
+    expect(mocks.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("records an aborted entry and preserves exit 143 on SIGTERM mid-stage", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    makeDirtyRepo(dirs.workspaceDir);
+    const exit = vi.spyOn(process, "exit").mockImplementation(((
+      code?: number
+    ) => {
+      throw new Error(`exit ${code}`);
+    }) as never);
+    mocks.runStage.mockImplementation(
+      (_stage, _prompt, _workspace, _iteration, _spill, _log, options) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener("abort", () =>
+            reject(new Error("aborted"))
+          );
+        })
+    );
+
+    const loop = runLoop(
+      loopOptions(dirs, { maxRetries: 0, bin: "ralph-afk" })
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(() => process.emit("SIGTERM")).toThrow("exit 143");
+
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/1 · implementer · aborted · ");
+    expect(text).toContain("Terminated (SIGTERM).");
+    expect(text).not.toMatch(/--- ended/);
+
+    await loop;
+    expect(exit).toHaveBeenCalledWith(143);
+    expect(mocks.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes no aborted entry when a signal arrives before any stage runs", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const exit = vi.spyOn(process, "exit").mockImplementation(((
+      code?: number
+    ) => {
+      throw new Error(`exit ${code}`);
+    }) as never);
+    // Signal lands while the image is still resolving: history is not open and
+    // the `current` slot is empty, so the handler records nothing.
+    mocks.ensureImage.mockImplementation((_ralphDir, options) => {
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener("abort", () =>
+          reject(new Error("image aborted"))
+        );
+      });
+    });
+
+    const loop = runLoop(loopOptions(dirs));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(() => process.emit("SIGINT")).toThrow("exit 130");
+    expect(existsSync(join(dirs.workspaceDir, ".ralph"))).toBe(false);
+
+    await expect(loop).rejects.toThrow("image aborted");
+    expect(mocks.release).toHaveBeenCalledTimes(1);
+    expect(exit).toHaveBeenCalledWith(130);
+  });
+
+  it("renders a prior run's aborted entry into the next implementer prompt", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 8, 8, 13, 0, 0)));
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    makeDirtyRepo(dirs.workspaceDir);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "impl.md"),
+      "<history>\n{{ HISTORY }}\n</history>\nrun",
+      "utf8"
+    );
+    vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Error(`exit ${code}`);
+    }) as never);
+
+    // Run 1: the stage is aborted mid-flight by SIGINT, writing an aborted entry.
+    mocks.runStage.mockImplementationOnce(
+      (_stage, _prompt, _workspace, _iteration, _spill, _log, options) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener("abort", () =>
+            reject(new Error("aborted"))
+          );
+        })
+    );
+    const run1 = runLoop(
+      loopOptions(dirs, {
+        stages: [impl] as [Stage],
+        maxRetries: 0,
+        bin: "ralph-afk",
+      })
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(() => process.emit("SIGINT")).toThrow("exit 130");
+    await run1; // settles after the abort rejection
+
+    // Run 2 (distinct UTC second → distinct filename) reads run 1's aborted entry.
+    vi.setSystemTime(new Date(Date.UTC(2026, 8, 8, 13, 0, 1)));
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+    await runLoop(
+      loopOptions(dirs, { stages: [impl] as [Stage], bin: "ralph-afk" })
+    );
+
+    const secondPrompt = String(mocks.runStage.mock.calls.at(-1)![1]);
+    expect(secondPrompt).toContain("· aborted · ");
+    expect(secondPrompt).toContain("dirty: 1 files — wip.txt");
+    vi.useRealTimers();
+  });
+
+  it("records a history file with header, entry, and footer on sentinel", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk" }));
+
+    expect(
+      readFileSync(
+        join(dirs.workspaceDir, ".ralph", "history", ".gitignore"),
+        "utf8"
+      )
+    ).toBe("*\n");
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("# ralph-afk ");
+    expect(text).toContain("inputs: plan");
+    expect(text).toContain("## iter 1/1 · implementer · no-more-tasks · ");
+    expect(text).toMatch(/--- ended · 1\/1 iterations · no-more-tasks/);
+  });
+
+  it("closes the footer with 'cap' when the loop runs to its iteration cap", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(ok("still working"));
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk", iterations: 2 }));
+
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/2 · implementer · ok · ");
+    expect(text).toContain("## iter 2/2 · implementer · ok · ");
+    expect(text).toMatch(/--- ended · 2\/2 iterations · cap/);
+  });
+
+  it("does not rewrite the history .gitignore on a second run", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk" }));
+    const gitignore = join(
+      dirs.workspaceDir,
+      ".ralph",
+      "history",
+      ".gitignore"
+    );
+    writeFileSync(gitignore, "custom\n", "utf8");
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk" }));
+    expect(readFileSync(gitignore, "utf8")).toBe("custom\n");
+  });
+
+  it("writes no history file when image setup fails before the loop", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.ensureImage.mockRejectedValue(new Error("no image"));
+
+    await expect(runLoop(loopOptions(dirs))).rejects.toThrow("no image");
+    expect(existsSync(join(dirs.workspaceDir, ".ralph"))).toBe(false);
+  });
+
+  it("injects the previous run's history into the next implementer prompt", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 8, 8, 12, 0, 0)));
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "impl.md"),
+      "<history>\n{{ HISTORY }}\n</history>\nrun {{ INPUTS }}",
+      "utf8"
+    );
+
+    mocks.runStage
+      .mockResolvedValueOnce(ok("FIRST-RUN-MARKER did the work"))
+      .mockResolvedValue(ok(sentinel));
+
+    // Run 1: implementer text is not the sentinel → runs to the cap, one 'ok' entry.
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [impl] as [Stage],
+        iterations: 1,
+        bin: "ralph-afk",
+      })
+    );
+
+    // A distinct UTC second yields a distinct history filename, so run 1's file
+    // is not overwritten by run 2's fresh header.
+    vi.setSystemTime(new Date(Date.UTC(2026, 8, 8, 12, 0, 1)));
+
+    // Run 2: implementer returns the sentinel and exits after the one stage.
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [impl] as [Stage],
+        iterations: 1,
+        bin: "ralph-afk",
+      })
+    );
+
+    const secondRunPrompt = String(mocks.runStage.mock.calls.at(-1)![1]);
+    expect(secondRunPrompt).toContain("<history>");
+    expect(secondRunPrompt).toContain("FIRST-RUN-MARKER did the work");
+    vi.useRealTimers();
+  });
+
+  it("does not inject history into the reviewer prompt", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    const rev: Stage = { name: "reviewer", template: "rev.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "impl.md"),
+      "<history>\n{{ HISTORY }}\n</history>",
+      "utf8"
+    );
+    writeFileSync(
+      join(dirs.packageDir, "templates", "rev.md"),
+      "review {{ INPUTS }}",
+      "utf8"
+    );
+    // Implementer text is not the sentinel, so the reviewer stage also runs.
+    mocks.runStage.mockResolvedValue(ok("working"));
+
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [impl, rev] as [Stage, Stage],
+        iterations: 1,
+      })
+    );
+
+    expect(mocks.runStage).toHaveBeenCalledTimes(2);
+    const reviewerPrompt = String(mocks.runStage.mock.calls[1]![1]);
+    expect(reviewerPrompt).not.toContain("<history>");
+  });
+
+  it("records the reviewer verdict and stage meta in the history entry", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    const rev: Stage = { name: "reviewer", template: "rev.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "impl.md"),
+      "impl",
+      "utf8"
+    );
+    writeFileSync(
+      join(dirs.packageDir, "templates", "rev.md"),
+      "review",
+      "utf8"
+    );
+    // Implementer text is not the sentinel → the reviewer stage also runs.
+    mocks.runStage
+      .mockResolvedValueOnce({
+        text: "did work",
+        meta: { turns: 8, costUsd: 0.6 },
+      })
+      .mockResolvedValueOnce({ text: "<review>OK</review>", meta: {} });
+
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [impl, rev] as [Stage, Stage],
+        bin: "ralph-afk",
+      })
+    );
+
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/1 · implementer · ok · ");
+    expect(text).toContain("· 8 turns · $0.60 · HEAD");
+    expect(text).toContain("## iter 1/1 · reviewer · review-ok · ");
+  });
+
+  it("records an error status when the provider reports an error", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    // Text would otherwise read 'ok', but the error signal wins.
+    mocks.runStage.mockResolvedValue({
+      text: "looks fine",
+      meta: { isError: true, apiErrorStatus: 429 },
+    });
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk" }));
+
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/1 · implementer · error · ");
+    // The loop still advances to the iteration cap exactly as before.
+    expect(text).toMatch(/--- ended · 1\/1 iterations · cap/);
+  });
+});
+
+describe("deriveStatus", () => {
+  const clean = { headBefore: "-", headAfter: "-" };
+
+  it("judges the gate by the completion sentinel", () => {
+    expect(
+      deriveStatus({ isGate: true, text: sentinel, meta: {}, ...clean })
+    ).toBe("no-more-tasks");
+    expect(
+      deriveStatus({ isGate: true, text: "still working", meta: {}, ...clean })
+    ).toBe("ok");
+  });
+
+  it("judges the reviewer by its verdict tag, then by HEAD movement", () => {
+    expect(
+      deriveStatus({
+        isGate: false,
+        text: "<review>OK</review>",
+        meta: {},
+        ...clean,
+      })
+    ).toBe("review-ok");
+    expect(
+      deriveStatus({
+        isGate: false,
+        text: "<review>SKIP</review>",
+        meta: {},
+        ...clean,
+      })
+    ).toBe("review-skip");
+    expect(
+      deriveStatus({
+        isGate: false,
+        text: "committed a fix",
+        meta: {},
+        headBefore: "aaa1111",
+        headAfter: "bbb2222",
+      })
+    ).toBe("review-fix");
+    expect(
+      deriveStatus({
+        isGate: false,
+        text: "nothing to change",
+        meta: {},
+        headBefore: "aaa1111",
+        headAfter: "aaa1111",
+      })
+    ).toBe("ok");
+  });
+
+  it("lets a provider error win over any text-derived status", () => {
+    expect(
+      deriveStatus({
+        isGate: true,
+        text: "still working",
+        meta: { isError: true },
+        ...clean,
+      })
+    ).toBe("error");
+    expect(
+      deriveStatus({
+        isGate: false,
+        text: "<review>OK</review>",
+        meta: { apiErrorStatus: 429 },
+        ...clean,
+      })
+    ).toBe("error");
   });
 });

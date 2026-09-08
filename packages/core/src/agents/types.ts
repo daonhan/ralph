@@ -42,10 +42,26 @@ export type AgentRenderEvent =
     }
   | { type: "diagnostic"; message: string; isError?: boolean };
 
+/**
+ * Per-stage metadata surfaced to the loop alongside the completion text. Every
+ * field is optional: the decoders fill what the provider reports and the stream
+ * runner owns `graceTimerFired`. Consumed by the iteration-history writer.
+ */
+export type StageMeta = {
+  costUsd?: number;
+  turns?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  isError?: boolean;
+  apiErrorStatus?: number;
+  graceTimerFired?: boolean;
+};
+
 export type AgentDecodeResult = {
   events: AgentRenderEvent[];
   completion?: string;
   failure?: string;
+  meta?: StageMeta;
 };
 
 export interface AgentStreamDecoder {

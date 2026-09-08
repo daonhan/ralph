@@ -10,7 +10,37 @@ import type {
   AgentDecodeResult,
   AgentRenderEvent,
   AgentStreamDecoder,
+  StageMeta,
 } from "./types.js";
+
+/**
+ * Pull the iteration-history metadata out of a Claude `result` record: cost,
+ * turn count, and token usage as reported, plus the error signals that let the
+ * loop record a rate-limited or otherwise failed turn as `error` rather than a
+ * false success. Only fields actually present are set, so the history header
+ * shows no placeholders and a clean result carries no `meta`.
+ */
+function claudeResultMeta(event: Record<string, unknown>): StageMeta {
+  const meta: StageMeta = {};
+  if (typeof event.total_cost_usd === "number") {
+    meta.costUsd = event.total_cost_usd;
+  }
+  if (typeof event.num_turns === "number") meta.turns = event.num_turns;
+  const usage = record(event.usage);
+  if (usage) {
+    if (typeof usage.input_tokens === "number") {
+      meta.inputTokens = usage.input_tokens;
+    }
+    if (typeof usage.output_tokens === "number") {
+      meta.outputTokens = usage.output_tokens;
+    }
+  }
+  if (event.is_error === true) meta.isError = true;
+  if (typeof event.api_error_status === "number") {
+    meta.apiErrorStatus = event.api_error_status;
+  }
+  return meta;
+}
 
 export function createClaudeDecoder(): AgentStreamDecoder {
   let finalResult = "";
@@ -73,7 +103,8 @@ export function createClaudeDecoder(): AgentStreamDecoder {
 
       if (event.type === "result") {
         if (typeof event.result === "string") finalResult = event.result;
-        return {
+        const meta = claudeResultMeta(event);
+        const result: AgentDecodeResult = {
           events:
             event.is_error === true
               ? [
@@ -86,6 +117,8 @@ export function createClaudeDecoder(): AgentStreamDecoder {
               : [],
           completion: finalResult,
         };
+        if (Object.keys(meta).length > 0) result.meta = meta;
+        return result;
       }
 
       return { events: [] };
@@ -107,10 +140,7 @@ export type ClaudeModelResolution = {
   /** Undefined means: send no `--model` and let the container CLI resolve. */
   model?: string;
   modelSource:
-    | "RALPH_MODEL"
-    | "host settings"
-    | "Ralph default"
-    | "host provider config";
+    "RALPH_MODEL" | "host settings" | "Ralph default" | "host provider config";
 };
 
 /**

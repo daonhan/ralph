@@ -4,6 +4,12 @@
 
 </commits>
 
+<history>
+
+{{ HISTORY }}
+
+</history>
+
 <issues-summary>
 
 `gh issue list --state open --limit 50 --json number,title,labels`

@@ -17,6 +17,7 @@ import {
   type AgentAdapter,
   type AgentName,
   type AgentStreamDecoder,
+  type StageMeta,
 } from "./agents/index.js";
 import { resolveHostHome } from "./agents/shared.js";
 import type { Stage } from "./stages.js";
@@ -407,7 +408,7 @@ export async function runStage(
   spillHostDir?: string,
   logPathOverride?: string,
   options: RunStageOptions = {}
-): Promise<string> {
+): Promise<{ text: string; meta: StageMeta }> {
   const adapter = getAgentAdapter(options.agent ?? "claude");
   const tmpHostDir = join(workspaceDir, ".ralph-tmp");
   mkdirSync(tmpHostDir, { recursive: true });
@@ -481,7 +482,7 @@ export function streamDocker(
   logPath: string,
   decoder: AgentStreamDecoder,
   options: RunStageOptions = {}
-): Promise<string> {
+): Promise<{ text: string; meta: StageMeta }> {
   if (options.signal?.aborted) {
     return Promise.reject(abortError());
   }
@@ -496,6 +497,7 @@ export function streamDocker(
     });
 
     let finalResult = "";
+    const meta: StageMeta = {};
     const stderrTail: string[] = [];
     let settled = false;
     let onAbort = (): void => {};
@@ -530,7 +532,8 @@ export function streamDocker(
     };
 
     const rejectOnce = (err: unknown): void => finish(() => reject(err));
-    const resolveOnce = (value: string): void => finish(() => resolve(value));
+    const resolveOnce = (text: string): void =>
+      finish(() => resolve({ text, meta }));
 
     onAbort = (): void => {
       try {
@@ -559,6 +562,8 @@ export function streamDocker(
         renderEvent(event, toolMap);
       }
 
+      if (decoded.meta) Object.assign(meta, decoded.meta);
+
       if (decoded.failure !== undefined) {
         try {
           child.kill();
@@ -577,6 +582,7 @@ export function streamDocker(
             process.stderr.write(
               `${dim(`grace timer fired after ${graceMs}ms post-completion — killing docker child`)}\n`
             );
+            meta.graceTimerFired = true;
             try {
               child.kill();
             } catch {

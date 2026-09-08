@@ -73,7 +73,7 @@ describe("streamDocker", () => {
     writeJson(child, { type: "turn.completed" });
     child.emit("close", 0);
 
-    await expect(run).resolves.toBe("finished");
+    await expect(run).resolves.toEqual({ text: "finished", meta: {} });
     expect(readFileSync(logPath, "utf8")).toContain('"turn.completed"');
   });
 
@@ -103,7 +103,7 @@ describe("streamDocker", () => {
     writeJson(child, { type: "turn.completed" });
     child.emit("close", 0);
 
-    await expect(run).resolves.toBe("finished");
+    await expect(run).resolves.toEqual({ text: "finished", meta: {} });
     expect(child.kill).not.toHaveBeenCalled();
   });
 
@@ -143,7 +143,7 @@ describe("streamDocker", () => {
     await expect(run).rejects.toThrow("codex exited without turn.completed");
   });
 
-  it("applies the existing grace timer to Codex completion", async () => {
+  it("applies the existing grace timer and flags graceTimerFired", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     process.env.RALPH_RESULT_GRACE_MS = "10";
     const run = streamDocker(
@@ -159,7 +159,10 @@ describe("streamDocker", () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     await vi.advanceTimersByTimeAsync(10);
 
-    await expect(run).resolves.toBe("finished");
+    await expect(run).resolves.toEqual({
+      text: "finished",
+      meta: { graceTimerFired: true },
+    });
     expect(child.kill).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,11 +1,19 @@
 import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname, join, posix } from "node:path";
+import { basename, dirname, join, posix } from "node:path";
 
 import {
   CODEX_USER_CONFIG_REQUIRES_CODEX,
   type AgentName,
+  type StageMeta,
 } from "./agents/index.js";
 import { readCoreVersion } from "./cli-help.js";
+import {
+  dirtySnapshot,
+  headShort,
+  loadHistoryTail,
+  openHistory,
+  type HistoryWriter,
+} from "./history.js";
 import { acquire, type Releaser } from "./keepalive.js";
 import { notifyComplete, notifyError } from "./notify.js";
 import { renderTemplate } from "./render.js";
@@ -32,6 +40,38 @@ import type { Stage } from "./stages.js";
 // The agent emits this literal when there is no more work; the same string is
 // mirrored in the playbook templates (prompt.md / ghprompt.md) that instruct it.
 const SENTINEL = "<promise>NO MORE TASKS</promise>";
+
+// Reviewer verdicts (review.md). Neither tag + a moved HEAD ⇒ the reviewer
+// committed a fix; neither tag + unchanged HEAD ⇒ a plain ok.
+const REVIEW_OK = "<review>OK</review>";
+const REVIEW_SKIP = "<review>SKIP</review>";
+
+/**
+ * The status recorded for one completed stage. A provider error (`meta.isError`
+ * or an `apiErrorStatus`) wins over any text-derived status, so a rate-limited
+ * `429` turn is recorded as `error` instead of a false success. The gate stage
+ * (index 0) is judged by the completion sentinel; every later stage is the
+ * reviewer, judged by its `<review>` tag or, absent a tag, by whether it moved
+ * HEAD (a `review-fix` commit).
+ */
+export function deriveStatus(args: {
+  isGate: boolean;
+  text: string;
+  meta: StageMeta;
+  headBefore: string;
+  headAfter: string;
+}): string {
+  if (args.meta.isError === true || args.meta.apiErrorStatus !== undefined) {
+    return "error";
+  }
+  if (args.isGate) {
+    return args.text.includes(SENTINEL) ? "no-more-tasks" : "ok";
+  }
+  if (args.text.includes(REVIEW_OK)) return "review-ok";
+  if (args.text.includes(REVIEW_SKIP)) return "review-skip";
+  if (args.headAfter !== args.headBefore) return "review-fix";
+  return "ok";
+}
 
 export type LoopOptions = {
   // First stage is the gate: its result is checked for the completion sentinel.
@@ -104,14 +144,45 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     if (!stageAbort.signal.aborted) stageAbort.abort();
   };
 
+  // The history writer (opened after ensureImage) and the running stage's
+  // `current` slot, both read by the signal handlers. `current` is set at each
+  // stage start and cleared once that stage's own entry is written; an empty
+  // slot — between stages, or before the image is ready — means a signal records
+  // nothing. On a signal the `aborted` entry is the file's terminal marker: the
+  // handler exits the process directly, so no footer follows.
+  let history: HistoryWriter | undefined;
+  let current:
+    | { iteration: number; stage: string; startedAt: number; logPath: string }
+    | undefined;
+  const recordAbort = (body: string): void => {
+    if (!history || !current) return;
+    try {
+      history.appendEntry({
+        iteration: current.iteration,
+        stage: current.stage,
+        status: "aborted",
+        durationMs: Date.now() - current.startedAt,
+        head: headShort(workspaceDir),
+        logPath: current.logPath,
+        body,
+        dirty: dirtySnapshot(workspaceDir),
+      });
+    } catch {
+      // History may be unwritable; never block release + exit on the entry.
+    }
+    current = undefined;
+  };
+
   const onSigint = (): void => {
     abortActiveStage();
+    recordAbort("Interrupted (SIGINT).");
     if (notify) notifyError("interrupted (SIGINT)");
     releaseOnce();
     process.exit(130);
   };
   const onSigterm = (): void => {
     abortActiveStage();
+    recordAbort("Terminated (SIGTERM).");
     if (notify) notifyError("terminated (SIGTERM)");
     releaseOnce();
     process.exit(143);
@@ -121,10 +192,24 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
 
   let completedIterations = 0;
   let sentinelHit = false;
+  // Whether the last iteration ended in a stage failure; decides the footer
+  // reason (`failed` vs `cap`). Reset at the start of every iteration.
+  let runFailed = false;
   try {
     await ensureImage(ralphDir, { signal: stageAbort.signal });
 
+    // History opens only after the image is confirmed: an image failure must
+    // leave no .ralph/ directory behind. `bin` arrives as "ralph-afk" /
+    // "ralph-ghafk"; the history file uses the short "afk" / "ghafk" form.
+    history = openHistory({
+      workspaceDir,
+      bin: bin.replace(/^ralph-/, ""),
+      iterations,
+      inputs,
+    });
+
     for (let i = 1; i <= iterations; i++) {
+      runFailed = false;
       for (let s = 0; s < stages.length; s++) {
         const stage = stages[s];
         const banner = USE_COLOR
@@ -139,7 +224,19 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         const stageLog = stageLogPath(workspaceDir, i, stage.name);
         mkdirSync(dirname(stageLog), { recursive: true });
 
-        let result: string;
+        // Duration is measured around the whole retried call. HEAD is captured
+        // before the stage runs so a reviewer that commits a fix is recorded as
+        // review-fix (before vs after).
+        const startedAt = Date.now();
+        const headBefore = headShort(workspaceDir);
+        const logPath = posix.join(".ralph-tmp", "logs", basename(stageLog));
+        // A signal arriving now records an `aborted` entry for this stage;
+        // cleared once the stage's own entry is written below.
+        current = { iteration: i, stage: stage.name, startedAt, logPath };
+        // One message per failed attempt, collected from the retry callback and
+        // rendered as `retries:` + `- attempt <k>:` bullets on the entry.
+        const attemptErrors: string[] = [];
+        let result: { text: string; meta: StageMeta };
         try {
           result = await withRetries(
             () => {
@@ -147,9 +244,15 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
               // (e.g. a flaky `gh issue list`) is retried with backoff instead
               // of crashing the loop — and a hard failure surfaces as a terminal
               // stage failure rather than a degraded prompt that false-completes.
+              // Only the gate (implementer) reads history; the reviewer does not.
+              // Loaded inside the retry closure so a retried render sees fresh
+              // history (a prior stage may have appended an entry meanwhile).
               const prompt = renderTemplate(
                 templatePath,
-                { INPUTS: inputs },
+                {
+                  INPUTS: inputs,
+                  HISTORY: s === 0 ? loadHistoryTail(workspaceDir) : "",
+                },
                 { cwd: workspaceDir, spillHostDir, spillRefPath }
               );
               return runStage(
@@ -170,6 +273,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
               max: maxRetries,
               backoffMs: DEFAULT_BACKOFF_MS,
               onAttempt: (attempt, err) => {
+                attemptErrors.push((err as Error).message);
                 const wait = backoffFor(DEFAULT_BACKOFF_MS, attempt);
                 const marker = `[retry] attempt ${attempt} of ${maxRetries} after ${wait} ms`;
                 process.stderr.write(
@@ -192,25 +296,61 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
           }
           const msg = `${red(SYM.cross)} ${bold("iteration " + i + " stage " + stage.name + " failed")} after ${maxRetries} retries: ${(err as Error).message}`;
           process.stderr.write(msg + "\n");
+          history.appendEntry({
+            iteration: i,
+            stage: stage.name,
+            status: "failed",
+            durationMs: Date.now() - startedAt,
+            head: headShort(workspaceDir),
+            logPath,
+            body: (err as Error).message,
+            retries: attemptErrors.length || undefined,
+            attempts: attemptErrors.length ? attemptErrors : undefined,
+            dirty: dirtySnapshot(workspaceDir),
+          });
+          current = undefined;
+          runFailed = true;
           break;
         }
 
-        if (s === 0) {
-          if (result.includes(SENTINEL)) {
-            const msg =
-              greenOut(SYM_OUT.bullet) +
-              " " +
-              boldOut("Ralph complete") +
-              dimOut(" after " + i + " iterations");
-            process.stdout.write(msg + "\n");
-            sentinelHit = true;
-            completedIterations = i;
-            return;
-          }
+        const headAfter = headShort(workspaceDir);
+        const hitSentinel = s === 0 && result.text.includes(SENTINEL);
+        history.appendEntry({
+          iteration: i,
+          stage: stage.name,
+          status: deriveStatus({
+            isGate: s === 0,
+            text: result.text,
+            meta: result.meta,
+            headBefore,
+            headAfter,
+          }),
+          durationMs: Date.now() - startedAt,
+          head: headAfter,
+          logPath,
+          body: result.text,
+          meta: result.meta,
+          retries: attemptErrors.length || undefined,
+          attempts: attemptErrors.length ? attemptErrors : undefined,
+        });
+        current = undefined;
+
+        if (hitSentinel) {
+          const msg =
+            greenOut(SYM_OUT.bullet) +
+            " " +
+            boldOut("Ralph complete") +
+            dimOut(" after " + i + " iterations");
+          process.stdout.write(msg + "\n");
+          sentinelHit = true;
+          completedIterations = i;
+          history.appendFooter(i, "no-more-tasks");
+          return;
         }
       }
       completedIterations = i;
     }
+    history.appendFooter(completedIterations, runFailed ? "failed" : "cap");
   } catch (err) {
     if (notify) notifyError((err as Error).message);
     throw err;

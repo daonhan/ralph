@@ -4,6 +4,12 @@
 
 </commits>
 
+<history>
+
+{{ HISTORY }}
+
+</history>
+
 <inputs>
 
 {{ INPUTS }}
