@@ -204,7 +204,7 @@ ralph-ghafk --agent codex 5
 - **Natural stop:** the loop exits as soon as the implementer (the first/gate stage) emits the literal sentinel `<promise>NO MORE TASKS</promise>`. The reviewer never gates.
 - **Iteration cap:** otherwise it stops after `<iterations>` iterations.
 - **Manual stop:** `Ctrl+C` aborts the active stage and exits `130`.
-- **Logs** are written per stage to `<workspace>/.ralph-tmp/logs/*.ndjson` (gitignored).
+- **Logs** are written per stage to `<workspace>/.ralph-tmp/logs/*.ndjson` (gitignored); a human-readable per-run **history** is written to `<workspace>/.ralph/history/*.md` (self-gitignored), and the last few stage outcomes are fed back into the next iteration's prompt.
 
 ## 7. For overnight runs
 

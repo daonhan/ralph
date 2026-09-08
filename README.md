@@ -49,7 +49,7 @@ docker run ralph-sandbox <selected-agent> …
 
 Each iteration runs the stage chain `[implementer, reviewer]`. The implementer is the "gate": if it emits `<promise>NO MORE TASKS</promise>`, the loop exits before the reviewer runs.
 
-Prompt templates expand five tag forms before each stage runs, in order — `@include:` (inline a file, no shell), `@spill[?]:` (run a command, write its output to a side file the agent `Read`s), `` !?`cmd|||fallback` `` (try-shell), `` !`cmd` `` (host shell), and `{{ INPUTS }}` (the entry CLI's input arg — the plan/PRD string for `ralph-afk`, empty for `ralph-ghafk`). Full semantics under [Change the template syntax](#change-the-template-syntax); the runtime model lives in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+Prompt templates expand six tag forms before each stage runs, in order — `@include:` (inline a file, no shell), `@spill[?]:` (run a command, write its output to a side file the agent `Read`s), `` !?`cmd|||fallback` `` (try-shell), `` !`cmd` `` (host shell), `{{ INPUTS }}` (the entry CLI's input arg — the plan/PRD string for `ralph-afk`, empty for `ralph-ghafk`), and `{{ HISTORY }}` (the last few stage outcomes from `.ralph/history/`, injected into the implementer prompt). Full semantics under [Change the template syntax](#change-the-template-syntax); the runtime model lives in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ---
 
@@ -80,7 +80,7 @@ ralph/
 └── (playbooks live in packages/core/templates/ alongside the prompt templates)
 ```
 
-At runtime, the host workspace gets a `.ralph-tmp/` directory containing the per-iteration prompt files and `logs/*.ndjson`. This directory is gitignored.
+At runtime, the host workspace gets a `.ralph-tmp/` directory containing the per-iteration prompt files and `logs/*.ndjson`, plus a `.ralph/history/` directory holding one Markdown history file per run. Both are gitignored (`.ralph/history/` via its own `.gitignore`).
 
 ---
 
@@ -419,7 +419,7 @@ Also supports:
 
 - `ralph-afk --help` (or `-h`) — usage, flags, env vars.
 - `ralph-afk --version` (or `-V`) — print bin + core version and exit.
-- `ralph-afk --print-config` — print resolved workspace / docker context / image / docker-socket status and exit. Use for diagnostics before launching a real loop.
+- `ralph-afk --print-config` — print resolved workspace / docker context / image / docker-socket status / history dir and exit. Use for diagnostics before launching a real loop.
 
 - `<plan-and-prd>` — a single string forwarded verbatim as `{{ INPUTS }}` in the template. Conventionally paths to plan and PRD files.
 - `<iterations>` — max loop iterations. Exits early if implementer emits the sentinel.
@@ -640,8 +640,9 @@ Renderer is in `packages/core/src/render.ts`. Tags supported today:
 - `` @spill[?]:<name>=`<shell cmd>[|||<fallback>]` `` — run `<cmd>` and write its **stdout to a file** `<name>` in the per-stage spill dir (`.ralph-tmp/spill-…/`), substituting the container-relative path `./.ralph-tmp/spill-…/<name>` into the prompt for the agent to `Read`. The `?` form suppresses stderr and writes `<fallback>` on non-zero exit; `<name>` must be a plain filename (no path separators, no `..`). Use for large outputs that would bloat the prompt — `review.md` spills the full HEAD patch, `ghafk.md` the full issue bodies.
 - `@include:<rel-or-abs-path>` — inline a file (via Node `readFileSync`). Path resolved against the template's own directory when relative. No shell. Use this for bundled playbooks, not for live shell output.
 - `{{ INPUTS }}` — replaced with the `inputs` field passed into `runLoop`.
+- `{{ HISTORY }}` — replaced with the last ten stage entries from `<workspace>/.ralph/history/` (non-empty only for the implementer stage). Substituted last, alongside `{{ INPUTS }}`; carries prior agent output verbatim (same trust rule — never shelled).
 
-Tags expand in a fixed order: `@include` → `@spill` → `!?` → `!` → `{{ INPUTS }}`.
+Tags expand in a fixed order: `@include` → `@spill` → `!?` → `!` → `{{ INPUTS }}` → `{{ HISTORY }}`.
 
 On Windows, the renderer prefers `bash.exe` (Git for Windows / WSL passthrough) over `cmd.exe`. The `!?` tag makes commands tolerant either way.
 
@@ -651,7 +652,7 @@ Set `RALPH_IMAGE=registry.example.com/my-image:tag` before invoking the shim, or
 
 ### Change feedback loops or task priority
 
-The agent playbooks are self-contained: `packages/core/templates/prompt.md` (plan/PRD source + progress recording, for `ralph-afk`) and `ghprompt.md` (issue triage + close/comment, for `ralph-ghafk`). Each carries its own task-priority ladder, feedback loops, commit rules, and final rules. `afk.md` / `ghafk.md` each `@include` their respective playbook. Edit the playbook for a loop to change its task priority or feedback loops.
+The agent playbooks are self-contained: `packages/core/templates/prompt.md` (plan/PRD source + progress recording, for `ralph-afk`) and `ghprompt.md` (issue triage + close/comment, for `ralph-ghafk`). Each carries its own task-priority ladder, feedback loops, commit rules, and final rules. `afk.md` / `ghafk.md` each `@include` their respective playbook. Both playbooks also read the injected `{{ HISTORY }}` block before task selection (so a prior `failed` approach is not blindly retried) and end each turn with a short **Done / Blocked / Next** summary that is recorded to `.ralph/history/` and shown to the next iteration. Edit the playbook for a loop to change its task priority or feedback loops.
 
 ---
 
