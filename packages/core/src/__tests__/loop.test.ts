@@ -945,6 +945,41 @@ describe("runLoop", () => {
     expect(text).toMatch(/--- ended · 1\/1 iterations · no-more-tasks/);
   });
 
+  it("writes no skipped entry when the gate stage fails", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    const rev: Stage = { name: "reviewer", template: "rev.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "impl.md"),
+      "impl",
+      "utf8"
+    );
+    writeFileSync(
+      join(dirs.packageDir, "templates", "rev.md"),
+      "review",
+      "utf8"
+    );
+    makeDirtyRepo(dirs.workspaceDir);
+    // A failed gate breaks out of the iteration before the skip decision, so
+    // the `failed` entry stays the iteration's last one.
+    mocks.runStage.mockRejectedValue(new Error("boom"));
+
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [impl, rev] as [Stage, Stage],
+        bin: "ralph-afk",
+        maxRetries: 0,
+      })
+    );
+
+    expect(mocks.runStage).toHaveBeenCalledTimes(1);
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/1 · implementer · failed · ");
+    expect(text).not.toContain("· skipped ·");
+    expect(text).toMatch(/--- ended · 1\/1 iterations · failed/);
+  });
+
   it("records an error status when the provider reports an error", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
