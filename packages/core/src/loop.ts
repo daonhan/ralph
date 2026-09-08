@@ -75,7 +75,9 @@ export function deriveStatus(args: {
 
 export type LoopOptions = {
   // First stage is the gate: its result is checked for the completion sentinel.
-  // Subsequent stages always run after a non-sentinel gate result.
+  // Later stages run only when the gate moved HEAD; a gate that committed
+  // nothing leaves them nothing to work on, so each is recorded as `skipped`
+  // and no container starts.
   stages: [Stage, ...Stage[]];
   inputs: string;
   iterations: number;
@@ -210,12 +212,37 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
 
     for (let i = 1; i <= iterations; i++) {
       runFailed = false;
+      // Set to the gate stage's HEAD once that stage returns without having
+      // committed anything; every later stage of the iteration is then recorded
+      // as `skipped` instead of costing a container run. Reset per iteration.
+      let skipHead: string | undefined;
       for (let s = 0; s < stages.length; s++) {
         const stage = stages[s];
         const banner = USE_COLOR
           ? `${dim("\u2501\u2501\u2501")} ${bold(`iteration ${i}/${iterations}`)} ${dim("\u00b7")} ${bold(stage.name)} ${dim(`(stage ${s + 1}/${stages.length})`)} ${dim("\u2501\u2501\u2501")}`
           : `== iteration ${i}/${iterations} \u00b7 ${stage.name} (stage ${s + 1}/${stages.length}) ==`;
         process.stderr.write(`\n${banner}\n`);
+
+        if (skipHead !== undefined) {
+          process.stderr.write(
+            `${dim(`skipped \u00b7 HEAD unchanged (${skipHead})`)}\n`
+          );
+          history.appendEntry({
+            iteration: i,
+            stage: stage.name,
+            status: "skipped",
+            durationMs: 0,
+            head: skipHead,
+            // No stage ran, so there is no NDJSON log to point at.
+            logPath: "-",
+            body: `Skipped: HEAD did not move during the ${stages[0].name} stage.`,
+            // Uncommitted paths the gate left behind: the next implementer
+            // reads them off this entry through {{ HISTORY }}.
+            dirty: dirtySnapshot(workspaceDir),
+          });
+          continue;
+        }
+
         const templatePath = join(packageDir, "templates", stage.template);
         const spillRel = `spill-${process.pid}-${i}-${s}-${Date.now()}`;
         const spillHostDir = join(workspaceDir, ".ralph-tmp", spillRel);
@@ -347,6 +374,11 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
           history.appendFooter(i, "no-more-tasks");
           return;
         }
+
+        // The gate decides whether the rest of the iteration is worth paying
+        // for: an unchanged HEAD (the `-` of a non-git workspace included)
+        // means the reviewer would re-review an already-reviewed commit.
+        if (s === 0 && headAfter === headBefore) skipHead = headAfter;
       }
       completedIterations = i;
     }

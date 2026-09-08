@@ -103,10 +103,11 @@ export function headShort(cwd: string): string {
 }
 
 /**
- * A one-line dirty-tree snapshot for a `failed` / `aborted` entry: the number of
- * uncommitted paths in `cwd` plus the first ten, from `git status --porcelain`.
- * Returns `undefined` when the tree is clean or git is unavailable, so the caller
- * omits the `dirty:` line. Lives here so the abort slice can reuse it.
+ * A one-line dirty-tree snapshot for a `failed` / `aborted` / `skipped` entry:
+ * the number of uncommitted paths in `cwd` plus the first ten, from
+ * `git status --porcelain`. Returns `undefined` when the tree is clean or git is
+ * unavailable, so the caller omits the `dirty:` line. Lives here so the abort
+ * slice can reuse it.
  */
 export function dirtySnapshot(cwd: string): string | undefined {
   let out: string;

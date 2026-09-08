@@ -239,7 +239,7 @@ The agent triages from the inline `<issues-summary>`, then `Read`s the spilled `
 Full patch spilled to: @spill?:head.diff=`git show HEAD|||No diff body`
 ```
 
-The reviewer reviews only the latest commit; emits `<review>OK</review>` / `<review>SKIP</review>` and stops, or fixes defects and commits a new `fix(review): …` (never amends).
+The reviewer reviews only the latest commit; emits `<review>OK</review>` / `<review>SKIP</review>` and stops, or fixes defects and commits a new `fix(review): …` (never amends). It runs only when the implementer stage moved HEAD; otherwise the loop records a `skipped` history entry and starts no container.
 
 ---
 
