@@ -12,6 +12,7 @@ import {
   headShort,
   loadHistoryTail,
   openHistory,
+  type HistoryWriter,
 } from "./history.js";
 import { acquire, type Releaser } from "./keepalive.js";
 import { notifyComplete, notifyError } from "./notify.js";
@@ -143,14 +144,45 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     if (!stageAbort.signal.aborted) stageAbort.abort();
   };
 
+  // The history writer (opened after ensureImage) and the running stage's
+  // `current` slot, both read by the signal handlers. `current` is set at each
+  // stage start and cleared once that stage's own entry is written; an empty
+  // slot — between stages, or before the image is ready — means a signal records
+  // nothing. On a signal the `aborted` entry is the file's terminal marker: the
+  // handler exits the process directly, so no footer follows.
+  let history: HistoryWriter | undefined;
+  let current:
+    | { iteration: number; stage: string; startedAt: number; logPath: string }
+    | undefined;
+  const recordAbort = (body: string): void => {
+    if (!history || !current) return;
+    try {
+      history.appendEntry({
+        iteration: current.iteration,
+        stage: current.stage,
+        status: "aborted",
+        durationMs: Date.now() - current.startedAt,
+        head: headShort(workspaceDir),
+        logPath: current.logPath,
+        body,
+        dirty: dirtySnapshot(workspaceDir),
+      });
+    } catch {
+      // History may be unwritable; never block release + exit on the entry.
+    }
+    current = undefined;
+  };
+
   const onSigint = (): void => {
     abortActiveStage();
+    recordAbort("Interrupted (SIGINT).");
     if (notify) notifyError("interrupted (SIGINT)");
     releaseOnce();
     process.exit(130);
   };
   const onSigterm = (): void => {
     abortActiveStage();
+    recordAbort("Terminated (SIGTERM).");
     if (notify) notifyError("terminated (SIGTERM)");
     releaseOnce();
     process.exit(143);
@@ -169,7 +201,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     // History opens only after the image is confirmed: an image failure must
     // leave no .ralph/ directory behind. `bin` arrives as "ralph-afk" /
     // "ralph-ghafk"; the history file uses the short "afk" / "ghafk" form.
-    const history = openHistory({
+    history = openHistory({
       workspaceDir,
       bin: bin.replace(/^ralph-/, ""),
       iterations,
@@ -197,6 +229,10 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         // review-fix (before vs after).
         const startedAt = Date.now();
         const headBefore = headShort(workspaceDir);
+        const logPath = posix.join(".ralph-tmp", "logs", basename(stageLog));
+        // A signal arriving now records an `aborted` entry for this stage;
+        // cleared once the stage's own entry is written below.
+        current = { iteration: i, stage: stage.name, startedAt, logPath };
         // One message per failed attempt, collected from the retry callback and
         // rendered as `retries:` + `- attempt <k>:` bullets on the entry.
         const attemptErrors: string[] = [];
@@ -266,12 +302,13 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
             status: "failed",
             durationMs: Date.now() - startedAt,
             head: headShort(workspaceDir),
-            logPath: posix.join(".ralph-tmp", "logs", basename(stageLog)),
+            logPath,
             body: (err as Error).message,
             retries: attemptErrors.length || undefined,
             attempts: attemptErrors.length ? attemptErrors : undefined,
             dirty: dirtySnapshot(workspaceDir),
           });
+          current = undefined;
           runFailed = true;
           break;
         }
@@ -290,12 +327,13 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
           }),
           durationMs: Date.now() - startedAt,
           head: headAfter,
-          logPath: posix.join(".ralph-tmp", "logs", basename(stageLog)),
+          logPath,
           body: result.text,
           meta: result.meta,
           retries: attemptErrors.length || undefined,
           attempts: attemptErrors.length ? attemptErrors : undefined,
         });
+        current = undefined;
 
         if (hitSentinel) {
           const msg =

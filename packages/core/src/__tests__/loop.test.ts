@@ -447,6 +447,162 @@ describe("runLoop", () => {
     expect(exit).toHaveBeenCalledWith(143);
   });
 
+  it("records an aborted entry as the terminal marker on SIGINT mid-stage", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    makeDirtyRepo(dirs.workspaceDir);
+    const exit = vi.spyOn(process, "exit").mockImplementation(((
+      code?: number
+    ) => {
+      throw new Error(`exit ${code}`);
+    }) as never);
+    mocks.runStage.mockImplementation(
+      (_stage, _prompt, _workspace, _iteration, _spill, _log, options) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener("abort", () =>
+            reject(new Error("aborted"))
+          );
+        })
+    );
+
+    const loop = runLoop(
+      loopOptions(dirs, { maxRetries: 0, bin: "ralph-afk" })
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The handler writes the entry synchronously, before process.exit throws.
+    expect(() => process.emit("SIGINT")).toThrow("exit 130");
+
+    // Read at the exit moment: the aborted entry is the file's last content and
+    // no footer follows it (the process would have exited here in production).
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/1 · implementer · aborted · ");
+    expect(text).toContain("dirty: 1 files — wip.txt");
+    expect(text).toContain("Interrupted (SIGINT).");
+    expect(text).not.toMatch(/--- ended/);
+
+    await loop; // let the aborted stage's rejection settle
+    expect(exit).toHaveBeenCalledWith(130);
+    expect(mocks.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("records an aborted entry and preserves exit 143 on SIGTERM mid-stage", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    makeDirtyRepo(dirs.workspaceDir);
+    const exit = vi.spyOn(process, "exit").mockImplementation(((
+      code?: number
+    ) => {
+      throw new Error(`exit ${code}`);
+    }) as never);
+    mocks.runStage.mockImplementation(
+      (_stage, _prompt, _workspace, _iteration, _spill, _log, options) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener("abort", () =>
+            reject(new Error("aborted"))
+          );
+        })
+    );
+
+    const loop = runLoop(
+      loopOptions(dirs, { maxRetries: 0, bin: "ralph-afk" })
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(() => process.emit("SIGTERM")).toThrow("exit 143");
+
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/1 · implementer · aborted · ");
+    expect(text).toContain("Terminated (SIGTERM).");
+    expect(text).not.toMatch(/--- ended/);
+
+    await loop;
+    expect(exit).toHaveBeenCalledWith(143);
+    expect(mocks.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes no aborted entry when a signal arrives before any stage runs", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const exit = vi.spyOn(process, "exit").mockImplementation(((
+      code?: number
+    ) => {
+      throw new Error(`exit ${code}`);
+    }) as never);
+    // Signal lands while the image is still resolving: history is not open and
+    // the `current` slot is empty, so the handler records nothing.
+    mocks.ensureImage.mockImplementation((_ralphDir, options) => {
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener("abort", () =>
+          reject(new Error("image aborted"))
+        );
+      });
+    });
+
+    const loop = runLoop(loopOptions(dirs));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(() => process.emit("SIGINT")).toThrow("exit 130");
+    expect(existsSync(join(dirs.workspaceDir, ".ralph"))).toBe(false);
+
+    await expect(loop).rejects.toThrow("image aborted");
+    expect(mocks.release).toHaveBeenCalledTimes(1);
+    expect(exit).toHaveBeenCalledWith(130);
+  });
+
+  it("renders a prior run's aborted entry into the next implementer prompt", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 8, 8, 13, 0, 0)));
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    makeDirtyRepo(dirs.workspaceDir);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "impl.md"),
+      "<history>\n{{ HISTORY }}\n</history>\nrun",
+      "utf8"
+    );
+    vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Error(`exit ${code}`);
+    }) as never);
+
+    // Run 1: the stage is aborted mid-flight by SIGINT, writing an aborted entry.
+    mocks.runStage.mockImplementationOnce(
+      (_stage, _prompt, _workspace, _iteration, _spill, _log, options) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener("abort", () =>
+            reject(new Error("aborted"))
+          );
+        })
+    );
+    const run1 = runLoop(
+      loopOptions(dirs, {
+        stages: [impl] as [Stage],
+        maxRetries: 0,
+        bin: "ralph-afk",
+      })
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(() => process.emit("SIGINT")).toThrow("exit 130");
+    await run1; // settles after the abort rejection
+
+    // Run 2 (distinct UTC second → distinct filename) reads run 1's aborted entry.
+    vi.setSystemTime(new Date(Date.UTC(2026, 8, 8, 13, 0, 1)));
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+    await runLoop(
+      loopOptions(dirs, { stages: [impl] as [Stage], bin: "ralph-afk" })
+    );
+
+    const secondPrompt = String(mocks.runStage.mock.calls.at(-1)![1]);
+    expect(secondPrompt).toContain("· aborted · ");
+    expect(secondPrompt).toContain("dirty: 1 files — wip.txt");
+    vi.useRealTimers();
+  });
+
   it("records a history file with header, entry, and footer on sentinel", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
