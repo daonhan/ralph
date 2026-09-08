@@ -24,7 +24,7 @@ Read that file with `Read` (use `offset`/`limit` for large diffs) before reviewi
 
 You review the most recent commit (HEAD) produced by the implementer.
 
-If `<head>` shows `(no commits)` or HEAD is unchanged from the previous iteration, output `<review>SKIP</review>` and stop without making any commit.
+If `<head>` shows `(no commits)`, output `<review>SKIP</review>` and stop without making any commit.
 
 # CHECK
 

@@ -444,7 +444,7 @@ wsl bash -c "ralph-afk './docs/plans/inventory.md ./docs/prd/PRD-Inventory.md' 1
    - `@include:prompt.md` → the agent playbook (inlined by the Node renderer, no shell)
 2. **Implementer stage** (gate) — `docker run ralph-sandbox <selected-agent> …` with the rendered prompt streamed in via a tempfile under `.ralph-tmp/` (avoids Windows 32 KB argv limit). Provider events are normalized and rendered live; the terminal completion is captured.
 3. **Sentinel check** — if the completion contains `<promise>NO MORE TASKS</promise>`, print `Ralph complete after <N> iterations.` and exit 0.
-4. **Reviewer stage** — runs `packages/core/templates/review.md`. Reads the HEAD commit (the `git show --stat` summary inline, the full patch spilled to `.ralph-tmp/spill-…/head.diff` via `@spill?:head.diff`), then either commits a `fix(review): …` patch or emits `<review>OK</review>` / `<review>SKIP</review>` and stops. Single pass; never amends the implementer's commit.
+4. **Reviewer stage** — runs `packages/core/templates/review.md`. Reads the HEAD commit (the `git show --stat` summary inline, the full patch spilled to `.ralph-tmp/spill-…/head.diff` via `@spill?:head.diff`), then either commits a `fix(review): …` patch or emits `<review>OK</review>` / `<review>SKIP</review>` and stops. Single pass; never amends the implementer's commit. It runs only when the implementer stage moved HEAD; otherwise the loop records a `skipped` history entry and starts no container.
 
 ---
 
@@ -629,7 +629,7 @@ Use the pack-then-install path above. It exposes `ralph-afk` / `ralph-ghafk` glo
    ```
 4. `pnpm -r build` and republish.
 
-Only the first stage is the gate (sentinel-checked). Subsequent stages always run after a non-sentinel gate result. Ralph runs the selected provider without interactive approval (`permissionMode: "bypassPermissions"` for Claude; `--dangerously-bypass-approvals-and-sandbox` for Codex). With the Docker socket disabled, persistent host-write exposure still includes the workspace mount and, for Claude, the read-write credential store (Codex credentials are mounted read-only); GitHub CLI config is read-only.
+Only the first stage is the gate (sentinel-checked). Later stages run only when the gate stage moved HEAD; otherwise the loop records a `skipped` history entry for each and starts no container. Ralph runs the selected provider without interactive approval (`permissionMode: "bypassPermissions"` for Claude; `--dangerously-bypass-approvals-and-sandbox` for Codex). With the Docker socket disabled, persistent host-write exposure still includes the workspace mount and, for Claude, the read-write credential store (Codex credentials are mounted read-only); GitHub CLI config is read-only.
 
 ### Change the template syntax
 
