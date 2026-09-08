@@ -109,10 +109,10 @@ function readHistory(workspaceDir: string): string {
 
 /**
  * Turn a workspace into a git repo with one committed `.gitignore` (so the
- * loop's own `.ralph-tmp/` and `.ralph/` scratch never counts as dirty), then
- * leave a single untracked file so `dirtySnapshot` reports exactly one path.
+ * loop's own `.ralph-tmp/` and `.ralph/` scratch never counts as dirty) and
+ * nothing else outstanding, so `dirtySnapshot` reports a clean tree.
  */
-function makeDirtyRepo(dir: string): void {
+function makeCleanRepo(dir: string): void {
   const git = (...args: string[]) =>
     execFileSync("git", args, { cwd: dir, stdio: "ignore" });
   git("init");
@@ -121,6 +121,14 @@ function makeDirtyRepo(dir: string): void {
   writeFileSync(join(dir, ".gitignore"), ".ralph-tmp/\n.ralph/\n", "utf8");
   git("add", ".gitignore");
   git("commit", "-m", "init");
+}
+
+/**
+ * {@link makeCleanRepo} plus a single untracked file, so `dirtySnapshot`
+ * reports exactly one path.
+ */
+function makeDirtyRepo(dir: string): void {
+  makeCleanRepo(dir);
   writeFileSync(join(dir, "wip.txt"), "draft\n", "utf8");
 }
 
@@ -911,6 +919,115 @@ describe("runLoop", () => {
     expect(mocks.runStage).toHaveBeenCalledTimes(1);
     expect(readHistory(dirs.workspaceDir)).toContain(
       "## iter 1/1 · reviewer · skipped · 0s · HEAD -"
+    );
+  });
+
+  it("carries the dirty-tree snapshot on the skipped entry", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    const rev: Stage = { name: "reviewer", template: "rev.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "impl.md"),
+      "impl",
+      "utf8"
+    );
+    writeFileSync(
+      join(dirs.packageDir, "templates", "rev.md"),
+      "review",
+      "utf8"
+    );
+    // The implementer commits nothing but leaves `wip.txt` behind.
+    makeDirtyRepo(dirs.workspaceDir);
+    mocks.runStage.mockResolvedValue(
+      ok("started something, committed nothing")
+    );
+
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [impl, rev] as [Stage, Stage],
+        bin: "ralph-afk",
+      })
+    );
+
+    const skipped = readHistory(dirs.workspaceDir).split(
+      "## iter 1/1 · reviewer · skipped ·"
+    )[1];
+    expect(skipped).toContain("dirty: 1 files — wip.txt");
+  });
+
+  it("adds no dirty line to the skipped entry in a clean workspace", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    const rev: Stage = { name: "reviewer", template: "rev.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "impl.md"),
+      "impl",
+      "utf8"
+    );
+    writeFileSync(
+      join(dirs.packageDir, "templates", "rev.md"),
+      "review",
+      "utf8"
+    );
+    makeCleanRepo(dirs.workspaceDir);
+    mocks.runStage.mockResolvedValue(ok("looked around, changed nothing"));
+
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [impl, rev] as [Stage, Stage],
+        bin: "ralph-afk",
+      })
+    );
+
+    const skipped = readHistory(dirs.workspaceDir).split(
+      "## iter 1/1 · reviewer · skipped ·"
+    )[1];
+    expect(skipped).toContain("log: -");
+    expect(skipped).not.toContain("dirty:");
+  });
+
+  it("shows the skipped entry and its dirty line to the next implementer", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    const rev: Stage = { name: "reviewer", template: "rev.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "impl.md"),
+      "<history>\n{{ HISTORY }}\n</history>",
+      "utf8"
+    );
+    writeFileSync(
+      join(dirs.packageDir, "templates", "rev.md"),
+      "review",
+      "utf8"
+    );
+    makeDirtyRepo(dirs.workspaceDir);
+    mocks.runStage
+      // Iteration 1: nothing committed → the reviewer is skipped.
+      .mockResolvedValueOnce(ok("left it uncommitted"))
+      // Iteration 2: the implementer lands work, so the reviewer runs.
+      .mockImplementationOnce(() => {
+        commitInWorkspace(dirs.workspaceDir, "impl.txt");
+        return Promise.resolve(ok("did work"));
+      })
+      .mockResolvedValueOnce(ok("<review>OK</review>"));
+
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [impl, rev] as [Stage, Stage],
+        iterations: 2,
+        bin: "ralph-afk",
+      })
+    );
+
+    expect(mocks.runStage).toHaveBeenCalledTimes(3);
+    const secondImplPrompt = String(mocks.runStage.mock.calls[1]![1]);
+    expect(secondImplPrompt).toContain("reviewer · skipped");
+    expect(secondImplPrompt).toContain("dirty: 1 files — wip.txt");
+    expect(readHistory(dirs.workspaceDir)).toContain(
+      "## iter 2/2 · reviewer · review-ok · "
     );
   });
 

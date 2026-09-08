@@ -236,6 +236,9 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
             // No stage ran, so there is no NDJSON log to point at.
             logPath: "-",
             body: `Skipped: HEAD did not move during the ${stages[0].name} stage.`,
+            // Uncommitted paths the gate left behind: the next implementer
+            // reads them off this entry through {{ HISTORY }}.
+            dirty: dirtySnapshot(workspaceDir),
           });
           continue;
         }
