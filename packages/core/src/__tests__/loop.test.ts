@@ -55,7 +55,7 @@ vi.mock("../stream-render.js", () => ({
   SYM_OUT: { bullet: "*" },
 }));
 
-import { runLoop } from "../loop.js";
+import { deriveStatus, runLoop } from "../loop.js";
 
 const stage: Stage = { name: "implementer", template: "stage.md" };
 const sentinel = "<promise>NO MORE TASKS</promise>";
@@ -482,5 +482,127 @@ describe("runLoop", () => {
     expect(mocks.runStage).toHaveBeenCalledTimes(2);
     const reviewerPrompt = String(mocks.runStage.mock.calls[1]![1]);
     expect(reviewerPrompt).not.toContain("<history>");
+  });
+
+  it("records the reviewer verdict and stage meta in the history entry", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    const rev: Stage = { name: "reviewer", template: "rev.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "impl.md"),
+      "impl",
+      "utf8"
+    );
+    writeFileSync(
+      join(dirs.packageDir, "templates", "rev.md"),
+      "review",
+      "utf8"
+    );
+    // Implementer text is not the sentinel → the reviewer stage also runs.
+    mocks.runStage
+      .mockResolvedValueOnce({
+        text: "did work",
+        meta: { turns: 8, costUsd: 0.6 },
+      })
+      .mockResolvedValueOnce({ text: "<review>OK</review>", meta: {} });
+
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [impl, rev] as [Stage, Stage],
+        bin: "ralph-afk",
+      })
+    );
+
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/1 · implementer · ok · ");
+    expect(text).toContain("· 8 turns · $0.60 · HEAD");
+    expect(text).toContain("## iter 1/1 · reviewer · review-ok · ");
+  });
+
+  it("records an error status when the provider reports an error", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    // Text would otherwise read 'ok', but the error signal wins.
+    mocks.runStage.mockResolvedValue({
+      text: "looks fine",
+      meta: { isError: true, apiErrorStatus: 429 },
+    });
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk" }));
+
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/1 · implementer · error · ");
+    // The loop still advances to the iteration cap exactly as before.
+    expect(text).toMatch(/--- ended · 1\/1 iterations · cap/);
+  });
+});
+
+describe("deriveStatus", () => {
+  const clean = { headBefore: "-", headAfter: "-" };
+
+  it("judges the gate by the completion sentinel", () => {
+    expect(
+      deriveStatus({ isGate: true, text: sentinel, meta: {}, ...clean })
+    ).toBe("no-more-tasks");
+    expect(
+      deriveStatus({ isGate: true, text: "still working", meta: {}, ...clean })
+    ).toBe("ok");
+  });
+
+  it("judges the reviewer by its verdict tag, then by HEAD movement", () => {
+    expect(
+      deriveStatus({
+        isGate: false,
+        text: "<review>OK</review>",
+        meta: {},
+        ...clean,
+      })
+    ).toBe("review-ok");
+    expect(
+      deriveStatus({
+        isGate: false,
+        text: "<review>SKIP</review>",
+        meta: {},
+        ...clean,
+      })
+    ).toBe("review-skip");
+    expect(
+      deriveStatus({
+        isGate: false,
+        text: "committed a fix",
+        meta: {},
+        headBefore: "aaa1111",
+        headAfter: "bbb2222",
+      })
+    ).toBe("review-fix");
+    expect(
+      deriveStatus({
+        isGate: false,
+        text: "nothing to change",
+        meta: {},
+        headBefore: "aaa1111",
+        headAfter: "aaa1111",
+      })
+    ).toBe("ok");
+  });
+
+  it("lets a provider error win over any text-derived status", () => {
+    expect(
+      deriveStatus({
+        isGate: true,
+        text: "still working",
+        meta: { isError: true },
+        ...clean,
+      })
+    ).toBe("error");
+    expect(
+      deriveStatus({
+        isGate: false,
+        text: "<review>OK</review>",
+        meta: { apiErrorStatus: 429 },
+        ...clean,
+      })
+    ).toBe("error");
   });
 });

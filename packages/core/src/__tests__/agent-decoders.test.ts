@@ -74,6 +74,27 @@ describe("Claude stream decoder", () => {
   it("preserves Claude's legacy empty finish result", () => {
     expect(createClaudeDecoder().finish()).toBe("");
   });
+
+  it("fills meta from the result record: cost, turns, tokens, error signals", () => {
+    const decoded = createClaudeDecoder().decode({
+      type: "result",
+      result: "done",
+      total_cost_usd: 0.6,
+      num_turns: 8,
+      usage: { input_tokens: 12300, output_tokens: 1100 },
+      is_error: true,
+      api_error_status: 429,
+    });
+    expect(decoded.completion).toBe("done");
+    expect(decoded.meta).toEqual({
+      costUsd: 0.6,
+      turns: 8,
+      inputTokens: 12300,
+      outputTokens: 1100,
+      isError: true,
+      apiErrorStatus: 429,
+    });
+  });
 });
 
 describe("Codex stream decoder", () => {
@@ -141,6 +162,28 @@ describe("Codex stream decoder", () => {
       completion: "finished",
     });
     expect(decoder.finish()).toBe("finished");
+  });
+
+  it("fills token usage from turn.completed and nothing else", () => {
+    const decoder = createCodexDecoder();
+    decoder.decode({
+      type: "item.completed",
+      item: { type: "agent_message", text: "finished" },
+    });
+    expect(
+      decoder.decode({
+        type: "turn.completed",
+        usage: {
+          input_tokens: 12300,
+          cached_input_tokens: 0,
+          output_tokens: 1100,
+        },
+      })
+    ).toEqual({
+      events: [],
+      completion: "finished",
+      meta: { inputTokens: 12300, outputTokens: 1100 },
+    });
   });
 
   it.each([

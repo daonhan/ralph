@@ -582,6 +582,7 @@ export function streamDocker(
             process.stderr.write(
               `${dim(`grace timer fired after ${graceMs}ms post-completion — killing docker child`)}\n`
             );
+            meta.graceTimerFired = true;
             try {
               child.kill();
             } catch {

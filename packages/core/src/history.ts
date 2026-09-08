@@ -9,6 +9,8 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 
+import type { StageMeta } from "./agents/index.js";
+
 // Harness-owned, per-run Markdown history under <workspace>/.ralph/history/.
 // The loop driver — never the agent — writes here: a header when the run opens,
 // one entry per completed stage, a footer on normal loop exit. Later slices add
@@ -112,7 +114,35 @@ export type StageEntry = {
   logPath: string;
   /** Agent's final message, verbatim. */
   body: string;
+  /** Provider/runner metadata; only present fields reach the header. */
+  meta?: StageMeta;
 };
+
+/** Tokens rendered as thousands with one decimal: 12300 → "12.3", 1100 → "1.1". */
+function formatThousands(n: number): string {
+  return (n / 1000).toFixed(1);
+}
+
+/**
+ * Optional header segments between the duration and `HEAD`, each prefixed with
+ * ` · ` and emitted only when its field is present:
+ * `<n> turns`, `$<cost>`, `<in>k in / <out>k out`, `grace-timer`.
+ */
+function renderMetaSegments(meta: StageMeta | undefined): string {
+  if (!meta) return "";
+  const segments: string[] = [];
+  if (meta.turns !== undefined) segments.push(`${meta.turns} turns`);
+  if (meta.costUsd !== undefined) segments.push(`$${meta.costUsd.toFixed(2)}`);
+  if (meta.inputTokens !== undefined && meta.outputTokens !== undefined) {
+    segments.push(
+      `${formatThousands(meta.inputTokens)}k in / ${formatThousands(
+        meta.outputTokens
+      )}k out`
+    );
+  }
+  if (meta.graceTimerFired) segments.push("grace-timer");
+  return segments.map((s) => ` · ${s}`).join("");
+}
 
 function renderHeader(
   bin: string,
@@ -132,7 +162,7 @@ function renderHeader(
 function renderEntry(iterations: number, e: StageEntry): string {
   const head = `## iter ${e.iteration}/${iterations} · ${e.stage} · ${e.status} · ${formatDuration(
     e.durationMs
-  )} · HEAD ${e.head}`;
+  )}${renderMetaSegments(e.meta)} · HEAD ${e.head}`;
   return `${head}\nlog: ${e.logPath}\n\n${e.body}\n\n`;
 }
 

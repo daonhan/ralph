@@ -149,6 +149,47 @@ describe("openHistory", () => {
     );
   });
 
+  it("renders present meta fields in the header, omitting absent ones", () => {
+    const writer = openHistory({
+      workspaceDir: makeWorkspace(),
+      bin: "afk",
+      iterations: 1,
+      inputs: "plan",
+      now,
+    });
+
+    // Claude-shaped meta: turns + cost, no tokens.
+    writer.appendEntry({
+      iteration: 1,
+      stage: "implementer",
+      status: "ok",
+      durationMs: 139_000,
+      head: "abc1234",
+      logPath: ".ralph-tmp/logs/impl.ndjson",
+      body: "did the thing",
+      meta: { turns: 8, costUsd: 0.6 },
+    });
+    // Codex-shaped meta: tokens only, plus a fired grace timer.
+    writer.appendEntry({
+      iteration: 1,
+      stage: "reviewer",
+      status: "review-ok",
+      durationMs: 139_000,
+      head: "abc1234",
+      logPath: ".ralph-tmp/logs/rev.ndjson",
+      body: "clean",
+      meta: { inputTokens: 12300, outputTokens: 1100, graceTimerFired: true },
+    });
+
+    const text = readFileSync(writer.filePath, "utf8");
+    expect(text).toContain(
+      "## iter 1/1 · implementer · ok · 2m19s · 8 turns · $0.60 · HEAD abc1234"
+    );
+    expect(text).toContain(
+      "## iter 1/1 · reviewer · review-ok · 2m19s · 12.3k in / 1.1k out · grace-timer · HEAD abc1234"
+    );
+  });
+
   it("does not rewrite an existing .gitignore on a second run", () => {
     const workspaceDir = makeWorkspace();
     openHistory({ workspaceDir, bin: "afk", iterations: 1, inputs: "p", now });

@@ -35,6 +35,38 @@ import type { Stage } from "./stages.js";
 // mirrored in the playbook templates (prompt.md / ghprompt.md) that instruct it.
 const SENTINEL = "<promise>NO MORE TASKS</promise>";
 
+// Reviewer verdicts (review.md). Neither tag + a moved HEAD ⇒ the reviewer
+// committed a fix; neither tag + unchanged HEAD ⇒ a plain ok.
+const REVIEW_OK = "<review>OK</review>";
+const REVIEW_SKIP = "<review>SKIP</review>";
+
+/**
+ * The status recorded for one completed stage. A provider error (`meta.isError`
+ * or an `apiErrorStatus`) wins over any text-derived status, so a rate-limited
+ * `429` turn is recorded as `error` instead of a false success. The gate stage
+ * (index 0) is judged by the completion sentinel; every later stage is the
+ * reviewer, judged by its `<review>` tag or, absent a tag, by whether it moved
+ * HEAD (a `review-fix` commit).
+ */
+export function deriveStatus(args: {
+  isGate: boolean;
+  text: string;
+  meta: StageMeta;
+  headBefore: string;
+  headAfter: string;
+}): string {
+  if (args.meta.isError === true || args.meta.apiErrorStatus !== undefined) {
+    return "error";
+  }
+  if (args.isGate) {
+    return args.text.includes(SENTINEL) ? "no-more-tasks" : "ok";
+  }
+  if (args.text.includes(REVIEW_OK)) return "review-ok";
+  if (args.text.includes(REVIEW_SKIP)) return "review-skip";
+  if (args.headAfter !== args.headBefore) return "review-fix";
+  return "ok";
+}
+
 export type LoopOptions = {
   // First stage is the gate: its result is checked for the completion sentinel.
   // Subsequent stages always run after a non-sentinel gate result.
@@ -151,8 +183,11 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         const stageLog = stageLogPath(workspaceDir, i, stage.name);
         mkdirSync(dirname(stageLog), { recursive: true });
 
-        // Duration is measured around the whole retried call.
+        // Duration is measured around the whole retried call. HEAD is captured
+        // before the stage runs so a reviewer that commits a fix is recorded as
+        // review-fix (before vs after).
         const startedAt = Date.now();
+        const headBefore = headShort(workspaceDir);
         let result: { text: string; meta: StageMeta };
         try {
           result = await withRetries(
@@ -215,15 +250,23 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
           break;
         }
 
+        const headAfter = headShort(workspaceDir);
         const hitSentinel = s === 0 && result.text.includes(SENTINEL);
         history.appendEntry({
           iteration: i,
           stage: stage.name,
-          status: hitSentinel ? "no-more-tasks" : "ok",
+          status: deriveStatus({
+            isGate: s === 0,
+            text: result.text,
+            meta: result.meta,
+            headBefore,
+            headAfter,
+          }),
           durationMs: Date.now() - startedAt,
-          head: headShort(workspaceDir),
+          head: headAfter,
           logPath: posix.join(".ralph-tmp", "logs", basename(stageLog)),
           body: result.text,
+          meta: result.meta,
         });
 
         if (hitSentinel) {

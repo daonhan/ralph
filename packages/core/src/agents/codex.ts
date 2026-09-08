@@ -6,6 +6,7 @@ import type {
   AgentCommandContext,
   AgentDecodeResult,
   AgentStreamDecoder,
+  StageMeta,
 } from "./types.js";
 
 function stringValue(value: unknown): string | undefined {
@@ -102,6 +103,25 @@ function toolFailed(item: Record<string, unknown>): boolean {
   );
 }
 
+/**
+ * Token usage from a Codex `turn.completed` record. Codex reports only the
+ * usage block here (no cost or turn count), so the history header shows tokens
+ * alone for Codex stages. Absent or non-numeric fields are left unset.
+ */
+function codexTurnMeta(event: Record<string, unknown>): StageMeta {
+  const meta: StageMeta = {};
+  const usage = record(event.usage);
+  if (usage) {
+    if (typeof usage.input_tokens === "number") {
+      meta.inputTokens = usage.input_tokens;
+    }
+    if (typeof usage.output_tokens === "number") {
+      meta.outputTokens = usage.output_tokens;
+    }
+  }
+  return meta;
+}
+
 export function createCodexDecoder(): AgentStreamDecoder {
   // The final agent message is the stage's completion string — for the gate
   // stage, loop.ts sentinel-checks it for `<promise>NO MORE TASKS</promise>`.
@@ -187,7 +207,13 @@ export function createCodexDecoder(): AgentStreamDecoder {
           };
         }
         turnCompleted = true;
-        return { events: [], completion: lastAgentMessage };
+        const meta = codexTurnMeta(event);
+        const result: AgentDecodeResult = {
+          events: [],
+          completion: lastAgentMessage,
+        };
+        if (Object.keys(meta).length > 0) result.meta = meta;
+        return result;
       }
 
       if (event.type === "turn.failed") {
