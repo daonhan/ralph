@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.11.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.10.0...ralph-core-v0.11.0) (2026-09-08)
+
+
+### Features
+
+* **core:** detect the sandbox-install fingerprints on the host ([e92b48e](https://github.com/daonhan/ralph/commit/e92b48ec9306f0e2bfb5b7a8f9bd9c838a0df9d3))
+* **core:** warn at loop end when a sandbox install rewrote node_modules ([3fcd87c](https://github.com/daonhan/ralph/commit/3fcd87cc5f4d665fbe3da8c323ffcdf651439595))
+* **core:** warn at loop end when a sandbox install rewrote the host node_modules ([3c04bc0](https://github.com/daonhan/ralph/commit/3c04bc0a8f07b7f115d78bba134d360e231f9353))
+
 ## [0.10.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.9.0...ralph-core-v0.10.0) (2026-09-08)
 
 
