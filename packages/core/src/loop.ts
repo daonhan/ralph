@@ -1,5 +1,5 @@
 import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname, join, posix } from "node:path";
+import { basename, dirname, join, posix } from "node:path";
 
 import {
   CODEX_USER_CONFIG_REQUIRES_CODEX,
@@ -7,6 +7,7 @@ import {
   type StageMeta,
 } from "./agents/index.js";
 import { readCoreVersion } from "./cli-help.js";
+import { headShort, openHistory } from "./history.js";
 import { acquire, type Releaser } from "./keepalive.js";
 import { notifyComplete, notifyError } from "./notify.js";
 import { renderTemplate } from "./render.js";
@@ -125,6 +126,16 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
   try {
     await ensureImage(ralphDir, { signal: stageAbort.signal });
 
+    // History opens only after the image is confirmed: an image failure must
+    // leave no .ralph/ directory behind. `bin` arrives as "ralph-afk" /
+    // "ralph-ghafk"; the history file uses the short "afk" / "ghafk" form.
+    const history = openHistory({
+      workspaceDir,
+      bin: bin.replace(/^ralph-/, ""),
+      iterations,
+      inputs,
+    });
+
     for (let i = 1; i <= iterations; i++) {
       for (let s = 0; s < stages.length; s++) {
         const stage = stages[s];
@@ -140,6 +151,8 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         const stageLog = stageLogPath(workspaceDir, i, stage.name);
         mkdirSync(dirname(stageLog), { recursive: true });
 
+        // Duration is measured around the whole retried call.
+        const startedAt = Date.now();
         let result: { text: string; meta: StageMeta };
         try {
           result = await withRetries(
@@ -196,22 +209,33 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
           break;
         }
 
-        if (s === 0) {
-          if (result.text.includes(SENTINEL)) {
-            const msg =
-              greenOut(SYM_OUT.bullet) +
-              " " +
-              boldOut("Ralph complete") +
-              dimOut(" after " + i + " iterations");
-            process.stdout.write(msg + "\n");
-            sentinelHit = true;
-            completedIterations = i;
-            return;
-          }
+        const hitSentinel = s === 0 && result.text.includes(SENTINEL);
+        history.appendEntry({
+          iteration: i,
+          stage: stage.name,
+          status: hitSentinel ? "no-more-tasks" : "ok",
+          durationMs: Date.now() - startedAt,
+          head: headShort(workspaceDir),
+          logPath: posix.join(".ralph-tmp", "logs", basename(stageLog)),
+          body: result.text,
+        });
+
+        if (hitSentinel) {
+          const msg =
+            greenOut(SYM_OUT.bullet) +
+            " " +
+            boldOut("Ralph complete") +
+            dimOut(" after " + i + " iterations");
+          process.stdout.write(msg + "\n");
+          sentinelHit = true;
+          completedIterations = i;
+          history.appendFooter(i, "no-more-tasks");
+          return;
         }
       }
       completedIterations = i;
     }
+    history.appendFooter(completedIterations, "cap");
   } catch (err) {
     if (notify) notifyError((err as Error).message);
     throw err;

@@ -1,7 +1,14 @@
+import { join } from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_CLAUDE_MODEL } from "../agents/claude.js";
-import { describeAgentConfig, parseFlags, printHelp } from "../cli-help.js";
+import {
+  describeAgentConfig,
+  parseFlags,
+  printConfig,
+  printHelp,
+} from "../cli-help.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -115,4 +122,13 @@ it("documents both new flags and RALPH_AGENT", () => {
   expect(output).toContain("--codex-user-config");
   expect(output).toContain("RALPH_AGENT");
   expect(output).toContain("gpt-5.6-sol");
+});
+
+it("prints the history dir under the resolved workspace", () => {
+  const write = vi
+    .spyOn(process.stdout, "write")
+    .mockImplementation(() => true);
+  printConfig("ralph-afk", "/repo", "/ctx", "/pkg");
+  const output = write.mock.calls.map((call) => String(call[0])).join("");
+  expect(output).toContain(`history dir           ${join("/repo", ".ralph", "history")}`);
 });

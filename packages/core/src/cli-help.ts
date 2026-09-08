@@ -324,6 +324,7 @@ export function printConfig(
   RALPH_IMAGE           ${IMAGE_REF}${process.env.RALPH_IMAGE || process.env.RALPH_IMAGE_TAG ? "" : "  (default)"}
   Dockerfile at ctx     ${dfPresent ? "present" : "MISSING"} (${dockerfile})
   packageDir            ${packageDir}
+  history dir           ${join(workspaceDir, ".ralph", "history")}
 ${providerLines}
   RALPH_DOCKER_SOCK     ${sockStatus}
   keep-alive            ${keepAliveStatus}

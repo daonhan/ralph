@@ -1,6 +1,8 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -96,6 +98,12 @@ function loopOptions(dirs: LoopDirs, overrides = {}) {
     packageDir: dirs.packageDir,
     ...overrides,
   };
+}
+
+function readHistory(workspaceDir: string): string {
+  const dir = join(workspaceDir, ".ralph", "history");
+  const md = readdirSync(dir).find((f) => f.endsWith(".md"));
+  return readFileSync(join(dir, md!), "utf8");
 }
 
 describe("runLoop", () => {
@@ -340,5 +348,65 @@ describe("runLoop", () => {
     expect(mocks.runStage).not.toHaveBeenCalled();
     expect(mocks.release).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledWith(143);
+  });
+
+  it("records a history file with header, entry, and footer on sentinel", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk" }));
+
+    expect(
+      readFileSync(
+        join(dirs.workspaceDir, ".ralph", "history", ".gitignore"),
+        "utf8"
+      )
+    ).toBe("*\n");
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("# ralph-afk ");
+    expect(text).toContain("inputs: plan");
+    expect(text).toContain("## iter 1/1 · implementer · no-more-tasks · ");
+    expect(text).toMatch(/--- ended · 1\/1 iterations · no-more-tasks/);
+  });
+
+  it("closes the footer with 'cap' when the loop runs to its iteration cap", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(ok("still working"));
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk", iterations: 2 }));
+
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toContain("## iter 1/2 · implementer · ok · ");
+    expect(text).toContain("## iter 2/2 · implementer · ok · ");
+    expect(text).toMatch(/--- ended · 2\/2 iterations · cap/);
+  });
+
+  it("does not rewrite the history .gitignore on a second run", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk" }));
+    const gitignore = join(
+      dirs.workspaceDir,
+      ".ralph",
+      "history",
+      ".gitignore"
+    );
+    writeFileSync(gitignore, "custom\n", "utf8");
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk" }));
+    expect(readFileSync(gitignore, "utf8")).toBe("custom\n");
+  });
+
+  it("writes no history file when image setup fails before the loop", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.ensureImage.mockRejectedValue(new Error("no image"));
+
+    await expect(runLoop(loopOptions(dirs))).rejects.toThrow("no image");
+    expect(existsSync(join(dirs.workspaceDir, ".ralph"))).toBe(false);
   });
 });
