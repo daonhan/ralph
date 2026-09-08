@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.8.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.7.3...ralph-core-v0.8.0) (2026-09-08)
+
+
+### Features
+
+* **core:** honest statuses and metadata for iteration history ([8e300f9](https://github.com/daonhan/ralph/commit/8e300f94df3570649f4ad5207e92ea7df153853c))
+* **core:** inject iteration history into implementer prompt ([20e8604](https://github.com/daonhan/ralph/commit/20e860445cbe5500249be879a56709b71e0a7172))
+* **core:** iteration history under .ralph/history, injected as {{ HISTORY }} ([d488cb7](https://github.com/daonhan/ralph/commit/d488cb7e3bd65c0397de061f168ae69f16460bd5))
+* **core:** record Ctrl+C / SIGTERM as an aborted history entry ([c584d93](https://github.com/daonhan/ralph/commit/c584d93e9b08120e7901ac96f253f6856f73218a))
+* **core:** record failures and retries in iteration history ([08c5764](https://github.com/daonhan/ralph/commit/08c5764b2c3cd2af283e79faa86c2b8f2255a596))
+* **core:** write per-run iteration history under .ralph/history ([930e445](https://github.com/daonhan/ralph/commit/930e445c2c09afe74ef88160b4a0a624e4b1eea2))
+
+
+### Code Refactoring
+
+* **core:** runStage resolves { text, meta } ([eada57d](https://github.com/daonhan/ralph/commit/eada57d88999594d98bdc8c88d155b90d8fcead0))
+
 ## [0.7.3](https://github.com/daonhan/ralph/compare/ralph-core-v0.7.2...ralph-core-v0.7.3) (2026-07-25)
 
 
