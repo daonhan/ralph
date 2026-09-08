@@ -298,6 +298,44 @@ describe("openHistory", () => {
     expect(footer).not.toContain("(");
   });
 
+  it("suffixes the footer with the sandbox-install warning when findings exist", () => {
+    const writer = openHistory({
+      workspaceDir: makeWorkspace(),
+      bin: "afk",
+      iterations: 3,
+      inputs: "plan",
+      now,
+    });
+    writer.appendEntry(entry("implementer", "ok"));
+    writer.appendFooter(1, "cap", ["x"]);
+
+    expect(lastLine(writer.filePath)).toMatch(
+      /^--- ended · 1\/3 iterations · cap · 1 stages · \d+s · warning: sandbox-install$/
+    );
+  });
+
+  it("leaves the footer bare when the host check found nothing", () => {
+    const bare = /^--- ended · 1\/3 iterations · cap · 1 stages · \d+s$/;
+    const open = () =>
+      openHistory({
+        workspaceDir: makeWorkspace(),
+        bin: "afk",
+        iterations: 3,
+        inputs: "plan",
+        now,
+      });
+
+    const omitted = open();
+    omitted.appendEntry(entry("implementer", "ok"));
+    omitted.appendFooter(1, "cap");
+    expect(lastLine(omitted.filePath)).toMatch(bare);
+
+    const empty = open();
+    empty.appendEntry(entry("implementer", "ok"));
+    empty.appendFooter(1, "cap", []);
+    expect(lastLine(empty.filePath)).toMatch(bare);
+  });
+
   it("renders present meta fields in the header, omitting absent ones", () => {
     const writer = openHistory({
       workspaceDir: makeWorkspace(),
