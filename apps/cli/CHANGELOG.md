@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.7](https://github.com/daonhan/ralph/compare/ralph-v0.6.6...ralph-v0.6.7) (2026-09-08)
+
+
+### Dependencies
+
+* **cli:** pick up @daonhan/ralph-core 0.8.0 (iteration history) ([378dc61](https://github.com/daonhan/ralph/commit/378dc61ac336af4e84cd7bb40b8a311ac5ebdc63))
+
 ## [0.6.6](https://github.com/daonhan/ralph/compare/ralph-v0.6.5...ralph-v0.6.6) (2026-07-25)
 
 
