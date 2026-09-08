@@ -50,6 +50,7 @@ vi.mock("../stream-render.js", () => ({
   bold: (s: string) => s,
   red: (s: string) => s,
   greenOut: (s: string) => s,
+  redOut: (s: string) => s,
   boldOut: (s: string) => s,
   dimOut: (s: string) => s,
   SYM: { cross: "FAIL" },
@@ -99,6 +100,15 @@ function loopOptions(dirs: LoopDirs, overrides = {}) {
     packageDir: dirs.packageDir,
     ...overrides,
   };
+}
+
+/** Everything the stdout spy was handed, joined — the loop's summary line. */
+function readStdout(): string {
+  return (
+    process.stdout.write as unknown as { mock: { calls: unknown[][] } }
+  ).mock.calls
+    .map((c) => String(c[0]))
+    .join("");
 }
 
 function readHistory(workspaceDir: string): string {
@@ -509,6 +519,7 @@ describe("runLoop", () => {
     expect(text).toContain("dirty: 1 files — wip.txt");
     expect(text).toContain("Interrupted (SIGINT).");
     expect(text).not.toMatch(/--- ended/);
+    expect(readStdout()).not.toContain("Ralph ended");
 
     await loop; // let the aborted stage's rejection settle
     expect(exit).toHaveBeenCalledWith(130);
@@ -662,6 +673,83 @@ describe("runLoop", () => {
     expect(text).toContain("## iter 1/2 · implementer · ok · ");
     expect(text).toContain("## iter 2/2 · implementer · ok · ");
     expect(text).toMatch(/--- ended · 2\/2 iterations · cap/);
+  });
+
+  it("prints the run summary line and footer totals on the sentinel exit", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue({
+      text: sentinel,
+      meta: { costUsd: 0.25 },
+    });
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk" }));
+
+    expect(readStdout()).toContain(
+      "* Ralph ended · no-more-tasks · 1/1 iterations · 1 stages · $0.25 · "
+    );
+    expect(readHistory(dirs.workspaceDir)).toContain(
+      "--- ended · 1/1 iterations · no-more-tasks · 1 stages · $0.25 · "
+    );
+  });
+
+  it("counts the skipped reviewer in the summary line at the iteration cap", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    const rev: Stage = { name: "reviewer", template: "rev.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "impl.md"),
+      "impl",
+      "utf8"
+    );
+    writeFileSync(
+      join(dirs.packageDir, "templates", "rev.md"),
+      "review",
+      "utf8"
+    );
+    // The gate commits nothing, so the reviewer is skipped, not run.
+    makeCleanRepo(dirs.workspaceDir);
+    mocks.runStage.mockResolvedValue(ok("still working"));
+
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [impl, rev] as [Stage, Stage],
+        bin: "ralph-afk",
+      })
+    );
+
+    expect(mocks.runStage).toHaveBeenCalledTimes(1);
+    expect(readStdout()).toContain(
+      "* Ralph ended · cap · 1/1 iterations · 1 stages (1 skipped) · "
+    );
+  });
+
+  it("marks the summary line failed when the last iteration failed", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockRejectedValue(new Error("boom"));
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk", maxRetries: 0 }));
+
+    expect(readStdout()).toContain(
+      "* Ralph ended · failed · 1/1 iterations · 1 stages · "
+    );
+  });
+
+  it("omits cost and tokens from the summary line when no stage reported them", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk" }));
+
+    const stdout = readStdout();
+    expect(stdout).toContain(
+      "* Ralph ended · no-more-tasks · 1/1 iterations · 1 stages · "
+    );
+    expect(stdout).not.toContain("$");
+    expect(stdout).not.toContain("k in");
   });
 
   it("does not rewrite the history .gitignore on a second run", async () => {
