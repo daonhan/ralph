@@ -443,8 +443,9 @@ wsl bash -c "ralph-afk './docs/plans/inventory.md ./docs/prd/PRD-Inventory.md' 1
    - `{{ INPUTS }}` → the plan/PRD string
    - `@include:prompt.md` → the agent playbook (inlined by the Node renderer, no shell)
 2. **Implementer stage** (gate) — `docker run ralph-sandbox <selected-agent> …` with the rendered prompt streamed in via a tempfile under `.ralph-tmp/` (avoids Windows 32 KB argv limit). Provider events are normalized and rendered live; the terminal completion is captured.
-3. **Sentinel check** — if the completion contains `<promise>NO MORE TASKS</promise>`, print `Ralph complete after <N> iterations.` and exit 0.
+3. **Sentinel check** — if the completion contains `<promise>NO MORE TASKS</promise>`, the loop skips the reviewer and exits 0.
 4. **Reviewer stage** — runs `packages/core/templates/review.md`. Reads the HEAD commit (the `git show --stat` summary inline, the full patch spilled to `.ralph-tmp/spill-…/head.diff` via `@spill?:head.diff`), then either commits a `fix(review): …` patch or emits `<review>OK</review>` / `<review>SKIP</review>` and stops. Single pass; never amends the implementer's commit. It runs only when the implementer stage moved HEAD; otherwise the loop records a `skipped` history entry and starts no container.
+5. **Run summary** — every non-signal exit (sentinel, iteration cap, failed stage) prints one stdout line with the reason, iterations completed, stages run and skipped, cost, tokens and wall time — e.g. `● Ralph ended · cap · 3/3 iterations · 5 stages (1 skipped) · $4.12 · 118.3k in / 9.6k out · 42m10s` — and the run's history file ends with a footer carrying the same totals: `--- ended · 3/3 iterations · cap · 5 stages (1 skipped) · $4.12 · 118.3k in / 9.6k out · 42m10s`.
 
 ---
 
@@ -469,6 +470,7 @@ No plan/PRD arg — context comes from open GitHub issues.
 2. **ghafk-implementer stage** (gate) — agent picks one open AFK issue, implements it, commits, closes / comments on the issue.
 3. **Sentinel check** — same as `ralph-afk`.
 4. **Reviewer stage** — same as `ralph-afk`.
+5. **Run summary** — same as `ralph-afk`.
 
 ---
 

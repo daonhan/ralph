@@ -47,7 +47,7 @@ runLoop (loop.ts)
             spawn docker run … <provider command> …
             streamDocker: provider JSONL → normalized events → live print
                                    capture completion → return value
-        if s == 0 and result ⊇ SENTINEL: print "Ralph complete", return
+        if s == 0 and result ⊇ SENTINEL: print run summary, return
    finally: release wake-lock, off() signal handlers, [--notify] toast
 ```
 
@@ -83,7 +83,7 @@ ralph-ghafk → [STAGES.ghafkImplementer, STAGES.reviewer]   inputs = ""
 <promise>NO MORE TASKS</promise>
 ```
 
-On a hit the loop prints `Ralph complete` and returns immediately — subsequent stages do **not** run. The sentinel string is hardcoded as `SENTINEL` in [`../packages/core/src/loop.ts`](../packages/core/src/loop.ts), and the agent is told to emit it (see [`../packages/core/templates/prompt.md`](../packages/core/templates/prompt.md)) when no AFK tasks remain. The **reviewer never gates** — only `s === 0` is sentinel-checked.
+On a hit the loop prints the `Ralph ended · no-more-tasks · …` summary line and returns immediately — subsequent stages do **not** run. The sentinel string is hardcoded as `SENTINEL` in [`../packages/core/src/loop.ts`](../packages/core/src/loop.ts), and the agent is told to emit it (see [`../packages/core/templates/prompt.md`](../packages/core/templates/prompt.md)) when no AFK tasks remain. The **reviewer never gates** — only `s === 0` is sentinel-checked.
 
 **Failure handling within an iteration:** each stage is wrapped in `withRetries`. If a stage exhausts its retry budget, `loop.ts` writes a `[failure]` marker to the stage log, prints a failure line, and `break`s out of the stage loop — abandoning the rest of _that_ iteration. The outer iteration loop then proceeds to the next iteration (`i + 1`). A stage failure does **not** abort the whole run.
 
@@ -373,7 +373,7 @@ Everything lands under `<workspace>/.ralph-tmp/` (gitignored):
 
 `.run-*.md` and `spill-*/` are removed in `runStage`'s `finally`; the NDJSON logs are kept for inspection. A leaked `.run-*.md` after a hard kill is safe to delete.
 
-Separately, `runLoop` writes one Markdown history file per run under `<workspace>/.ralph/history/<yyyy-MM-dd-HHmmss>-<bin>[-<branch>].md` (self-gitignored via its own `*` `.gitignore`, written once): a header on open, one entry per completed stage, a footer on exit. The last ten entries across all runs are loaded back into the implementer prompt as `{{ HISTORY }}`. This is harness-owned — only [`history.ts`](../packages/core/src/history.ts), driven by `loop.ts`, writes here (pure `fs` + tolerant `git` reads, never Docker).
+Separately, `runLoop` writes one Markdown history file per run under `<workspace>/.ralph/history/<yyyy-MM-dd-HHmmss>-<bin>[-<branch>].md` (self-gitignored via its own `*` `.gitignore`, written once): a header on open, one entry per completed stage, a footer with run totals on exit. The last ten entries across all runs are loaded back into the implementer prompt as `{{ HISTORY }}`. This is harness-owned — only [`history.ts`](../packages/core/src/history.ts), driven by `loop.ts`, writes here (pure `fs` + tolerant `git` reads, never Docker).
 
 ---
 
