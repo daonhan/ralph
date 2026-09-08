@@ -82,6 +82,7 @@ Pre-commit runs prettier on staged files then typecheck. Image changes: `pnpm sm
 - **Sandbox CLI default model is frozen at image build.** Ralph always passes `--model` explicitly so it tracks the host's setting.
 - **`pnpm link --global` breaks here.** Use `pnpm pack` + `npm i -g` to smoke-test the tarballs.
 - **Node modules built in WSL break native-Windows bins** (husky, prettier). Reinstall from the environment you commit from.
+- **A sandbox install rewrites the bind-mounted `node_modules`** the same way (Linux store path, Linux symlinks, a stray `.pnpm-store/`). Ralph warns on stderr at loop end and the history footer carries `warning: sandbox-install`; reinstall on the host.
 - **Leaked `.ralph-tmp/.run-*.md` after a hard kill** are safe to delete; NDJSON logs under `.ralph-tmp/logs/` are kept on purpose.
 
 ## Where to go for…
