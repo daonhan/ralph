@@ -19,6 +19,7 @@ import {
   loadHistoryTail,
   openHistory,
   sanitizeBranch,
+  type StageEntry,
 } from "../history.js";
 
 const roots: string[] = [];
@@ -128,6 +129,24 @@ describe("dirtySnapshot", () => {
 describe("openHistory", () => {
   const now = new Date(Date.UTC(2026, 8, 8, 12, 34, 56));
 
+  /** A boilerplate entry; the run-totals tests vary only status and meta. */
+  function entry(stage: string, status: string): StageEntry {
+    return {
+      iteration: 1,
+      stage,
+      status,
+      durationMs: 5_000,
+      head: "abc1234",
+      logPath: ".ralph-tmp/logs/x.ndjson",
+      body: "body",
+    };
+  }
+
+  /** The run file's last line — the footer, once one has been appended. */
+  function lastLine(filePath: string): string {
+    return readFileSync(filePath, "utf8").trimEnd().split("\n").pop()!;
+  }
+
   it("creates .ralph/history/.gitignore with '*' and names the file (no git)", () => {
     const workspaceDir = makeWorkspace();
     const writer = openHistory({
@@ -187,8 +206,96 @@ describe("openHistory", () => {
     expect(text).toContain("log: .ralph-tmp/logs/run.ndjson");
     expect(text).toContain("did the thing");
     expect(text.trimEnd()).toMatch(
-      /--- ended · 2\/3 iterations · no-more-tasks$/
+      /--- ended · 2\/3 iterations · no-more-tasks · /
     );
+  });
+
+  it("accumulates run totals into the footer and runSummary()", () => {
+    const writer = openHistory({
+      workspaceDir: makeWorkspace(),
+      bin: "afk",
+      iterations: 3,
+      inputs: "plan",
+      now,
+    });
+
+    writer.appendEntry({
+      ...entry("implementer", "ok"),
+      meta: { costUsd: 1.0, inputTokens: 2000, outputTokens: 1000 },
+    });
+    writer.appendEntry({
+      ...entry("reviewer", "review-ok"),
+      meta: { costUsd: 0.5, inputTokens: 1000, outputTokens: 500 },
+    });
+    writer.appendEntry(entry("reviewer", "skipped"));
+
+    expect(writer.runSummary()).toMatchObject({
+      stagesRun: 2,
+      stagesSkipped: 1,
+      costUsd: 1.5,
+      inputTokens: 3000,
+      outputTokens: 1500,
+    });
+    expect(writer.runSummary().durationMs).toBeGreaterThanOrEqual(0);
+
+    writer.appendFooter(2, "no-more-tasks");
+    expect(lastLine(writer.filePath)).toMatch(
+      /^--- ended · 2\/3 iterations · no-more-tasks · 2 stages \(1 skipped\) · \$1\.50 · 3\.0k in \/ 1\.5k out · \d+s$/
+    );
+  });
+
+  it("omits the cost from the totals when no entry carried one (Codex shape)", () => {
+    const writer = openHistory({
+      workspaceDir: makeWorkspace(),
+      bin: "afk",
+      iterations: 1,
+      inputs: "plan",
+      now,
+    });
+    writer.appendEntry({
+      ...entry("implementer", "ok"),
+      meta: { inputTokens: 2000, outputTokens: 1000 },
+    });
+    writer.appendFooter(1, "cap");
+
+    const footer = lastLine(writer.filePath);
+    expect(footer).toContain("k in /");
+    expect(footer).not.toContain("$");
+    expect(writer.runSummary().costUsd).toBeUndefined();
+  });
+
+  it("renders only stages and duration when no entry carried meta", () => {
+    const writer = openHistory({
+      workspaceDir: makeWorkspace(),
+      bin: "afk",
+      iterations: 1,
+      inputs: "plan",
+      now,
+    });
+    writer.appendEntry(entry("implementer", "ok"));
+    writer.appendFooter(1, "cap");
+
+    const footer = lastLine(writer.filePath);
+    expect(footer).toMatch(/· 1 stages · \d+s$/);
+    expect(footer).not.toContain("$");
+    expect(footer).not.toContain("k in");
+  });
+
+  it("counts a failed entry as run and omits the skipped count entirely", () => {
+    const writer = openHistory({
+      workspaceDir: makeWorkspace(),
+      bin: "afk",
+      iterations: 1,
+      inputs: "plan",
+      now,
+    });
+    writer.appendEntry(entry("implementer", "failed"));
+    writer.appendFooter(1, "failed");
+
+    const footer = lastLine(writer.filePath);
+    expect(footer).toContain("· 1 stages ·");
+    expect(footer).not.toContain("skipped)");
+    expect(footer).not.toContain("(");
   });
 
   it("renders present meta fields in the header, omitting absent ones", () => {
@@ -319,7 +426,7 @@ describe("loadHistoryTail", () => {
         `log: .ralph-tmp/logs/${label}${k}.ndjson\n\n` +
         `${label} body ${k}\n\n`;
     }
-    text += `--- ended · ${count}/${count} iterations · cap\n`;
+    text += `--- ended · ${count}/${count} iterations · cap · ${count} stages · 5s\n`;
     writeFileSync(join(dir, fileName), text, "utf8");
   }
 

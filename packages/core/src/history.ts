@@ -205,12 +205,50 @@ function renderEntry(iterations: number, e: StageEntry): string {
   return `${lines.join("\n")}\n\n${e.body}\n\n`;
 }
 
+/** Run-level totals, accumulated by the writer as entries arrive. */
+export type RunSummary = {
+  /** Entries whose status is not `skipped`; a `failed` entry counts as run. */
+  stagesRun: number;
+  stagesSkipped: number;
+  /** Summed over entries carrying a cost; absent when none did. */
+  costUsd?: number;
+  /** Summed over entries carrying both token counts; absent when none did. */
+  inputTokens?: number;
+  outputTokens?: number;
+  /** Wall time since the writer opened. */
+  durationMs: number;
+};
+
+/**
+ * The totals segment shared by the footer and the loop's stdout summary line,
+ * each part prefixed with ` · `: `<run> stages`, `(<k> skipped)` only when some
+ * stage was skipped, `$<cost>` and `<in>k in / <out>k out` only when present,
+ * then the run's duration.
+ */
+export function renderRunTotals(s: RunSummary): string {
+  const skipped = s.stagesSkipped > 0 ? ` (${s.stagesSkipped} skipped)` : "";
+  const segments = [`${s.stagesRun} stages${skipped}`];
+  if (s.costUsd !== undefined) segments.push(`$${s.costUsd.toFixed(2)}`);
+  if (s.inputTokens !== undefined && s.outputTokens !== undefined) {
+    segments.push(
+      `${formatThousands(s.inputTokens)}k in / ${formatThousands(
+        s.outputTokens
+      )}k out`
+    );
+  }
+  segments.push(formatDuration(s.durationMs));
+  return segments.map((x) => ` · ${x}`).join("");
+}
+
 function renderFooter(
   completed: number,
   iterations: number,
-  reason: string
+  reason: string,
+  summary: RunSummary
 ): string {
-  return `--- ended · ${completed}/${iterations} iterations · ${reason}\n`;
+  return `--- ended · ${completed}/${iterations} iterations · ${reason}${renderRunTotals(
+    summary
+  )}\n`;
 }
 
 export type OpenHistoryOptions = {
@@ -227,6 +265,8 @@ export interface HistoryWriter {
   readonly filePath: string;
   appendEntry(entry: StageEntry): void;
   appendFooter(completed: number, reason: string): void;
+  /** The run's totals so far; the duration is measured when called. */
+  runSummary(): RunSummary;
 }
 
 /**
@@ -256,18 +296,45 @@ export function openHistory(opts: OpenHistoryOptions): HistoryWriter {
     "utf8"
   );
 
+  // Run totals, accumulated from the entries this writer appends. Wall time
+  // runs from here — `now` only stamps the file name and header.
+  const openedAt = Date.now();
+  let stagesRun = 0;
+  let stagesSkipped = 0;
+  let costUsd: number | undefined;
+  let inputTokens: number | undefined;
+  let outputTokens: number | undefined;
+
+  const summary = (): RunSummary => ({
+    stagesRun,
+    stagesSkipped,
+    costUsd,
+    inputTokens,
+    outputTokens,
+    durationMs: Date.now() - openedAt,
+  });
+
   return {
     filePath,
     appendEntry(entry: StageEntry): void {
+      if (entry.status === "skipped") stagesSkipped++;
+      else stagesRun++;
+      const meta = entry.meta;
+      if (meta?.costUsd !== undefined) costUsd = (costUsd ?? 0) + meta.costUsd;
+      if (meta?.inputTokens !== undefined && meta.outputTokens !== undefined) {
+        inputTokens = (inputTokens ?? 0) + meta.inputTokens;
+        outputTokens = (outputTokens ?? 0) + meta.outputTokens;
+      }
       appendFileSync(filePath, renderEntry(iterations, entry), "utf8");
     },
     appendFooter(completed: number, reason: string): void {
       appendFileSync(
         filePath,
-        renderFooter(completed, iterations, reason),
+        renderFooter(completed, iterations, reason, summary()),
         "utf8"
       );
     },
+    runSummary: summary,
   };
 }
 
