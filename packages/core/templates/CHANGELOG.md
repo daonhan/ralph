@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.5.0...ralph-sandbox-v0.6.0) (2026-09-08)
+
+
+### Features
+
+* **core:** skip the reviewer stage when the implementer left HEAD unchanged ([1406a0c](https://github.com/daonhan/ralph/commit/1406a0c6b6707e22573d5f2d09aa990aa05faf65))
+
 ## [0.5.0](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.4.0...ralph-sandbox-v0.5.0) (2026-09-08)
 
 
