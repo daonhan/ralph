@@ -2,9 +2,12 @@ name: release-please
 
 # Drives the release process for every component in the monorepo.
 # On each push to main, release-please reads the conventional-commit history,
-# opens (or updates) one Release PR per component, and on merge of that PR
-# creates the component's Git tag + GitHub Release. The per-component publish
-# workflows (publish-npm.yml, publish-image.yml) hang off those tags.
+# opens (or updates) a single combined Release PR covering every component with
+# unreleased commits, and on merge of that PR creates one Git tag + GitHub Release
+# per bumped component. The per-component publish workflows (publish-npm.yml,
+# publish-image.yml) hang off those tags. One PR (not one per component) is
+# deliberate: separate PRs all edit .release-please-manifest.json and RELEASING.md,
+# so merging one conflicted the rest and release-please never rebased them.
 #
 # Config lives at the repo root:
 #   - release-please-config.json     (component declarations)
@@ -55,14 +58,14 @@ jobs:
         with:
           node-version: 20
 
-      # Refresh the RELEASING.md status table inside each open Release PR so the
+      # Refresh the RELEASING.md status table inside the open Release PR so the
       # maintainer reviews the proposed versions as part of the PR diff. This is the
       # "extra-files hook" equivalent: release-please core only updates version
       # strings, so the table (which also carries dates + tag links) is regenerated
       # here against the PR branch's proposed manifest and pushed back to that branch.
       # The same script (scripts/update-status-table.mjs) is runnable locally for a
       # manual refresh.
-      - name: Refresh status table in open Release PRs
+      - name: Refresh status table in the open Release PR
         if: steps.release.outputs.prs_created == 'true'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}

@@ -84,6 +84,20 @@ test("config declares the three expected components", () => {
   );
 });
 
+test("components share one combined Release PR (separate PRs conflict on the manifest)", () => {
+  // Per-component PRs all rewrite .release-please-manifest.json and RELEASING.md,
+  // so merging one leaves the others CONFLICTING and release-please does not
+  // rebase an open PR whose content is unchanged. Keep them merged into one PR.
+  assert.equal(config["separate-pull-requests"], false);
+  const ws = (config.plugins || []).find((p) => p.type === "node-workspace");
+  assert.ok(ws, "node-workspace plugin must stay enabled for the CLI dep bump");
+  assert.notEqual(
+    ws.merge,
+    false,
+    "node-workspace merge:false splits the PR again"
+  );
+});
+
 test("feat touching only packages/core/src/** bumps ralph-core, not ralph-sandbox", () => {
   expectOnly(["packages/core/src/loop.ts"], "ralph-core");
   expectOnly(
