@@ -669,6 +669,13 @@ The agent playbooks are self-contained: `packages/core/templates/prompt.md` (pla
 
 - **`Cannot find module '@daonhan/ralph-core'`** — `@daonhan/ralph` was installed but its dep didn't resolve. Re-run `npm install` (or `pnpm install`) in the workspace, or use `npx -y @daonhan/ralph` to let npx fetch a clean copy.
 - **`@esbuild/win32-x64 package is present but this platform needs @esbuild/linux-x64`** — `node_modules/` installed from the wrong OS. Delete `node_modules/` + lockfile and reinstall under WSL.
+- **`[warning] sandbox install rewrote the host node_modules`** — an agent inside the sandbox ran an install into the bind-mounted `node_modules/`, leaving a Linux tree behind: a pnpm store path under `/home/agent/`, Linux symlinks, and usually a stray `.pnpm-store/` at the workspace root. Both are gitignored, so `git status` still looks clean while every host command (`pnpm`, `tsc`, `vitest`, the pre-commit hook) fails. The run's history footer carries ` · warning: sandbox-install` too, so a finished run can be diagnosed after the fact, and [#128](https://github.com/daonhan/ralph/issues/128) tracks isolating the sandbox's installs from the host tree. Reinstall on the host before running anything there:
+  ```powershell
+  Remove-Item -Recurse -Force node_modules, .pnpm-store -ErrorAction SilentlyContinue; pnpm install
+  ```
+  ```bash
+  rm -rf node_modules .pnpm-store && pnpm install
+  ```
 - **`Not logged in · Please run /login`** — Claude credentials are missing inside the container. Run the interactive `docker run … claude /login` step from "First-run setup".
 - **Codex reports that login is missing** — ensure `cli_auth_credentials_store = "file"`, run `codex login` from the same shell environment as Ralph (per the same-shell rule), and confirm `codex login status` succeeds and `~/.codex/auth.json` exists in that environment's home.
 - **Codex fails with `Operation not permitted (os error 1)` / `EPERM` at startup** — the container's `CODEX_HOME` is sitting on a Windows bind mount, which cannot host the unix socket and symlinks Codex creates at startup. Current Ralph avoids this by copying credentials into a container-local `CODEX_HOME`; upgrade `@daonhan/ralph` if you see this.

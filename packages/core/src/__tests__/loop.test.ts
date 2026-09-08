@@ -111,6 +111,15 @@ function readStdout(): string {
     .join("");
 }
 
+/** Everything the stderr spy was handed, joined. */
+function readStderr(): string {
+  return (
+    process.stderr.write as unknown as { mock: { calls: unknown[][] } }
+  ).mock.calls
+    .map((c) => String(c[0]))
+    .join("");
+}
+
 function readHistory(workspaceDir: string): string {
   const dir = join(workspaceDir, ".ralph", "history");
   const md = readdirSync(dir).find((f) => f.endsWith(".md"));
@@ -140,6 +149,19 @@ function makeCleanRepo(dir: string): void {
 function makeDirtyRepo(dir: string): void {
   makeCleanRepo(dir);
   writeFileSync(join(dir, "wip.txt"), "draft\n", "utf8");
+}
+
+/**
+ * Leave the fingerprint a sandbox install writes into the bind-mounted tree: a
+ * `node_modules/.modules.yaml` whose pnpm store lives under the sandbox home.
+ */
+function makeSandboxInstall(dir: string): void {
+  mkdirSync(join(dir, "node_modules"), { recursive: true });
+  writeFileSync(
+    join(dir, "node_modules", ".modules.yaml"),
+    "storeDir: /home/agent/workspace/.pnpm-store/v3\n",
+    "utf8"
+  );
 }
 
 /**
@@ -750,6 +772,54 @@ describe("runLoop", () => {
     );
     expect(stdout).not.toContain("$");
     expect(stdout).not.toContain("k in");
+  });
+
+  it("warns on stderr and marks the footer when the sandbox rewrote node_modules", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    makeSandboxInstall(dirs.workspaceDir);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk" }));
+
+    expect(readStderr()).toContain(
+      "[warning] sandbox install rewrote the host node_modules:\n" +
+        "  - node_modules/.modules.yaml storeDir: /home/agent/workspace/.pnpm-store/v3\n" +
+        "  repair on the host: delete node_modules/ and .pnpm-store/, then run your install command\n"
+    );
+    expect(readHistory(dirs.workspaceDir).trimEnd()).toMatch(
+      / · warning: sandbox-install$/
+    );
+    expect(readStdout()).toContain("Ralph ended");
+    expect(readStdout()).not.toContain("warning");
+  });
+
+  it("warns once and marks the footer on the cap exit too", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    makeSandboxInstall(dirs.workspaceDir);
+    mocks.runStage.mockResolvedValue(ok("still working"));
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk" }));
+
+    const warnings = readStderr().split(
+      "[warning] sandbox install rewrote the host node_modules:"
+    );
+    expect(warnings).toHaveLength(2);
+    expect(readHistory(dirs.workspaceDir).trimEnd()).toMatch(
+      /--- ended · 1\/1 iterations · cap · .* · warning: sandbox-install$/
+    );
+  });
+
+  it("stays silent when the host tree carries no sandbox-install fingerprint", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-afk" }));
+
+    expect(readStderr()).not.toContain("[warning]");
+    expect(readHistory(dirs.workspaceDir)).not.toContain("warning");
   });
 
   it("does not rewrite the history .gitignore on a second run", async () => {

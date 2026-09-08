@@ -15,6 +15,7 @@ import {
   renderRunTotals,
   type HistoryWriter,
 } from "./history.js";
+import { detectSandboxInstall } from "./host-check.js";
 import { acquire, type Releaser } from "./keepalive.js";
 import { notifyComplete, notifyError } from "./notify.js";
 import { renderTemplate } from "./render.js";
@@ -73,6 +74,25 @@ export function deriveStatus(args: {
   if (args.text.includes(REVIEW_SKIP)) return "review-skip";
   if (args.headAfter !== args.headBefore) return "review-fix";
   return "ok";
+}
+
+/**
+ * The host check, run at each footer write: when the sandbox rewrote the
+ * bind-mounted `node_modules`, name the fingerprints on stderr (plain text, the
+ * `[failure]` line's style) so the user reinstalls before the next host command
+ * fails. Returns the findings for the footer.
+ */
+function warnSandboxInstall(workspaceDir: string): string[] {
+  const findings = detectSandboxInstall(workspaceDir);
+  if (findings.length > 0) {
+    const lines = [
+      "[warning] sandbox install rewrote the host node_modules:",
+      ...findings.map((f) => `  - ${f}`),
+      "  repair on the host: delete node_modules/ and .pnpm-store/, then run your install command",
+    ];
+    process.stderr.write(`${lines.join("\n")}\n`);
+  }
+  return findings;
 }
 
 /**
@@ -386,7 +406,11 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         if (hitSentinel) {
           sentinelHit = true;
           completedIterations = i;
-          history.appendFooter(i, "no-more-tasks");
+          history.appendFooter(
+            i,
+            "no-more-tasks",
+            warnSandboxInstall(workspaceDir)
+          );
           printRunSummary(history, "no-more-tasks", i, iterations);
           return;
         }
@@ -399,7 +423,11 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
       completedIterations = i;
     }
     const reason = runFailed ? "failed" : "cap";
-    history.appendFooter(completedIterations, reason);
+    history.appendFooter(
+      completedIterations,
+      reason,
+      warnSandboxInstall(workspaceDir)
+    );
     printRunSummary(history, reason, completedIterations, iterations);
   } catch (err) {
     if (notify) notifyError((err as Error).message);

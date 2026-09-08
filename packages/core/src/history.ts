@@ -244,11 +244,15 @@ function renderFooter(
   completed: number,
   iterations: number,
   reason: string,
-  summary: RunSummary
+  summary: RunSummary,
+  findings: string[] | undefined
 ): string {
+  // The findings themselves stay on the terminal; the footer only records that
+  // the host check fired, so the run file names the cause of a broken host tree.
+  const warning = findings?.length ? " · warning: sandbox-install" : "";
   return `--- ended · ${completed}/${iterations} iterations · ${reason}${renderRunTotals(
     summary
-  )}\n`;
+  )}${warning}\n`;
 }
 
 export type OpenHistoryOptions = {
@@ -264,7 +268,8 @@ export type OpenHistoryOptions = {
 export interface HistoryWriter {
   readonly filePath: string;
   appendEntry(entry: StageEntry): void;
-  appendFooter(completed: number, reason: string): void;
+  /** Non-empty `findings` (the host check's) add a `warning:` suffix to the footer. */
+  appendFooter(completed: number, reason: string, findings?: string[]): void;
   /** The run's totals so far; the duration is measured when called. */
   runSummary(): RunSummary;
 }
@@ -327,10 +332,10 @@ export function openHistory(opts: OpenHistoryOptions): HistoryWriter {
       }
       appendFileSync(filePath, renderEntry(iterations, entry), "utf8");
     },
-    appendFooter(completed: number, reason: string): void {
+    appendFooter(completed: number, reason: string, findings?: string[]): void {
       appendFileSync(
         filePath,
-        renderFooter(completed, iterations, reason, summary()),
+        renderFooter(completed, iterations, reason, summary(), findings),
         "utf8"
       );
     },

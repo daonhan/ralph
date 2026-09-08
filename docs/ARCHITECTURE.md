@@ -373,7 +373,7 @@ Everything lands under `<workspace>/.ralph-tmp/` (gitignored):
 
 `.run-*.md` and `spill-*/` are removed in `runStage`'s `finally`; the NDJSON logs are kept for inspection. A leaked `.run-*.md` after a hard kill is safe to delete.
 
-Separately, `runLoop` writes one Markdown history file per run under `<workspace>/.ralph/history/<yyyy-MM-dd-HHmmss>-<bin>[-<branch>].md` (self-gitignored via its own `*` `.gitignore`, written once): a header on open, one entry per completed stage, a footer with run totals on exit. The last ten entries across all runs are loaded back into the implementer prompt as `{{ HISTORY }}`. This is harness-owned — only [`history.ts`](../packages/core/src/history.ts), driven by `loop.ts`, writes here (pure `fs` + tolerant `git` reads, never Docker).
+Separately, `runLoop` writes one Markdown history file per run under `<workspace>/.ralph/history/<yyyy-MM-dd-HHmmss>-<bin>[-<branch>].md` (self-gitignored via its own `*` `.gitignore`, written once): a header on open, one entry per completed stage, a footer with run totals on exit. At every non-signal exit the driver also runs the sandbox-install check ([`host-check.ts`](../packages/core/src/host-check.ts): a `node_modules/.modules.yaml` store path under `/home/agent/`, a stray `.pnpm-store/`), printing the `[warning]` block on stderr and appending ` · warning: sandbox-install` to the footer. The last ten entries across all runs are loaded back into the implementer prompt as `{{ HISTORY }}`. This is harness-owned — only [`history.ts`](../packages/core/src/history.ts), driven by `loop.ts`, writes here (pure `fs` + tolerant `git` reads, never Docker).
 
 ---
 
