@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.8.0...ralph-core-v0.9.0) (2026-09-08)
+
+
+### Features
+
+* **core:** carry the dirty-tree snapshot on the skipped entry ([4247696](https://github.com/daonhan/ralph/commit/4247696ac18e81da553b1443465bff2c21ff934c))
+* **core:** skip the reviewer stage when the implementer left HEAD unchanged ([1406a0c](https://github.com/daonhan/ralph/commit/1406a0c6b6707e22573d5f2d09aa990aa05faf65))
+* **core:** skip the reviewer when the gate left HEAD unchanged ([d596154](https://github.com/daonhan/ralph/commit/d59615428a8c0430daa96b9d191743d3aaedf149))
+
+
+### Bug Fixes
+
+* **review:** pin no skipped entry after a failed gate stage ([8371d6e](https://github.com/daonhan/ralph/commit/8371d6e892b19523d61ca5c32f13f1484b434d8a))
+
 ## [0.8.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.7.3...ralph-core-v0.8.0) (2026-09-08)
 
 
