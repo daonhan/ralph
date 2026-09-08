@@ -4,8 +4,8 @@
   "include-component-in-tag": true,
   "include-v-in-tag": true,
   "tag-separator": "-",
-  "separate-pull-requests": true,
-  "plugins": [{ "type": "node-workspace", "merge": false }],
+  "separate-pull-requests": false,
+  "plugins": [{ "type": "node-workspace" }],
   "changelog-path": "CHANGELOG.md",
   "changelog-sections": [
     { "type": "feat", "section": "Features" },

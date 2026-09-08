@@ -308,8 +308,10 @@ The repo ships three independently versioned components: `@daonhan/ralph-core`
 (0.2.1). Flow:
 
 1. Land Conventional-Commit work on `main` (see [Conventions](#conventions-to-preserve)).
-2. `release-please.yml` opens **one Release PR per component** with unreleased commits.
-3. Merging a Release PR cuts the component tag (`<component>-vX.Y.Z`) + GitHub Release.
+2. `release-please.yml` opens **one combined Release PR** for every component with
+   unreleased commits (separate per-component PRs conflicted on the shared manifest).
+3. Merging the Release PR cuts one tag (`<component>-vX.Y.Z`) + GitHub Release per
+   bumped component.
 4. The tag triggers publishing:
    - `ralph-core-v*` / `ralph-v*` → `publish-npm.yml` (publishes to npm; rewrites the
      CLI's `workspace:^` to the concrete core version; attaches `.tgz` + SBOM + cosign
