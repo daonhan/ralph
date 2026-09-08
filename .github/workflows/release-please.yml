@@ -110,6 +110,7 @@ jobs:
           IMAGE_TAG="${TAG#ralph-sandbox-}"
           echo "Dispatching publish-image.yml for ${TAG} (${IMAGE_TAG})"
           gh workflow run publish-image.yml \
+            --repo "$GITHUB_REPOSITORY" \
             --ref "$TAG" \
             -f tag="$IMAGE_TAG" \
             -f also_latest=true \
