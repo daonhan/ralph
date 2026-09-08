@@ -36,6 +36,7 @@ export const red = (s: string): string => c("31", s);
 export const boldOut = (s: string): string => cOut("1", s);
 const cyanOut = (s: string): string => cOut("36", s);
 export const greenOut = (s: string): string => cOut("32", s);
+export const redOut = (s: string): string => cOut("31", s);
 export const dimOut = (s: string): string => cOut("2", s);
 
 export const SYM = USE_COLOR

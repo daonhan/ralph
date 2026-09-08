@@ -12,6 +12,7 @@ import {
   headShort,
   loadHistoryTail,
   openHistory,
+  renderRunTotals,
   type HistoryWriter,
 } from "./history.js";
 import { acquire, type Releaser } from "./keepalive.js";
@@ -30,6 +31,7 @@ import {
   bold,
   red,
   greenOut,
+  redOut,
   boldOut,
   dimOut,
   SYM,
@@ -71,6 +73,25 @@ export function deriveStatus(args: {
   if (args.text.includes(REVIEW_SKIP)) return "review-skip";
   if (args.headAfter !== args.headBefore) return "review-fix";
   return "ok";
+}
+
+/**
+ * The one stdout line every non-signal exit ends with, printed right after the
+ * matching footer so the terminal and the history file carry the same totals.
+ * The marker is red for a `failed` run, green for `no-more-tasks` / `cap`.
+ */
+function printRunSummary(
+  history: HistoryWriter,
+  reason: string,
+  completed: number,
+  iterations: number
+): void {
+  const marker =
+    reason === "failed" ? redOut(SYM_OUT.bullet) : greenOut(SYM_OUT.bullet);
+  const tail = ` \u00b7 ${reason} \u00b7 ${completed}/${iterations} iterations${renderRunTotals(
+    history.runSummary()
+  )}`;
+  process.stdout.write(`${marker} ${boldOut("Ralph ended")}${dimOut(tail)}\n`);
 }
 
 export type LoopOptions = {
@@ -363,15 +384,10 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         current = undefined;
 
         if (hitSentinel) {
-          const msg =
-            greenOut(SYM_OUT.bullet) +
-            " " +
-            boldOut("Ralph complete") +
-            dimOut(" after " + i + " iterations");
-          process.stdout.write(msg + "\n");
           sentinelHit = true;
           completedIterations = i;
           history.appendFooter(i, "no-more-tasks");
+          printRunSummary(history, "no-more-tasks", i, iterations);
           return;
         }
 
@@ -382,7 +398,9 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
       }
       completedIterations = i;
     }
-    history.appendFooter(completedIterations, runFailed ? "failed" : "cap");
+    const reason = runFailed ? "failed" : "cap";
+    history.appendFooter(completedIterations, reason);
+    printRunSummary(history, reason, completedIterations, iterations);
   } catch (err) {
     if (notify) notifyError((err as Error).message);
     throw err;
