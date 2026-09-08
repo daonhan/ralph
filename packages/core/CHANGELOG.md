@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.10.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.9.0...ralph-core-v0.10.0) (2026-09-08)
+
+
+### Features
+
+* **core:** accumulate run totals and put them in the history footer ([76ce3e3](https://github.com/daonhan/ralph/commit/76ce3e36afec57719d9fd93ac357754e6da890b3))
+* **core:** print a Ralph ended summary line on every non-signal exit ([dcbe41f](https://github.com/daonhan/ralph/commit/dcbe41f11ecf0f10fa2db208142bf8f23b967fcf))
+* **core:** print a run summary line on every loop exit and put run totals in the history footer ([01c646b](https://github.com/daonhan/ralph/commit/01c646be99d8fa56575d0bbf6dfc14483feed2e5))
+
 ## [0.9.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.8.0...ralph-core-v0.9.0) (2026-09-08)
 
 
