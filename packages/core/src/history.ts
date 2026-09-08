@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 // Harness-owned, per-run Markdown history under <workspace>/.ralph/history/.
@@ -186,7 +193,103 @@ export function openHistory(opts: OpenHistoryOptions): HistoryWriter {
       appendFileSync(filePath, renderEntry(iterations, entry), "utf8");
     },
     appendFooter(completed: number, reason: string): void {
-      appendFileSync(filePath, renderFooter(completed, iterations, reason), "utf8");
+      appendFileSync(
+        filePath,
+        renderFooter(completed, iterations, reason),
+        "utf8"
+      );
     },
   };
+}
+
+// --- Tail loader: the last stage entries, rendered for the implementer prompt ---
+
+/** How many entries the implementer prompt carries. */
+const TAIL_MAX = 10;
+/** Body cap: entries longer than this keep their head and tail, dropping the middle. */
+const BODY_CAP = 1500;
+const BODY_HEAD = 500;
+const BODY_TAIL = 1000;
+const NO_HISTORY = "No prior history.";
+
+/**
+ * Split a history file into its stage entries (each starting at a `## iter`
+ * line). Header lines before the first entry and the trailing footer are
+ * dropped; each entry keeps its metadata lines and body, trailing blanks
+ * trimmed.
+ */
+function parseEntries(fileText: string): string[] {
+  const entries: string[] = [];
+  let current: string[] | null = null;
+  for (const line of fileText.split("\n")) {
+    if (line.startsWith("## iter ")) {
+      if (current) entries.push(current.join("\n").trimEnd());
+      current = [line];
+    } else if (line.startsWith("--- ended ")) {
+      // Footer marks the end of the run's entries; ignore anything after it.
+      if (current) entries.push(current.join("\n").trimEnd());
+      current = null;
+      break;
+    } else if (current) {
+      current.push(line);
+    }
+  }
+  if (current) entries.push(current.join("\n").trimEnd());
+  return entries;
+}
+
+/** Cap the body to first {@link BODY_HEAD} + `…` + last {@link BODY_TAIL} chars. */
+function capBody(body: string): string {
+  if (body.length <= BODY_CAP) return body;
+  return `${body.slice(0, BODY_HEAD)}\n…\n${body.slice(-BODY_TAIL)}`;
+}
+
+/** Re-render one parsed entry, capping only its body (metadata lines untouched). */
+function renderTailEntry(entry: string): string {
+  const sep = entry.indexOf("\n\n");
+  if (sep < 0) return entry;
+  return `${entry.slice(0, sep)}\n\n${capBody(entry.slice(sep + 2))}`;
+}
+
+/**
+ * Render the last {@link TAIL_MAX} stage entries across every history file into
+ * the `{{ HISTORY }}` block for the implementer prompt. Files are read
+ * newest-first by filename until ten entries are collected, then rendered
+ * oldest-first with each body capped. Returns `No prior history.` when the
+ * directory is empty or absent.
+ */
+export function loadHistoryTail(workspaceDir: string): string {
+  const dir = join(workspaceDir, ".ralph", "history");
+  let files: string[];
+  try {
+    files = readdirSync(dir)
+      .filter((f) => f.endsWith(".md"))
+      .sort()
+      .reverse();
+  } catch {
+    return NO_HISTORY;
+  }
+
+  const collected: string[] = []; // newest-first
+  for (const f of files) {
+    let text: string;
+    try {
+      text = readFileSync(join(dir, f), "utf8");
+    } catch {
+      continue;
+    }
+    const entries = parseEntries(text);
+    for (
+      let k = entries.length - 1;
+      k >= 0 && collected.length < TAIL_MAX;
+      k--
+    ) {
+      collected.push(entries[k]);
+    }
+    if (collected.length >= TAIL_MAX) break;
+  }
+
+  if (collected.length === 0) return NO_HISTORY;
+  collected.reverse(); // oldest-first for reading
+  return collected.map(renderTailEntry).join("\n\n");
 }

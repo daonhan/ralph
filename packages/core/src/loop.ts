@@ -7,7 +7,7 @@ import {
   type StageMeta,
 } from "./agents/index.js";
 import { readCoreVersion } from "./cli-help.js";
-import { headShort, openHistory } from "./history.js";
+import { headShort, loadHistoryTail, openHistory } from "./history.js";
 import { acquire, type Releaser } from "./keepalive.js";
 import { notifyComplete, notifyError } from "./notify.js";
 import { renderTemplate } from "./render.js";
@@ -161,9 +161,15 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
               // (e.g. a flaky `gh issue list`) is retried with backoff instead
               // of crashing the loop — and a hard failure surfaces as a terminal
               // stage failure rather than a degraded prompt that false-completes.
+              // Only the gate (implementer) reads history; the reviewer does not.
+              // Loaded inside the retry closure so a retried render sees fresh
+              // history (a prior stage may have appended an entry meanwhile).
               const prompt = renderTemplate(
                 templatePath,
-                { INPUTS: inputs },
+                {
+                  INPUTS: inputs,
+                  HISTORY: s === 0 ? loadHistoryTail(workspaceDir) : "",
+                },
                 { cwd: workspaceDir, spillHostDir, spillRefPath }
               );
               return runStage(

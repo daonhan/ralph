@@ -5,9 +5,12 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 // SECURITY INVARIANT: the command bodies of the !`cmd`, !?`cmd`, and @spill tags
 // are executed on the HOST shell (see execSync calls below). Templates are trusted
 // (shipped in the npm tarball) and only ever embed STATIC command strings; {{ INPUTS }}
-// is substituted LAST, into the already-expanded text, and is never re-shelled. Never
-// author a tag whose command body interpolates runtime or untrusted data (issue bodies,
-// commit messages, INPUTS, branch names) — that would be direct host RCE. See SECURITY.md.
+// and {{ HISTORY }} are substituted LAST, into the already-expanded text, and are
+// never re-shelled. HISTORY is agent-produced text (prior final messages) and so is
+// especially untrusted — it is inserted verbatim via a function replacer (no re-scan,
+// no `$` backreference interpretation). Never author a tag whose command body
+// interpolates runtime or untrusted data (issue bodies, commit messages, INPUTS,
+// HISTORY, branch names) — that would be direct host RCE. See SECURITY.md.
 
 // Order matters: !?`...` (try-shell w/ ||| fallback) must match before plain !`...`.
 const SHELL_TRY_TAG = /!\?`([^`]+)`/g;
@@ -18,6 +21,7 @@ const INCLUDE_TAG = /@include:([^\s`)]+)/g;
 // non-zero exits as success and writes the fallback string instead of throwing.
 const SPILL_TAG = /@spill(\??):([^\s=]+)=`([^`]+)`/g;
 const INPUTS_TAG = /\{\{\s*INPUTS\s*\}\}/g;
+const HISTORY_TAG = /\{\{\s*HISTORY\s*\}\}/g;
 const TRY_SEP = "|||";
 // Cap on captured stdout for every shell/@spill tag (64 MiB). Large outputs are
 // meant to go through @spill (written to a file), not be inlined into the prompt.
@@ -25,6 +29,7 @@ const SPILL_MAX_BUFFER = 64 * 1024 * 1024;
 
 export type RenderVars = {
   INPUTS: string;
+  HISTORY: string;
 };
 
 export type RenderOptions = {
@@ -143,5 +148,9 @@ export function renderTemplate(
     });
     return out.replace(/\r?\n$/, "");
   });
-  return afterShell.replace(INPUTS_TAG, vars.INPUTS);
+  // Final pass, after every shell/@spill tag: substitute the untrusted values.
+  // HISTORY uses a function replacer so `$`-sequences in agent text stay verbatim.
+  return afterShell
+    .replace(INPUTS_TAG, vars.INPUTS)
+    .replace(HISTORY_TAG, () => vars.HISTORY);
 }

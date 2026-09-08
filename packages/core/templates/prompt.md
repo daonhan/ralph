@@ -4,6 +4,8 @@ The plan and PRD are provided in the `<inputs>` block at the start of context �
 
 You've also been passed the last few commits in `<commits>`. Review them to understand what work has already been done.
 
+The `<history>` block holds the last few stage outcomes from earlier iterations and runs — each a **Done / Blocked / Next** summary plus its status (`ok`, `failed`, `aborted`, …). Read it before task selection: do not retry an approach a prior entry reports as failed unless you have a new reason.
+
 Work through the plan/PRD tasks. If all of them are complete, output `<promise>NO MORE TASKS</promise>`.
 
 # TASK SELECTION
@@ -72,6 +74,10 @@ Make a single `git commit -am` with a short message:
 When a task is complete, record the outcome in your commit body, and update the plan file's status if it tracks one.
 
 If a task is not complete, record the blocker in the commit body so the next iteration can pick up where you left off.
+
+# FINAL MESSAGE
+
+End your turn with at most ten lines under **Done**, **Blocked**, and **Next** headings. This final message is recorded verbatim in the iteration history and shown to the next iteration — keep it concise and specific.
 
 # FINAL RULES
 

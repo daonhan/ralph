@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,6 +14,7 @@ import {
   formatDuration,
   headShort,
   historyFileName,
+  loadHistoryTail,
   openHistory,
   sanitizeBranch,
 } from "../history.js";
@@ -21,7 +28,8 @@ function makeWorkspace(): string {
 }
 
 afterEach(() => {
-  while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true });
+  while (roots.length > 0)
+    rmSync(roots.pop()!, { recursive: true, force: true });
 });
 
 describe("sanitizeBranch", () => {
@@ -150,5 +158,80 @@ describe("openHistory", () => {
 
     openHistory({ workspaceDir, bin: "afk", iterations: 1, inputs: "p", now });
     expect(readFileSync(gitignore, "utf8")).toBe("custom\n");
+  });
+});
+
+describe("loadHistoryTail", () => {
+  /** Write a run file of `count` entries whose bodies are `<label> body <k>`. */
+  function writeRun(
+    workspaceDir: string,
+    fileName: string,
+    label: string,
+    count: number
+  ): void {
+    const dir = join(workspaceDir, ".ralph", "history");
+    mkdirSync(dir, { recursive: true });
+    let text = `# ralph-afk · 2026-09-08 12:00:00Z · ${count} iterations\n\n`;
+    for (let k = 1; k <= count; k++) {
+      text +=
+        `## iter ${k}/${count} · implementer · ok · 5s · HEAD abc${k}\n` +
+        `log: .ralph-tmp/logs/${label}${k}.ndjson\n\n` +
+        `${label} body ${k}\n\n`;
+    }
+    text += `--- ended · ${count}/${count} iterations · cap\n`;
+    writeFileSync(join(dir, fileName), text, "utf8");
+  }
+
+  it("renders 'No prior history.' when the history dir is missing or empty", () => {
+    expect(loadHistoryTail(makeWorkspace())).toBe("No prior history.");
+    const ws = makeWorkspace();
+    mkdirSync(join(ws, ".ralph", "history"), { recursive: true });
+    expect(loadHistoryTail(ws)).toBe("No prior history.");
+  });
+
+  it("returns the last ten entries across files, oldest-first", () => {
+    const ws = makeWorkspace();
+    writeRun(ws, "2026-09-08-120000-afk.md", "older", 6);
+    writeRun(ws, "2026-09-08-130000-afk.md", "newer", 6);
+
+    const out = loadHistoryTail(ws);
+    // Last 10 chronologically: older 3..6 then all six newer, oldest first.
+    expect(out).not.toContain("older body 2");
+    const order = [
+      "older body 3",
+      "older body 4",
+      "older body 5",
+      "older body 6",
+      "newer body 1",
+      "newer body 6",
+    ].map((s) => out.indexOf(s));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    // Metadata lines survive.
+    expect(out).toContain("## iter 3/6 · implementer · ok · 5s · HEAD abc3");
+    expect(out).toContain("log: .ralph-tmp/logs/older3.ndjson");
+  });
+
+  it("caps a body over 1500 chars, keeping header and metadata lines intact", () => {
+    const ws = makeWorkspace();
+    const body = "X".repeat(2000);
+    const dir = join(ws, ".ralph", "history");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "2026-09-08-120000-afk.md"),
+      `# ralph-afk · 2026-09-08 12:00:00Z · 1 iterations\n\n` +
+        `## iter 1/1 · implementer · ok · 5s · HEAD abc1\n` +
+        `log: .ralph-tmp/logs/x.ndjson\n\n${body}\n\n` +
+        `--- ended · 1/1 iterations · cap\n`,
+      "utf8"
+    );
+
+    const out = loadHistoryTail(ws);
+    expect(out).toContain("## iter 1/1 · implementer · ok · 5s · HEAD abc1");
+    expect(out).toContain("log: .ralph-tmp/logs/x.ndjson");
+    expect(out).toContain("…");
+    expect(out).toContain(body.slice(0, 500));
+    expect(out).toContain(body.slice(-1000));
+    expect(out).not.toContain(body); // the full 2000-char body is not present
   });
 });

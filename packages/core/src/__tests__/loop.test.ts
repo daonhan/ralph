@@ -409,4 +409,78 @@ describe("runLoop", () => {
     await expect(runLoop(loopOptions(dirs))).rejects.toThrow("no image");
     expect(existsSync(join(dirs.workspaceDir, ".ralph"))).toBe(false);
   });
+
+  it("injects the previous run's history into the next implementer prompt", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 8, 8, 12, 0, 0)));
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "impl.md"),
+      "<history>\n{{ HISTORY }}\n</history>\nrun {{ INPUTS }}",
+      "utf8"
+    );
+
+    mocks.runStage
+      .mockResolvedValueOnce(ok("FIRST-RUN-MARKER did the work"))
+      .mockResolvedValue(ok(sentinel));
+
+    // Run 1: implementer text is not the sentinel → runs to the cap, one 'ok' entry.
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [impl] as [Stage],
+        iterations: 1,
+        bin: "ralph-afk",
+      })
+    );
+
+    // A distinct UTC second yields a distinct history filename, so run 1's file
+    // is not overwritten by run 2's fresh header.
+    vi.setSystemTime(new Date(Date.UTC(2026, 8, 8, 12, 0, 1)));
+
+    // Run 2: implementer returns the sentinel and exits after the one stage.
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [impl] as [Stage],
+        iterations: 1,
+        bin: "ralph-afk",
+      })
+    );
+
+    const secondRunPrompt = String(mocks.runStage.mock.calls.at(-1)![1]);
+    expect(secondRunPrompt).toContain("<history>");
+    expect(secondRunPrompt).toContain("FIRST-RUN-MARKER did the work");
+    vi.useRealTimers();
+  });
+
+  it("does not inject history into the reviewer prompt", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    const rev: Stage = { name: "reviewer", template: "rev.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "impl.md"),
+      "<history>\n{{ HISTORY }}\n</history>",
+      "utf8"
+    );
+    writeFileSync(
+      join(dirs.packageDir, "templates", "rev.md"),
+      "review {{ INPUTS }}",
+      "utf8"
+    );
+    // Implementer text is not the sentinel, so the reviewer stage also runs.
+    mocks.runStage.mockResolvedValue(ok("working"));
+
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [impl, rev] as [Stage, Stage],
+        iterations: 1,
+      })
+    );
+
+    expect(mocks.runStage).toHaveBeenCalledTimes(2);
+    const reviewerPrompt = String(mocks.runStage.mock.calls[1]![1]);
+    expect(reviewerPrompt).not.toContain("<history>");
+  });
 });
