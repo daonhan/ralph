@@ -228,8 +228,8 @@ Hard invariants:
   and selected provider's read-write credential store; GitHub CLI config is
   read-only.
 - **The first stage of a chain is the gate.** Only index 0 is sentinel-checked for
-  the exact literal `<promise>NO MORE TASKS</promise>`; the reviewer never gates.
-  Place any gating stage at index 0.
+  the exact literal `<promise>NO MORE TASKS</promise>` on a line of its own; the
+  reviewer never gates. Place any gating stage at index 0.
 
 ```ts
 // packages/core/src/stages.ts
@@ -334,7 +334,7 @@ overrides, the rollback runbook, and the compatibility matrix.
   `moduleResolution: NodeNext`).
 - **No TS / no build in `apps/cli`.** Keep the bin layer flat hand-written JS.
 - **First stage is the gate.** Gating stages go at index 0; sentinel is the exact
-  literal `<promise>NO MORE TASKS</promise>`.
+  literal `<promise>NO MORE TASKS</promise>` on a line of its own.
 - **`bypassPermissions` for every sandbox stage.** Never `acceptEdits`; this is
   Claude's stage setting, while Codex uses its provider-specific no-approval flag.
 - **Templates ship in the core tarball** (`@daonhan/ralph-core` `files: ["dist",

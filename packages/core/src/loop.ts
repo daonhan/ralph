@@ -44,6 +44,17 @@ import type { Stage } from "./stages.js";
 // mirrored in the playbook templates (prompt.md / ghprompt.md) that instruct it.
 const SENTINEL = "<promise>NO MORE TASKS</promise>";
 
+/**
+ * The gate fires on an emission, not on a mention: the sentinel must stand on a
+ * line of its own (surrounding whitespace and a wrapping pair of backticks
+ * allowed). The playbooks put the literal in the agent's context every
+ * iteration, so a closing sentence naming its own stop condition is ordinary
+ * prose and must not end the run.
+ */
+export function hasSentinel(text: string): boolean {
+  return /^\s*`?<promise>NO MORE TASKS<\/promise>`?\s*$/m.test(text);
+}
+
 // Reviewer verdicts (review.md). Neither tag + a moved HEAD ⇒ the reviewer
 // committed a fix; neither tag + unchanged HEAD ⇒ a plain ok.
 const REVIEW_OK = "<review>OK</review>";
@@ -68,7 +79,7 @@ export function deriveStatus(args: {
     return "error";
   }
   if (args.isGate) {
-    return args.text.includes(SENTINEL) ? "no-more-tasks" : "ok";
+    return hasSentinel(args.text) ? "no-more-tasks" : "ok";
   }
   if (args.text.includes(REVIEW_OK)) return "review-ok";
   if (args.text.includes(REVIEW_SKIP)) return "review-skip";
@@ -382,7 +393,12 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         }
 
         const headAfter = headShort(workspaceDir);
-        const hitSentinel = s === 0 && result.text.includes(SENTINEL);
+        const hitSentinel = s === 0 && hasSentinel(result.text);
+        if (s === 0 && !hitSentinel && result.text.indexOf(SENTINEL) !== -1) {
+          process.stderr.write(
+            `[warning] iteration ${i}: the gate mentioned ${SENTINEL} without emitting it on a line of its own; the loop continues\n`
+          );
+        }
         history.appendEntry({
           iteration: i,
           stage: stage.name,
