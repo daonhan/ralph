@@ -302,7 +302,10 @@ export function printConfig(
   let nodeModulesStatus: string;
   if (isolationEnabled()) {
     const volumes = resolveSandboxVolumes(workspaceDir).length;
-    nodeModulesStatus = `isolated in ${Math.max(volumes - 1, 0)} container volumes (RALPH_ISOLATE_NODE_MODULES=0 to share the host tree)`;
+    nodeModulesStatus =
+      volumes === 0
+        ? "isolation on, but this workspace has no package.json — nothing mounted"
+        : `isolated in ${volumes - 1} container volumes (RALPH_ISOLATE_NODE_MODULES=0 to share the host tree)`;
   } else if (process.env.RALPH_ISOLATE_NODE_MODULES?.trim() === "0") {
     nodeModulesStatus =
       "shared with the host bind mount (RALPH_ISOLATE_NODE_MODULES=0)";

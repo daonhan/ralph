@@ -132,7 +132,9 @@ it("prints the history dir under the resolved workspace", () => {
     .mockImplementation(() => true);
   printConfig("ralph-afk", "/repo", "/ctx", "/pkg");
   const output = write.mock.calls.map((call) => String(call[0])).join("");
-  expect(output).toContain(`history dir           ${join("/repo", ".ralph", "history")}`);
+  expect(output).toContain(
+    `history dir           ${join("/repo", ".ralph", "history")}`
+  );
 });
 
 describe("printConfig node_modules isolation", () => {
@@ -191,5 +193,16 @@ describe("printConfig node_modules isolation", () => {
     expect(capture(root)).toContain(
       "node_modules          isolated in 1 container volumes (RALPH_ISOLATE_NODE_MODULES=0 to share the host tree)"
     );
+  });
+
+  it("says nothing is mounted when the workspace has no package.json", () => {
+    const root = mkdtempSync(join(tmpdir(), "ralph-print-config-"));
+    roots.push(root);
+    setKnob("1");
+    const output = capture(root);
+    expect(output).toContain(
+      "node_modules          isolation on, but this workspace has no package.json — nothing mounted"
+    );
+    expect(output).not.toContain("isolated in");
   });
 });
