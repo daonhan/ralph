@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.1](https://github.com/daonhan/ralph/compare/ralph-core-v0.11.0...ralph-core-v0.11.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* **core:** gate only on a standalone NO MORE TASKS line ([246a4d8](https://github.com/daonhan/ralph/commit/246a4d80215d7eeca1ce0a98dd95078066500b38))
+* **core:** gate only on a standalone NO MORE TASKS line ([e8a6be4](https://github.com/daonhan/ralph/commit/e8a6be4f7d53fbf31de3d4180cbf707c68bc2754))
+
 ## [0.11.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.10.0...ralph-core-v0.11.0) (2026-09-08)
 
 
