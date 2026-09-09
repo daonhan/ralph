@@ -21,6 +21,7 @@ import {
   resolveDockerSocketMount,
   resolveDockerfile,
 } from "./runner.js";
+import { isolationEnabled, resolveSandboxVolumes } from "./sandbox-volumes.js";
 
 export type CliFlags = {
   help: boolean;
@@ -296,6 +297,23 @@ export function printConfig(
     sockStatus = `mounting ${detectedSock} (${sockSource})${groupAdd ? `, --group-add ${groupAdd}` : ""}`;
   }
 
+  // The store volume is the last entry of a non-empty list; the rest are the
+  // per-package `node_modules` mounts this workspace gets.
+  let nodeModulesStatus: string;
+  if (isolationEnabled()) {
+    const volumes = resolveSandboxVolumes(workspaceDir).length;
+    nodeModulesStatus =
+      volumes === 0
+        ? "isolation on, but this workspace has no package.json — nothing mounted"
+        : `isolated in ${volumes - 1} container volumes (RALPH_ISOLATE_NODE_MODULES=0 to share the host tree)`;
+  } else if (process.env.RALPH_ISOLATE_NODE_MODULES?.trim() === "0") {
+    nodeModulesStatus =
+      "shared with the host bind mount (RALPH_ISOLATE_NODE_MODULES=0)";
+  } else {
+    nodeModulesStatus =
+      "shared with the host bind mount (linux default; RALPH_ISOLATE_NODE_MODULES=1 to isolate)";
+  }
+
   const keepAliveStatus = noKeepAlive ? "off" : "on (system sleep only)";
   const detachStatus =
     detach && detachLogPath ? `on (log: ${detachLogPath})` : "off";
@@ -327,6 +345,7 @@ export function printConfig(
   history dir           ${join(workspaceDir, ".ralph", "history")}
 ${providerLines}
   RALPH_DOCKER_SOCK     ${sockStatus}
+  node_modules          ${nodeModulesStatus}
   keep-alive            ${keepAliveStatus}
   max-retries           ${maxRetries}
   detach                ${detachStatus}

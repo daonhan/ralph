@@ -20,6 +20,13 @@ import {
   type StageMeta,
 } from "./agents/index.js";
 import { resolveHostHome } from "./agents/shared.js";
+import {
+  CONTAINER_WORKSPACE,
+  missingVolumes,
+  resolveSandboxVolumes,
+  sandboxRunArgs,
+  type SandboxVolume,
+} from "./sandbox-volumes.js";
 import type { Stage } from "./stages.js";
 import {
   bold,
@@ -361,6 +368,87 @@ export function ensureImage(
   return ensureImageSync(buildContext);
 }
 
+// Sandbox volume names already prepared in this process. Preparation is
+// idempotent, but every check costs docker calls, so only the first stage of a
+// run pays for them.
+const preparedVolumes = new Set<string>();
+
+/**
+ * Create the volumes `resolveSandboxVolumes` asked for and hand them to the
+ * sandbox user. A fresh docker volume mounted where the image has no directory
+ * is created `root:root` and the sandbox runs as UID 1000, so without the
+ * one-off root `chown` every install inside the container fails with
+ * `Permission denied`. Only the missing volumes are created, but one container
+ * chowns every pending one.
+ */
+async function ensureSandboxVolumes(
+  volumes: SandboxVolume[],
+  options: RunStageOptions
+): Promise<void> {
+  const pending = volumes.filter((volume) => !preparedVolumes.has(volume.name));
+  if (pending.length === 0) return;
+
+  try {
+    const listed = spawnSync(
+      "docker",
+      ["volume", "ls", "--filter", "label=ralph.kind", "--format", "{{.Name}}"],
+      { encoding: "utf8" }
+    );
+    if (listed.status !== 0) {
+      throw new Error(`docker volume ls exited with ${listed.status}`);
+    }
+    const existing = listed.stdout
+      .split("\n")
+      .map((name) => name.trim())
+      .filter(Boolean);
+
+    const missing = missingVolumes(existing, pending);
+    for (const volume of missing) {
+      const labelArgs = volume.labels.flatMap((label) => ["--label", label]);
+      const created = spawnSync(
+        "docker",
+        ["volume", "create", ...labelArgs, volume.name],
+        { stdio: "ignore" }
+      );
+      if (created.status !== 0) {
+        throw new Error(
+          `docker volume create ${volume.name} exited with ${created.status}`
+        );
+      }
+    }
+
+    // Every pending volume, not only the freshly created ones: a create that
+    // lands with a chown that does not — an interrupted or failed first run —
+    // otherwise leaves a `root:root` volume that the listing above reports as
+    // ready for good. `--entrypoint` because a custom `RALPH_IMAGE` may set one
+    // (the pg17 variant starts PostgreSQL, which refuses to run as root).
+    const targets = pending.map((_, index) => `/mnt/${index}`);
+    const chownArgs = ["run", "--rm", "--user", "0:0", "--entrypoint", "chown"];
+    pending.forEach((volume, index) =>
+      chownArgs.push("-v", `${volume.name}:${targets[index]}`)
+    );
+    chownArgs.push(IMAGE_REF, "1000:1000", ...targets);
+    const status = await runDockerCommand(chownArgs, {
+      stdio: "ignore",
+      signal: options.signal,
+    });
+    if (status !== 0) {
+      throw new Error(`docker run chown exited with ${status}`);
+    }
+  } catch (error) {
+    // A signal arriving mid-preparation is not a volume problem — keep the
+    // abort intact so the loop reports it as one.
+    if (options.signal?.aborted) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `failed to prepare sandbox node_modules volumes: ${message}. ` +
+        `Disable with RALPH_ISOLATE_NODE_MODULES=0.`
+    );
+  }
+
+  for (const volume of pending) preparedVolumes.add(volume.name);
+}
+
 export function stageLogPath(
   workspaceDir: string,
   iteration: number,
@@ -432,9 +520,9 @@ export async function runStage(
       "--rm",
       "-i",
       "-v",
-      `${workspaceDir}:/home/agent/workspace`,
+      `${workspaceDir}:${CONTAINER_WORKSPACE}`,
       "-w",
-      "/home/agent/workspace",
+      CONTAINER_WORKSPACE,
       "-e",
       "GIT_CONFIG_COUNT=1",
       "-e",
@@ -456,6 +544,14 @@ export async function runStage(
         );
       }
       args.push(...sockMount);
+    }
+
+    // Container-local `node_modules`, so an install inside the sandbox never
+    // rewrites the bind-mounted host tree with a Linux one (#128).
+    const volumes = resolveSandboxVolumes(workspaceDir);
+    if (volumes.length > 0) {
+      await ensureSandboxVolumes(volumes, options);
+      args.push(...sandboxRunArgs(volumes));
     }
 
     const promptInstruction = `Read the full instructions from the file ./${promptContainerPath} in the current workspace and execute them.`;
