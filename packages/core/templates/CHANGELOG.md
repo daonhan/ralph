@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.6.0...ralph-sandbox-v0.6.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* **core:** gate only on a standalone NO MORE TASKS line ([246a4d8](https://github.com/daonhan/ralph/commit/246a4d80215d7eeca1ce0a98dd95078066500b38))
+
 ## [0.6.0](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.5.0...ralph-sandbox-v0.6.0) (2026-09-08)
 
 
