@@ -57,10 +57,15 @@ vi.mock("../stream-render.js", () => ({
   SYM_OUT: { bullet: "*" },
 }));
 
-import { deriveStatus, runLoop } from "../loop.js";
+import { deriveStatus, hasSentinel, runLoop } from "../loop.js";
 
 const stage: Stage = { name: "implementer", template: "stage.md" };
 const sentinel = "<promise>NO MORE TASKS</promise>";
+// The closing sentence every `no-more-tasks` exit in this repo's own history on
+// 2026-09-08 ended on: the agent naming the sentinel, not emitting it.
+const mention = `Opening/merging the PR is HITL, so the next iteration should emit \`${sentinel}\`.`;
+// What an emission looks like: the report of an empty queue, sentinel last.
+const emission = `**Done**\n\n- nothing to pick up\n\n**Blocked**\n\n- Nothing.\n\n**Next**\n\n- none\n\n${sentinel}`;
 
 // runStage resolves { text, meta }; meta is empty in this slice.
 const ok = (text: string) => ({ text, meta: {} });
@@ -1271,6 +1276,93 @@ describe("runLoop", () => {
     // The loop still advances to the iteration cap exactly as before.
     expect(text).toMatch(/--- ended · 1\/1 iterations · cap/);
   });
+
+  it("warns and keeps iterating when the gate only mentions the sentinel", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    const rev: Stage = { name: "reviewer", template: "rev.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "impl.md"),
+      "impl",
+      "utf8"
+    );
+    writeFileSync(
+      join(dirs.packageDir, "templates", "rev.md"),
+      "review",
+      "utf8"
+    );
+    makeCleanRepo(dirs.workspaceDir);
+    mocks.runStage.mockResolvedValue(ok(mention));
+
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [impl, rev] as [Stage, Stage],
+        iterations: 2,
+        bin: "ralph-afk",
+      })
+    );
+
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toMatch(/--- ended · 2\/2 iterations · cap/);
+    expect(text).toContain("## iter 1/2 · implementer · ok · ");
+    expect(text).toContain("## iter 2/2 · implementer · ok · ");
+    expect(text).toContain("## iter 1/2 · reviewer · skipped · ");
+    expect(text).toContain("## iter 2/2 · reviewer · skipped · ");
+    const stderr = readStderr();
+    for (const i of [1, 2]) {
+      expect(stderr).toContain(
+        `[warning] iteration ${i}: the gate mentioned ${sentinel} without emitting it on a line of its own; the loop continues`
+      );
+    }
+  });
+
+  it("ends the run when the sentinel closes a Done / Blocked / Next message", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    const rev: Stage = { name: "reviewer", template: "rev.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", "impl.md"),
+      "impl",
+      "utf8"
+    );
+    writeFileSync(
+      join(dirs.packageDir, "templates", "rev.md"),
+      "review",
+      "utf8"
+    );
+    makeCleanRepo(dirs.workspaceDir);
+    mocks.runStage.mockResolvedValue(ok(emission));
+
+    await runLoop(
+      loopOptions(dirs, {
+        stages: [impl, rev] as [Stage, Stage],
+        iterations: 2,
+        bin: "ralph-afk",
+      })
+    );
+
+    expect(mocks.runStage).toHaveBeenCalledTimes(1);
+    const text = readHistory(dirs.workspaceDir);
+    expect(text).toMatch(/--- ended · 1\/2 iterations · no-more-tasks/);
+    expect(readStderr()).not.toContain("[warning] iteration");
+  });
+});
+
+describe("hasSentinel", () => {
+  it("accepts the sentinel on a line of its own", () => {
+    expect(hasSentinel(sentinel)).toBe(true);
+    expect(hasSentinel(`\n  ${sentinel}  \n`)).toBe(true);
+    expect(hasSentinel(`shipped nothing\n\n\`${sentinel}\`\n`)).toBe(true);
+    expect(hasSentinel(emission)).toBe(true);
+  });
+
+  it("rejects a mention that shares its line with other words", () => {
+    expect(hasSentinel(mention)).toBe(false);
+    expect(hasSentinel(`${sentinel} — nothing left`)).toBe(false);
+    expect(hasSentinel("still working")).toBe(false);
+  });
 });
 
 describe("deriveStatus", () => {
@@ -1282,6 +1374,12 @@ describe("deriveStatus", () => {
     ).toBe("no-more-tasks");
     expect(
       deriveStatus({ isGate: true, text: "still working", meta: {}, ...clean })
+    ).toBe("ok");
+  });
+
+  it("reads a prose mention of the sentinel as an ordinary gate turn", () => {
+    expect(
+      deriveStatus({ isGate: true, text: mention, meta: {}, ...clean })
     ).toBe("ok");
   });
 
