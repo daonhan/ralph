@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.12.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.11.1...ralph-core-v0.12.0) (2026-09-09)
+
+
+### Features
+
+* **core:** decide the sandbox node_modules volumes for a workspace ([e73ed78](https://github.com/daonhan/ralph/commit/e73ed7806ea28842c1f6d5c77886e34bbea09070))
+* **core:** mount container-local node_modules volumes in the sandbox ([267dc2f](https://github.com/daonhan/ralph/commit/267dc2ff43a425b1c3679e40af9994ee00b740b7))
+
+
+### Bug Fixes
+
+* **core:** isolate the sandbox node_modules from the bind-mounted workspace ([9c7b625](https://github.com/daonhan/ralph/commit/9c7b625f79d9fa5a423588a8d5672310adea276c))
+* **review:** chown every pending sandbox volume, bypass entrypoint ([388545b](https://github.com/daonhan/ralph/commit/388545b41412c041d5bc4dd8e51f99c0133a78a0))
+* **review:** print-config reports a package-less workspace honestly ([1177993](https://github.com/daonhan/ralph/commit/11779932b7667282727915ef17de173485de94c2))
+
 ## [0.11.1](https://github.com/daonhan/ralph/compare/ralph-core-v0.11.0...ralph-core-v0.11.1) (2026-09-09)
 
 
