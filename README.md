@@ -18,7 +18,7 @@ reviewer pipeline isolated inside a custom Docker image.
 
 Two AFK entry points (both installed globally after `npm i -g @daonhan/ralph`):
 
-- **`ralph-afk`** — plan/PRD-driven loop. Hand it a plan + PRD string; iterates until the agent emits the sentinel `<promise>NO MORE TASKS</promise>`.
+- **`ralph-afk`** — plan/PRD-driven loop. Hand it a plan + PRD string; iterates until the agent emits the sentinel `<promise>NO MORE TASKS</promise>` on a line of its own.
 - **`ralph-ghafk`** — GitHub-issue-driven loop. Pulls open issues with `gh issue list` and lets the agent pick the next AFK task.
 
 Convenience shims live at [`apps/cli/scripts/afk.sh`](./apps/cli/scripts/afk.sh) and [`apps/cli/scripts/ghafk.sh`](./apps/cli/scripts/ghafk.sh) — thin wrappers that fall back to `npx @daonhan/ralph` if not installed.
@@ -443,7 +443,7 @@ wsl bash -c "ralph-afk './docs/plans/inventory.md ./docs/prd/PRD-Inventory.md' 1
    - `{{ INPUTS }}` → the plan/PRD string
    - `@include:prompt.md` → the agent playbook (inlined by the Node renderer, no shell)
 2. **Implementer stage** (gate) — `docker run ralph-sandbox <selected-agent> …` with the rendered prompt streamed in via a tempfile under `.ralph-tmp/` (avoids Windows 32 KB argv limit). Provider events are normalized and rendered live; the terminal completion is captured.
-3. **Sentinel check** — if the completion contains `<promise>NO MORE TASKS</promise>`, the loop skips the reviewer and exits 0.
+3. **Sentinel check** — if the completion carries `<promise>NO MORE TASKS</promise>` on a line of its own, the loop skips the reviewer and exits 0; a mention inside prose does not stop the run.
 4. **Reviewer stage** — runs `packages/core/templates/review.md`. Reads the HEAD commit (the `git show --stat` summary inline, the full patch spilled to `.ralph-tmp/spill-…/head.diff` via `@spill?:head.diff`), then either commits a `fix(review): …` patch or emits `<review>OK</review>` / `<review>SKIP</review>` and stops. Single pass; never amends the implementer's commit. It runs only when the implementer stage moved HEAD; otherwise the loop records a `skipped` history entry and starts no container.
 5. **Run summary** — every non-signal exit (sentinel, iteration cap, failed stage) prints one stdout line with the reason, iterations completed, stages run and skipped, cost, tokens and wall time — e.g. `● Ralph ended · cap · 3/3 iterations · 5 stages (1 skipped) · $4.12 · 118.3k in / 9.6k out · 42m10s` — and the run's history file ends with a footer carrying the same totals: `--- ended · 3/3 iterations · cap · 5 stages (1 skipped) · $4.12 · 118.3k in / 9.6k out · 42m10s`.
 
@@ -660,7 +660,7 @@ The agent playbooks are self-contained: `packages/core/templates/prompt.md` (pla
 
 ## Stopping a run
 
-- **Natural stop:** implementer emits `<promise>NO MORE TASKS</promise>`.
+- **Natural stop:** implementer emits `<promise>NO MORE TASKS</promise>` on a line of its own.
 - **Manual stop:** `Ctrl+C`. `runLoop` installs `SIGINT` / `SIGTERM` handlers that abort the active stage (via `AbortController`, killing the docker child), release the OS wake-lock, fire the `--notify` toast if enabled, and exit `130` (SIGINT) / `143` (SIGTERM). Tempfiles under `.ralph-tmp/.run-*.md` and the per-stage `spill-*/` dir are removed by the `finally` block in `runner.ts`; a hard `SIGKILL` may leave them — safe to delete, gitignored.
 
 ---

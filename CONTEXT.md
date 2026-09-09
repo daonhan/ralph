@@ -4,7 +4,7 @@ Orientation for anyone (human or agent) opening this repo cold. Deliberately sho
 
 ## What it is, in one paragraph
 
-Ralph runs a coding agent unattended ("AFK") against a target repo. Each iteration renders a prompt template on the host, starts a throwaway Docker container (`ralph-sandbox`) with the target repo bind-mounted, and streams the agent CLI's JSONL output back. An **implementer** stage does work; a **reviewer** stage critiques it. The implementer is the **gate**: when its final message contains `<promise>NO MORE TASKS</promise>`, the loop stops early. Otherwise it runs until the iteration cap. Claude Code is the default agent; Codex is selectable per run.
+Ralph runs a coding agent unattended ("AFK") against a target repo. Each iteration renders a prompt template on the host, starts a throwaway Docker container (`ralph-sandbox`) with the target repo bind-mounted, and streams the agent CLI's JSONL output back. An **implementer** stage does work; a **reviewer** stage critiques it. The implementer is the **gate**: when its final message carries `<promise>NO MORE TASKS</promise>` on a line of its own, the loop stops early. Otherwise it runs until the iteration cap. Claude Code is the default agent; Codex is selectable per run.
 
 ## Shape of the repo
 

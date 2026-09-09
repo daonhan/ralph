@@ -6,7 +6,7 @@ You've also been passed the last few commits in `<commits>`. Review them to unde
 
 The `<history>` block holds the last few stage outcomes from earlier iterations and runs — each a **Done / Blocked / Next** summary plus its status (`ok`, `failed`, `aborted`, …). Read it before task selection: do not retry an approach a prior entry reports as failed unless you have a new reason.
 
-Work through the plan/PRD tasks. If all of them are complete, output `<promise>NO MORE TASKS</promise>`.
+Work through the plan/PRD tasks. When none is left to pick up, do no other work on that iteration and end the final message with `<promise>NO MORE TASKS</promise>` on a line of its own. Anywhere else, never mention it in prose and never in a message that reports completed work — a mention does not end the run, and the next iteration will emit it.
 
 # TASK SELECTION
 

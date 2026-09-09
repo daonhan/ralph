@@ -47,7 +47,7 @@ runLoop (loop.ts)
             spawn docker run … <provider command> …
             streamDocker: provider JSONL → normalized events → live print
                                    capture completion → return value
-        if s == 0 and result ⊇ SENTINEL: print run summary, return
+        if s == 0 and hasSentinel(result): print run summary, return
    finally: release wake-lock, off() signal handlers, [--notify] toast
 ```
 
@@ -77,13 +77,13 @@ ralph-ghafk → [STAGES.ghafkImplementer, STAGES.reviewer]   inputs = ""
 - **`ralph-afk` is plan/PRD-driven.** Its first positional arg is forwarded verbatim as the `{{ INPUTS }}` tag.
 - **`ralph-ghafk` is GitHub-issue-driven.** No input arg; `inputs = ""` and the issue context is pulled by the template via `gh`.
 
-**The first stage of a chain is always the gate.** After its stage runs, `loop.ts` checks the captured `result` for the exact literal sentinel:
+**The first stage of a chain is always the gate.** After its stage runs, `loop.ts` checks the captured `result` for the exact literal sentinel on a line of its own:
 
 ```
 <promise>NO MORE TASKS</promise>
 ```
 
-On a hit the loop prints the `Ralph ended · no-more-tasks · …` summary line and returns immediately — subsequent stages do **not** run. The sentinel string is hardcoded as `SENTINEL` in [`../packages/core/src/loop.ts`](../packages/core/src/loop.ts), and the agent is told to emit it (see [`../packages/core/templates/prompt.md`](../packages/core/templates/prompt.md)) when no AFK tasks remain. The **reviewer never gates** — only `s === 0` is sentinel-checked.
+On a hit the loop prints the `Ralph ended · no-more-tasks · …` summary line and returns immediately — subsequent stages do **not** run. The sentinel string is hardcoded as `SENTINEL` in [`../packages/core/src/loop.ts`](../packages/core/src/loop.ts) and matched by the exported `hasSentinel` predicate — surrounding whitespace and a wrapping pair of backticks are allowed, nothing else on the line — and the agent is told to emit it (see [`../packages/core/templates/prompt.md`](../packages/core/templates/prompt.md)) when no AFK tasks remain. A mention inside prose does not gate: the loop writes one `[warning] iteration <i>: the gate mentioned … without emitting it on a line of its own; the loop continues` line to stderr and keeps going. The **reviewer never gates** — only `s === 0` is sentinel-checked.
 
 **Failure handling within an iteration:** each stage is wrapped in `withRetries`. If a stage exhausts its retry budget, `loop.ts` writes a `[failure]` marker to the stage log, prints a failure line, and `break`s out of the stage loop — abandoning the rest of _that_ iteration. The outer iteration loop then proceeds to the next iteration (`i + 1`). A stage failure does **not** abort the whole run.
 
