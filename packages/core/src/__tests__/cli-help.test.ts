@@ -1,3 +1,5 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -131,4 +133,63 @@ it("prints the history dir under the resolved workspace", () => {
   printConfig("ralph-afk", "/repo", "/ctx", "/pkg");
   const output = write.mock.calls.map((call) => String(call[0])).join("");
   expect(output).toContain(`history dir           ${join("/repo", ".ralph", "history")}`);
+});
+
+describe("printConfig node_modules isolation", () => {
+  const KNOB = "RALPH_ISOLATE_NODE_MODULES";
+  const original = process.env[KNOB];
+  const roots: string[] = [];
+
+  function setKnob(value: string | undefined): void {
+    if (value === undefined) delete process.env[KNOB];
+    else process.env[KNOB] = value;
+  }
+
+  function capture(workspaceDir: string): string {
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    printConfig("ralph-afk", workspaceDir, "/ctx", "/pkg");
+    return write.mock.calls.map((call) => String(call[0])).join("");
+  }
+
+  afterEach(() => {
+    setKnob(original);
+    while (roots.length > 0)
+      rmSync(roots.pop()!, { recursive: true, force: true });
+  });
+
+  it("reports the linux default when the variable is unset", () => {
+    setKnob(undefined);
+    // printConfig takes no platform argument, so pin the one branch that reads
+    // process.platform rather than trusting the host running the suite.
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+    Object.defineProperty(process, "platform", { ...platform, value: "linux" });
+    try {
+      expect(capture("/repo")).toContain(
+        "node_modules          shared with the host bind mount (linux default; RALPH_ISOLATE_NODE_MODULES=1 to isolate)"
+      );
+    } finally {
+      Object.defineProperty(process, "platform", platform);
+    }
+  });
+
+  it("reports the variable turning isolation off", () => {
+    setKnob("0");
+    const output = capture("/repo");
+    expect(output).toContain(
+      "node_modules          shared with the host bind mount (RALPH_ISOLATE_NODE_MODULES=0)"
+    );
+    expect(output).not.toContain("isolated in");
+  });
+
+  it("counts the node_modules volumes when isolation is on", () => {
+    const root = mkdtempSync(join(tmpdir(), "ralph-print-config-"));
+    roots.push(root);
+    writeFileSync(join(root, "package.json"), "{}\n", "utf8");
+    setKnob("1");
+    expect(capture(root)).toContain(
+      "node_modules          isolated in 1 container volumes (RALPH_ISOLATE_NODE_MODULES=0 to share the host tree)"
+    );
+  });
 });
