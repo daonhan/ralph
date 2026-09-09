@@ -682,7 +682,7 @@ The agent playbooks are self-contained: `packages/core/templates/prompt.md` (pla
   docker volume ls --filter label=ralph.kind=node-modules --format '{{.Name}}  {{.Label "ralph.workspace"}}  {{.Label "ralph.path"}}'
   docker volume rm <name>…
   ```
-  The shared store volume is `ralph-pm-store` (label `ralph.kind=pm-store`). A plain `docker volume prune` removes all of them too; the only cost is a cold install on the next run.
+  The shared store volume is `ralph-pm-store` (label `ralph.kind=pm-store`). They are named volumes, so a plain `docker volume prune` skips them (it removes only anonymous ones); `docker volume prune -a` clears them along with every other unused volume. The only cost is a cold install on the next run.
 - **`Not logged in · Please run /login`** — Claude credentials are missing inside the container. Run the interactive `docker run … claude /login` step from "First-run setup".
 - **Codex reports that login is missing** — ensure `cli_auth_credentials_store = "file"`, run `codex login` from the same shell environment as Ralph (per the same-shell rule), and confirm `codex login status` succeeds and `~/.codex/auth.json` exists in that environment's home.
 - **Codex fails with `Operation not permitted (os error 1)` / `EPERM` at startup** — the container's `CODEX_HOME` is sitting on a Windows bind mount, which cannot host the unix socket and symlinks Codex creates at startup. Current Ralph avoids this by copying credentials into a container-local `CODEX_HOME`; upgrade `@daonhan/ralph` if you see this.
