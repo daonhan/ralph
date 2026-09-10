@@ -43,6 +43,8 @@ export type RunStageOptions = {
   signal?: AbortSignal;
   agent?: AgentName;
   codexUserConfig?: boolean;
+  /** Host dir of the shipped skills (<core>/templates/skills); mounted read-only when it exists. */
+  skillsHostDir?: string;
 };
 
 export const IMAGE_REF =
@@ -488,6 +490,21 @@ export function resolveAgentRuntimeArgs(
   return args;
 }
 
+/**
+ * Mount the shipped skills directory read-only where the selected provider
+ * discovers skills. Returns no args when the directory is absent — the guard
+ * credential mounts already apply, so a core packed without `templates/skills`
+ * still runs.
+ */
+export function resolveSkillsMountArgs(
+  adapter: AgentAdapter,
+  skillsHostDir: string | undefined
+): string[] {
+  if (!skillsHostDir || !existsSync(skillsHostDir)) return [];
+  const mount = adapter.skillsMount(skillsHostDir);
+  return ["-v", `${mount.hostPath}:${mount.containerPath}:ro`];
+}
+
 export async function runStage(
   stage: Stage,
   renderedPrompt: string,
@@ -534,6 +551,9 @@ export async function runStage(
     const home = resolveHostHome();
     args.push(...resolveAgentRuntimeArgs(adapter, home));
 
+    const skillsArgs = resolveSkillsMountArgs(adapter, options.skillsHostDir);
+    args.push(...skillsArgs);
+
     const sockMount = resolveDockerSocketMount();
     if (sockMount) {
       if (!dockerSockWarned) {
@@ -563,6 +583,7 @@ export async function runStage(
         rawModel: process.env.RALPH_MODEL,
         codexUserConfig: options.codexUserConfig ?? false,
         home,
+        skillsMounted: skillsArgs.length > 0,
       })
     );
 

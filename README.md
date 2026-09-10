@@ -657,6 +657,14 @@ Set `RALPH_IMAGE=registry.example.com/my-image:tag` before invoking the shim, or
 
 The agent playbooks are self-contained: `packages/core/templates/prompt.md` (plan/PRD source + progress recording, for `ralph-afk`) and `ghprompt.md` (issue triage + close/comment, for `ralph-ghafk`). Each carries its own task-priority ladder, feedback loops, commit rules, and final rules. `afk.md` / `ghafk.md` each `@include` their respective playbook. Both playbooks also read the injected `{{ HISTORY }}` block before task selection (so a prior `failed` approach is not blindly retried) and end each turn with a short **Done / Blocked / Next** summary that is recorded to `.ralph/history/` and shown to the next iteration. Edit the playbook for a loop to change its task priority or feedback loops.
 
+### Shipped skills
+
+Ralph ships one [Agent Skill](https://code.claude.com/docs/en/skills) of its own, `ralph-tdd` (`packages/core/templates/skills/ralph-tdd/`, adapted from [mattpocock/skills](https://github.com/mattpocock/skills), MIT): test-driven implementation for an unattended iteration — one failing test, the minimum code to make it pass, one vertical slice at a time, tests at seams named up front and listed in the commit body. Both implementer playbooks tell the agent to use it for backend and library code and to implement frontend UI code directly.
+
+It travels with the package, so it works on any host regardless of what you have installed (on Windows in particular, `~/.claude/skills` entries are usually junctions the container cannot follow). Every stage mounts the whole `templates/skills` directory **read-only** — Claude at `/home/agent/ralph-skills/.claude/skills`, with `--add-dir /home/agent/ralph-skills` added to the argv; Codex at `/home/agent/.agents/skills`, which it scans on its own. Both are container-local paths, so nothing is written to your home directory or your repo. The skill body is not pasted into the prompt: the agent sees the name and description and reads `SKILL.md` only when it uses it.
+
+To add another, drop a directory with a `SKILL.md` beside `ralph-tdd/`, name it `ralph-<topic>` (matching the frontmatter `name`), reference it from a playbook, and republish — no runner or adapter change. Details: [CONTRIBUTING.md](./CONTRIBUTING.md) "Adding a shipped skill".
+
 ---
 
 ## Stopping a run

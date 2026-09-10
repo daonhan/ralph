@@ -345,6 +345,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
                   signal: stageAbort.signal,
                   agent,
                   codexUserConfig,
+                  skillsHostDir: join(packageDir, "templates", "skills"),
                 }
               );
             },

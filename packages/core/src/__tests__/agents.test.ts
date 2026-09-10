@@ -102,6 +102,55 @@ describe("Claude adapter", () => {
     ]);
     expect(adapter.containerEnv).toEqual({});
   });
+
+  it("mounts the shipped skills where Claude discovers them", () => {
+    expect(
+      getAgentAdapter("claude").skillsMount("/pkg/templates/skills")
+    ).toEqual({
+      hostPath: "/pkg/templates/skills",
+      containerPath: "/home/agent/ralph-skills/.claude/skills",
+      readOnly: true,
+    });
+  });
+
+  // --add-dir is variadic: placed last it would swallow the prompt positional
+  // (the argv shape when --model is omitted under third-party routing).
+  it("adds --add-dir before --verbose when the skills are mounted", () => {
+    const args = getAgentAdapter("claude").buildCommand({
+      stage,
+      promptInstruction,
+      rawModel: "opus",
+      codexUserConfig: false,
+      home: "",
+      skillsMounted: true,
+    });
+    expect(args.slice(0, 4)).toEqual([
+      "claude",
+      "--add-dir",
+      "/home/agent/ralph-skills",
+      "--verbose",
+    ]);
+    expect(args.at(-1)).toBe(promptInstruction);
+  });
+
+  it("omits --add-dir when the skills are not mounted", () => {
+    const context = {
+      stage,
+      promptInstruction,
+      rawModel: "opus",
+      codexUserConfig: false,
+      home: "",
+    };
+    expect(
+      getAgentAdapter("claude").buildCommand({
+        ...context,
+        skillsMounted: false,
+      })
+    ).not.toContain("--add-dir");
+    expect(getAgentAdapter("claude").buildCommand(context)).not.toContain(
+      "--add-dir"
+    );
+  });
 });
 
 describe("Claude host model resolution", () => {
@@ -445,5 +494,29 @@ describe("Codex adapter", () => {
     expect(adapter.containerEnv).toEqual({
       CODEX_HOME: "/home/agent/.codex",
     });
+  });
+
+  it("mounts the shipped skills where Codex discovers them", () => {
+    expect(
+      getAgentAdapter("codex").skillsMount("/pkg/templates/skills")
+    ).toEqual({
+      hostPath: "/pkg/templates/skills",
+      containerPath: "/home/agent/.agents/skills",
+      readOnly: true,
+    });
+  });
+
+  // Codex scans $HOME/.agents/skills on its own; the mount alone is enough.
+  it("builds the same argv whether or not the skills are mounted", () => {
+    const context = {
+      stage,
+      promptInstruction,
+      rawModel: undefined,
+      codexUserConfig: false,
+      home: "",
+    };
+    expect(buildCodexArgs({ ...context, skillsMounted: true })).toEqual(
+      buildCodexArgs({ ...context, skillsMounted: false })
+    );
   });
 });

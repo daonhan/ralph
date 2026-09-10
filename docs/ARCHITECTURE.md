@@ -101,9 +101,9 @@ On a hit the loop prints the `Ralph ended · no-more-tasks · …` summary line 
 | [`render.ts`](../packages/core/src/render.ts)               | `renderTemplate` — expand the five tag forms; `resolveShell` picks the host shell for shell/spill tags.                                                                  |
 | [`runner.ts`](../packages/core/src/runner.ts)               | Docker plumbing: `ensureImage` (sync + async overloads), `runStage`, `streamDocker`, socket detection/mount, image-ref helpers, `stageLogPath`, TTY-gated color exports. |
 | [`stages.ts`](../packages/core/src/stages.ts)               | `STAGES` registry: `implementer` (afk.md), `ghafkImplementer` (ghafk.md), `reviewer` (review.md), all `bypassPermissions`; `Stage` type.                                 |
-| [`agents/types.ts`](../packages/core/src/agents/types.ts)   | Provider-neutral adapter, command context, mount, decoder, and normalized render-event contracts.                                                                        |
-| [`agents/claude.ts`](../packages/core/src/agents/claude.ts) | Claude command/model resolution, selected credential mounts, and stream-json decoder.                                                                                    |
-| [`agents/codex.ts`](../packages/core/src/agents/codex.ts)   | Codex command/model/config resolution, `CODEX_HOME`, selected credential mount, and JSONL terminal contract.                                                             |
+| [`agents/types.ts`](../packages/core/src/agents/types.ts)   | Provider-neutral adapter, command context, mount, decoder, and normalized render-event contracts, including `skillsMount` and `skillsMounted`.                           |
+| [`agents/claude.ts`](../packages/core/src/agents/claude.ts) | Claude command/model resolution, selected credential mounts, `skillsMount` + the `--add-dir` skills root, and stream-json decoder.                                       |
+| [`agents/codex.ts`](../packages/core/src/agents/codex.ts)   | Codex command/model/config resolution, `CODEX_HOME`, selected credential mount, `skillsMount` (`~/.agents/skills`), and JSONL terminal contract.                         |
 | [`agents/index.ts`](../packages/core/src/agents/index.ts)   | Provider registry plus `--agent`/`RALPH_AGENT` selection and validation.                                                                                                 |
 | [`index.ts`](../packages/core/src/index.ts)                 | Public barrel — see exact exports below.                                                                                                                                 |
 | [`cli-help.ts`](../packages/core/src/cli-help.ts)           | `parseFlags`, `printHelp`, `printVersion`, `printConfig`, `readCoreVersion`. **Internal** (not exported from `index.ts`).                                                |
@@ -260,6 +260,7 @@ docker run --rm -i \
   -e GIT_CONFIG_VALUE_0=* \
   [ selected-provider credential mounts and env ] \
   [ -v <HOME>/.config/gh:/home/agent/.config/gh:ro ] \
+  [ -v <core>/templates/skills:/home/agent/ralph-skills/.claude/skills:ro | :/home/agent/.agents/skills:ro ] \
   [ -v <sock>:/var/run/docker.sock  --group-add <gid|0> ] \
   [ -v ralph-nm-<hash>:/home/agent/workspace[/<pkg-dir>]/node_modules … ] \
   [ -v ralph-pm-store:/home/agent/.pm-store \
@@ -272,7 +273,8 @@ The selected-provider argv is one of:
 
 ```bash
 # Claude (default)
-claude --verbose --print --output-format stream-json \
+claude --add-dir /home/agent/ralph-skills \
+  --verbose --print --output-format stream-json \
   --permission-mode bypassPermissions \
   [--model "${RALPH_MODEL:-<host ~/.claude/settings.json model, else claude-opus-5[1m]>}"] \
   "Read the full instructions from the file ./.ralph-tmp/<run-file> in the current workspace and execute them."
@@ -313,6 +315,7 @@ also unset, both model and reasoning effort come from `~/.codex/config.toml`.
 - **Container-local `node_modules`:** [`sandbox-volumes.ts`](../packages/core/src/sandbox-volumes.ts) decides one docker volume per package directory of the workspace (root plus each nested `package.json`, walked four levels deep, skipping `node_modules/` and dot dirs) plus the shared `ralph-pm-store` store volume, so an install inside the sandbox writes a Linux tree into a volume instead of the bind mount (#128). Volume names are `ralph-nm-<sha256 prefix>` of workspace + relative path; provenance lives in the labels `ralph.kind=node-modules`, `ralph.workspace=<host dir>`, `ralph.path=<rel dir>` (the store volume carries `ralph.kind=pm-store`). `runStage` lists, creates and — because a fresh volume mounts `root:root` while the sandbox runs as UID 1000 — hands them to the sandbox user with one `docker run --rm --user 0:0 --entrypoint chown` container, once per process, failing the stage with a message naming `RALPH_ISOLATE_NODE_MODULES=0` if any step fails. Off on Linux by default; see the environment-variable table.
 - **Git env injection:** `GIT_CONFIG_COUNT/KEY_0/VALUE_0` forces `safe.directory=*` so git works against a bind-mount whose UID differs from the container user (a Windows-host pain point).
 - **Credential mounts** (only if the host path exists, resolved against `HOME || USERPROFILE`) are selected-provider-only: Claude mounts `~/.claude` and `~/.claude.json` (**rw**); Codex mounts `~/.codex` (**ro**) at `/mnt/codex-creds` and injects `CODEX_HOME=/home/agent/.codex` — a setup script wrapped around the `codex` invocation copies `auth.json`, `config.toml`, and `AGENTS.md` (when present) into the container-local `CODEX_HOME` before exec, because a bind-mounted `CODEX_HOME` cannot host the unix socket / symlinks Codex creates at startup (EPERM on Docker Desktop for Windows). Codex's `auth.json` is a reusable secret available to the process. Both may mount `~/.config/gh` (**ro**).
+- **Shipped skills mount:** `runStage` also mounts the installed core package's `templates/skills` directory (today one skill, `ralph-tdd`) at the container path the selected adapter's `skillsMount` returns, always **read-only**: `/home/agent/ralph-skills/.claude/skills` for Claude — whose argv then carries `--add-dir /home/agent/ralph-skills` — and `/home/agent/.agents/skills` for Codex. Both are container-local paths outside every bind mount, so no host directory is created and nothing lands in the workspace; the mount is added only when the host directory exists (`resolveSkillsMountArgs`).
 - **Approval bypass** is provider-specific: Claude receives stage `permissionMode=bypassPermissions`; Codex receives `--dangerously-bypass-approvals-and-sandbox`.
 
 On Windows, the generic `HOME || USERPROFILE` resolution is a supported native

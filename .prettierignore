@@ -3,3 +3,6 @@
 # heading reflow) and create churn in release PRs.
 CHANGELOG.md
 RELEASING.md
+# Vendored skill files must stay byte-identical to upstream (see CONTRIBUTING
+# "Adding a shipped skill"); lint-staged would otherwise rewrite them.
+packages/core/templates/skills/

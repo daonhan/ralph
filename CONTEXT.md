@@ -13,7 +13,7 @@ packages/core/          @daonhan/ralph-core  — TS library, compiled to dist/ (
   src/                  loop spine + AFK machinery (see "Read path")
   src/agents/           provider adapters: claude.ts, codex.ts, index.ts (registry), types.ts
   src/__tests__/        vitest suite
-  templates/            prompt templates (afk/ghafk/review.md, prompt/ghprompt.md playbooks) + Dockerfile
+  templates/            prompt templates (afk/ghafk/review.md, prompt/ghprompt.md playbooks) + skills/ralph-tdd/ + Dockerfile
 apps/cli/               @daonhan/ralph — hand-written JS bins ralph-afk / ralph-ghafk, no build
 scripts/                repo-level node --test checks + smoke scripts (image, render, spill)
 images/pg17/            sandbox variant with PostgreSQL 17 + PostGIS (local build only)
@@ -36,7 +36,7 @@ Two entry points, same loop, different first stage:
 4. `runner.ts` — `ensureImage` (inspect → pull → build) and `runStage` (tempfile prompt, `docker run`, JSONL stream, `{ text, meta }`).
 5. `agents/types.ts` then `agents/claude.ts` / `agents/codex.ts` — how each provider is invoked, mounted, and decoded.
 6. `stages.ts`, `history.ts`, `stream-render.ts` — stage registry, per-run Markdown history, terminal pretty-printer.
-7. `templates/afk.md` + `prompt.md` — what the agent is actually told. Edit these to change behavior, not the loop.
+7. `templates/afk.md` + `prompt.md` — what the agent is actually told. Edit these to change behavior, not the loop. The implementer playbooks call the shipped `ralph-tdd` skill from `templates/skills/`, mounted read-only into every stage.
 
 Deeper: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the end-to-end data flow, the exact `docker run` argv, and the env-var table.
 

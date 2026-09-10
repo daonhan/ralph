@@ -257,18 +257,24 @@ export function resolveClaudeModel(
   return { model: DEFAULT_CLAUDE_MODEL, modelSource: "Ralph default" };
 }
 
+/**
+ * Directory added to Claude's workspace so it discovers the shipped skills
+ * under `<root>/.claude/skills`; the mount lands there, not on the host tree.
+ */
+export const CLAUDE_SKILLS_ROOT = "/home/agent/ralph-skills";
+
 function buildClaudeCommand(
   stage: Stage,
   promptInstruction: string,
-  modelArgs: string[]
+  modelArgs: string[],
+  skillsMounted = false
 ): string[] {
-  const args = [
-    "claude",
-    "--verbose",
-    "--print",
-    "--output-format",
-    "stream-json",
-  ];
+  const args = ["claude"];
+  // `--add-dir <directories...>` is variadic, so it goes first: emitted right
+  // before the prompt positional it would swallow it (the argv shape when
+  // `--model` is omitted under third-party routing).
+  if (skillsMounted) args.push("--add-dir", CLAUDE_SKILLS_ROOT);
+  args.push("--verbose", "--print", "--output-format", "stream-json");
   if (stage.permissionMode) {
     args.push("--permission-mode", stage.permissionMode);
   }
@@ -304,7 +310,8 @@ function buildFromContext(context: AgentCommandContext): string[] {
   return buildClaudeCommand(
     context.stage,
     context.promptInstruction,
-    resolution.model ? ["--model", resolution.model] : []
+    resolution.model ? ["--model", resolution.model] : [],
+    context.skillsMounted === true
   );
 }
 
@@ -323,6 +330,13 @@ export const claudeAdapter = {
         containerPath: "/home/agent/.claude.json",
       },
     ];
+  },
+  skillsMount(hostDir) {
+    return {
+      hostPath: hostDir,
+      containerPath: `${CLAUDE_SKILLS_ROOT}/.claude/skills`,
+      readOnly: true,
+    };
   },
   buildCommand: buildFromContext,
   createDecoder: createClaudeDecoder,

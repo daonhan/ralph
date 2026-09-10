@@ -10,6 +10,7 @@ import {
   parseGraceMs,
   resolveAgentRuntimeArgs,
   resolveModelArgs,
+  resolveSkillsMountArgs,
 } from "../runner.js";
 
 describe("parseGraceMs", () => {
@@ -154,6 +155,38 @@ describe("resolveAgentRuntimeArgs", () => {
       expect(codexArgs.join(" ")).toContain("/home/agent/.config/gh:ro");
     } finally {
       rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("resolveSkillsMountArgs", () => {
+  it("mounts the shipped skills read-only where each provider looks", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ralph-skills-"));
+    try {
+      expect(resolveSkillsMountArgs(getAgentAdapter("claude"), dir)).toEqual([
+        "-v",
+        `${dir}:/home/agent/ralph-skills/.claude/skills:ro`,
+      ]);
+      expect(resolveSkillsMountArgs(getAgentAdapter("codex"), dir)).toEqual([
+        "-v",
+        `${dir}:/home/agent/.agents/skills:ro`,
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("mounts nothing when the skills directory is absent or unset", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ralph-skills-"));
+    try {
+      expect(
+        resolveSkillsMountArgs(getAgentAdapter("claude"), join(dir, "missing"))
+      ).toEqual([]);
+      expect(
+        resolveSkillsMountArgs(getAgentAdapter("claude"), undefined)
+      ).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
