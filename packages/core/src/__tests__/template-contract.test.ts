@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
@@ -49,4 +49,35 @@ describe("history injection contract", () => {
     expect(review).not.toContain("<history>");
     expect(review).not.toContain("{{ HISTORY }}");
   });
+});
+
+describe("shipped skills", () => {
+  const skill = template("skills/ralph-tdd/SKILL.md");
+
+  it("ralph-tdd names itself after its directory", () => {
+    expect(skill).toMatch(/^---\nname: ralph-tdd\n/);
+  });
+
+  it("ralph-tdd has a description under Codex's 1024-character cap", () => {
+    const description = /^description: (.+)$/m.exec(skill)?.[1] ?? "";
+    expect(description.length).toBeGreaterThan(0);
+    expect(description.length).toBeLessThan(1024);
+  });
+
+  it("ralph-tdd drops the interactive-run and sibling-skill text", () => {
+    expect(skill).not.toContain("confirm them with the user");
+    expect(skill).not.toContain("codebase-design");
+    expect(skill).not.toContain("`code-review`");
+  });
+
+  it.each(["tests.md", "mocking.md", "LICENSE"])(
+    "%s ships beside ralph-tdd's SKILL.md",
+    (name) => {
+      expect(
+        existsSync(
+          new URL(`../../templates/skills/ralph-tdd/${name}`, import.meta.url)
+        )
+      ).toBe(true);
+    }
+  );
 });
