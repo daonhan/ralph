@@ -1,6 +1,6 @@
 ---
 name: ralph-tdd
-description: Test-driven implementation for a Ralph iteration. Use when implementing backend or library code: one failing test, the minimum code to make it pass, repeat per vertical slice, tests at public seams.
+description: "Test-driven implementation for a Ralph iteration. Use when implementing backend or library code: one failing test, the minimum code to make it pass, repeat per vertical slice, tests at public seams."
 ---
 
 # Test-Driven Development

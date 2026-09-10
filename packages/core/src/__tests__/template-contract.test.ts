@@ -64,6 +64,14 @@ describe("shipped skills", () => {
     expect(description.length).toBeLessThan(1024);
   });
 
+  it("ralph-tdd's frontmatter stays valid YAML", () => {
+    const description = /^description: (.+)$/m.exec(skill)?.[1] ?? "";
+    // The loaders yaml.safe_load this block: an unquoted scalar carrying ": "
+    // reads as a nested mapping and the whole skill fails to load.
+    const quoted = /^"[^"]*"$/.test(description);
+    expect(quoted || !description.includes(": ")).toBe(true);
+  });
+
   it("ralph-tdd drops the interactive-run and sibling-skill text", () => {
     expect(skill).not.toContain("confirm them with the user");
     expect(skill).not.toContain("codebase-design");
