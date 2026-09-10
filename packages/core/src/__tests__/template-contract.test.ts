@@ -89,3 +89,20 @@ describe("shipped skills", () => {
     }
   );
 });
+
+describe("shipped skill usage", () => {
+  it.each(["prompt.md", "ghprompt.md"])(
+    "%s sends backend and library work through ralph-tdd",
+    (name) => {
+      const t = template(name);
+      expect(t).toContain("`ralph-tdd`");
+      expect(t).toContain("For frontend UI code, implement directly.");
+    }
+  );
+
+  it("the reviewer template stays out of the implementation discipline", () => {
+    const review = template("review.md");
+    expect(review).not.toContain("ralph-tdd");
+    expect(review).not.toContain("For frontend UI code, implement directly.");
+  });
+});

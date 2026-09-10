@@ -21,6 +21,8 @@ export type AgentCommandContext = {
   codexUserConfig: boolean;
   /** Host home dir (HOME || USERPROFILE); "" when neither is set. */
   home: string;
+  /** True when runStage mounted the shipped skills directory into the container. */
+  skillsMounted?: boolean;
 };
 
 export type AgentRenderEvent =
@@ -73,6 +75,8 @@ export interface AgentAdapter {
   readonly name: AgentName;
   readonly containerEnv: Readonly<Record<string, string>>;
   credentialMounts(home: string): AgentMount[];
+  /** Read-only mount of the shipped skills directory where this provider discovers skills. */
+  skillsMount(hostDir: string): AgentMount;
   buildCommand(context: AgentCommandContext): string[];
   createDecoder(): AgentStreamDecoder;
 }

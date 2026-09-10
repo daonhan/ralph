@@ -291,6 +291,10 @@ export function resolveCodexModel(
 // to the host; the host CLI re-refreshes on its next use.
 const CODEX_CREDS_MOUNT = "/mnt/codex-creds";
 
+// Codex scans $HOME/.agents/skills as a User-scope skills root even under
+// --ignore-user-config and --ephemeral, so mounting there needs no flag.
+export const CODEX_SKILLS_ROOT = "/home/agent/.agents/skills";
+
 const CODEX_SETUP_SCRIPT =
   'mkdir -p "$CODEX_HOME"; ' +
   "for f in auth.json config.toml AGENTS.md; do " +
@@ -340,6 +344,13 @@ export const codexAdapter = {
         readOnly: true,
       },
     ];
+  },
+  skillsMount(hostDir) {
+    return {
+      hostPath: hostDir,
+      containerPath: CODEX_SKILLS_ROOT,
+      readOnly: true,
+    };
   },
   buildCommand: buildCodexArgs,
   createDecoder: createCodexDecoder,

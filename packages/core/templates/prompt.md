@@ -32,7 +32,7 @@ Explore the repo.
 
 # IMPLEMENTATION
 
-Complete the task.
+For backend or library code, use the `ralph-tdd` skill: one failing test, the minimum code to make it pass, repeat per vertical slice. For frontend UI code, implement directly. Complete the task.
 
 # FEEDBACK LOOPS
 
