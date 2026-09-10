@@ -155,4 +155,5 @@ Shell resolution lives in `resolveShell()` in `render.ts`: Linux/macOS → `/bin
 
 ## Behavioral
 
-Apply `.claude/CLAUDE.md` (think first, simplicity, surgical changes, goal-driven). Make only changes the user asked for; match existing style; prefer smallest correct change; push back on over-engineering; state a brief plan + success criteria for non-trivial work.
+- Apply `.claude/CLAUDE.md` (think first, simplicity, surgical changes, goal-driven). Make only changes the user asked for; match existing style; prefer smallest correct change; push back on over-engineering; state a brief plan + success criteria for non-trivial work.
+- When a change affects architecture, interfaces, or invariants, update the relevant docs before finishing. Delegate the docs pass to a sub-agent.
