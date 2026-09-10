@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.13.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.12.0...ralph-core-v0.13.0) (2026-09-10)
+
+
+### Features
+
+* **skills:** mount the shipped skills and use ralph-tdd ([55231ec](https://github.com/daonhan/ralph/commit/55231ec0fa156c56be5d571b3a622345679b2036))
+* **skills:** ship the ralph-tdd skill and mount it into every stage ([d9121f5](https://github.com/daonhan/ralph/commit/d9121f578bba75742219bddde7e0b172adcbae64))
+* **skills:** ship the ralph-tdd skill in the core templates ([e50aa6a](https://github.com/daonhan/ralph/commit/e50aa6a4142e079db0f8e7b52ea2c33a781b9f88))
+
+
+### Bug Fixes
+
+* **review:** cover the loop's shipped-skills wiring with a test ([d0e7524](https://github.com/daonhan/ralph/commit/d0e7524f7162db962b39bf972f70a7d0ea2487f7))
+* **review:** quote the ralph-tdd description so the YAML parses ([0771f88](https://github.com/daonhan/ralph/commit/0771f88367a600da2cc1754c5d55b0907f12cd83))
+
 ## [0.12.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.11.1...ralph-core-v0.12.0) (2026-09-09)
 
 
