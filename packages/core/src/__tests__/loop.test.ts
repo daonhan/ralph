@@ -275,6 +275,7 @@ describe("runLoop", () => {
       expect.objectContaining({
         agent: "codex",
         codexUserConfig: true,
+        skillsHostDir: join(dirs.packageDir, "templates", "skills"),
         signal: expect.any(AbortSignal),
       })
     );
