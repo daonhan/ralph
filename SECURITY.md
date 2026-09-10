@@ -50,6 +50,13 @@ The trust boundary is:
   personal config, MCP, and hook loading; it does not conceal
   `~/.codex/auth.json` from the process.
 
+- **Ralph's own shipped skills are mounted read-only.** The `templates/skills/`
+  directory of the installed `@daonhan/ralph-core` (today one skill, `ralph-tdd`)
+  is bind-mounted into every stage at a container-local path — Claude
+  `/home/agent/ralph-skills/.claude/skills`, Codex `/home/agent/.agents/skills`.
+  It holds only Ralph's own shipped files, contains no secrets, and the agent
+  cannot modify it or the host copy. No host directory is created by the mount.
+
 ### Reducing blast radius
 
 - Set `RALPH_DOCKER_SOCK=0` unless you specifically need Testcontainers.

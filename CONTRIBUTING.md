@@ -270,6 +270,39 @@ loop-specific behavior. The renderer's `@include` is single-pass (a file pulled 
 `afk.md` / `ghafk.md` — don't nest an `@include` inside `prompt.md` / `ghprompt.md`. After
 editing, run `node scripts/smoke-templates.mjs` to confirm it still renders.
 
+## Adding a shipped skill
+
+Ralph ships its own [Agent Skills](https://code.claude.com/docs/en/skills) inside
+`@daonhan/ralph-core`, so a playbook can reference one on any host without the user
+installing anything. Today there is one: `ralph-tdd`.
+
+1. **Create the directory** `packages/core/templates/skills/<name>/` with a `SKILL.md`.
+   Reference files (`tests.md`, `mocking.md`, …) sit beside it and are read on demand;
+   vendored content keeps its upstream `LICENSE` and stays byte-identical to a pinned
+   commit so upstream changes stay diffable.
+2. **Frontmatter rules.** `name` must equal the directory name and start with `ralph-`;
+   `description` is one line, under 1024 characters (Codex's cap), and phrased for catalog
+   matching ("Use when …"). Quote any description containing `": "` — an unquoted plain
+   scalar with that sequence is not valid YAML and the skill silently never loads.
+3. **The `ralph-` prefix is required.** On macOS/Linux a user's own `~/.claude/skills/tdd`
+   resolves inside the container, and Codex injects a skill only when exactly one enabled
+   skill carries the mentioned name — the prefix keeps a playbook reference deterministic.
+4. **Where each provider sees it.** `runStage` mounts the whole `templates/skills`
+   directory read-only: Claude at `/home/agent/ralph-skills/.claude/skills` (with
+   `--add-dir /home/agent/ralph-skills` in the argv), Codex at `/home/agent/.agents/skills`.
+   Both come from the adapter's `skillsMount`, so a new skill needs **no** runner or adapter
+   change.
+5. **Reference it from a playbook.** `prompt.md` / `ghprompt.md` name the skill in prose
+   (``use the `ralph-tdd` skill``); the skill body is never `@include`d — the agent loads
+   it on demand.
+6. **Extend the tests.** Add cases to the `describe("shipped skills", …)` block in
+   [`packages/core/src/__tests__/template-contract.test.ts`](./packages/core/src/__tests__/template-contract.test.ts)
+   (frontmatter, no interactive phrasing, reference files present), then run
+   `node scripts/smoke-templates.mjs` to confirm the templates still render.
+
+Skill files live under `packages/core/templates`, so a skill-only change bumps the
+`ralph-sandbox` release component, the same as a playbook edit.
+
 ## Smoke-test published artifacts
 
 Verify the _published shape_ before cutting a release with the pack-then-install
