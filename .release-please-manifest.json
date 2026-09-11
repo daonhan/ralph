@@ -1,5 +1,5 @@
 {
-  "packages/core": "0.13.0",
-  "apps/cli": "0.6.10",
+  "packages/core": "0.14.0",
+  "apps/cli": "0.6.11",
   "packages/core/templates": "0.7.0"
 }
