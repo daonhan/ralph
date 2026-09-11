@@ -9,6 +9,7 @@ import {
   buildClaudeArgs,
   parseGraceMs,
   resolveAgentRuntimeArgs,
+  resolveAgentVolumeArgs,
   resolveModelArgs,
   resolveSkillsMountArgs,
 } from "../runner.js";
@@ -92,7 +93,12 @@ describe("buildClaudeArgs", () => {
 
   it("includes the claude invocation and prompt instruction", () => {
     const args = buildClaudeArgs(stage, promptPath, []);
-    expect(args[0]).toBe("claude");
+    expect(args.slice(0, 4)).toEqual([
+      "bash",
+      "-c",
+      expect.stringContaining("claude update"),
+      "claude",
+    ]);
     expect(args).toContain("--verbose");
     expect(args).toContain("--print");
     expect(args.at(-1)).toContain(promptPath);
@@ -156,6 +162,17 @@ describe("resolveAgentRuntimeArgs", () => {
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
+  });
+});
+
+describe("resolveAgentVolumeArgs", () => {
+  // `--mount` because `-v` cannot label the volume docker creates on first use.
+  it("mounts each provider volume with its labels", () => {
+    expect(resolveAgentVolumeArgs(getAgentAdapter("claude"))).toEqual([
+      "--mount",
+      "type=volume,source=ralph-claude-home,target=/home/agent/.local,volume-label=ralph.kind=claude-home",
+    ]);
+    expect(resolveAgentVolumeArgs(getAgentAdapter("codex"))).toEqual([]);
   });
 });
 

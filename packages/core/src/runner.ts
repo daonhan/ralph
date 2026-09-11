@@ -505,6 +505,28 @@ export function resolveSkillsMountArgs(
   return ["-v", `${mount.hostPath}:${mount.containerPath}:ro`];
 }
 
+/**
+ * Mount the provider's own volumes. `--mount` rather than `-v` so the volume
+ * docker creates on first use carries the `ralph.kind` label the node_modules
+ * volumes have.
+ */
+export function resolveAgentVolumeArgs(adapter: AgentAdapter): string[] {
+  const args: string[] = [];
+  for (const volume of adapter.volumeMounts()) {
+    const labels = volume.labels.map((label) => `volume-label=${label}`);
+    args.push(
+      "--mount",
+      [
+        "type=volume",
+        `source=${volume.name}`,
+        `target=${volume.containerPath}`,
+        ...labels,
+      ].join(",")
+    );
+  }
+  return args;
+}
+
 export async function runStage(
   stage: Stage,
   renderedPrompt: string,
@@ -553,6 +575,7 @@ export async function runStage(
 
     const skillsArgs = resolveSkillsMountArgs(adapter, options.skillsHostDir);
     args.push(...skillsArgs);
+    args.push(...resolveAgentVolumeArgs(adapter));
 
     const sockMount = resolveDockerSocketMount();
     if (sockMount) {

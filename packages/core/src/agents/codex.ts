@@ -352,6 +352,9 @@ export const codexAdapter = {
       readOnly: true,
     };
   },
+  volumeMounts() {
+    return [];
+  },
   buildCommand: buildCodexArgs,
   createDecoder: createCodexDecoder,
 } satisfies AgentAdapter;

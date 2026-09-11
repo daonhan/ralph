@@ -57,6 +57,13 @@ The trust boundary is:
   It holds only Ralph's own shipped files, contains no secrets, and the agent
   cannot modify it or the host copy. No host directory is created by the mount.
 
+- **The Claude sandbox fetches its CLI from the network at run time.** Every Claude
+  stage runs `claude update` before its own command, downloading the Claude Code
+  binary with the same trust as the `curl … install.sh` the image build runs, and
+  caches it in the host-wide named Docker volume `ralph-claude-home` (shared by every
+  workspace on the host, mounted at `/home/agent/.local`). Set `RALPH_CLAUDE_UPDATE=0`
+  to pin the stage to the image's baked copy and drop the volume mount.
+
 ### Reducing blast radius
 
 - Set `RALPH_DOCKER_SOCK=0` unless you specifically need Testcontainers.

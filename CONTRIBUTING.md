@@ -205,7 +205,8 @@ See [`./docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full runtime mode
 ## Adding a coding-agent provider
 
 A provider implements the adapter contracts in `agents/types.ts`: command construction,
-selected-provider credential mounts and environment, and a JSONL decoder that emits normalized
+selected-provider credential mounts and environment, the named volumes it keeps across
+containers (`volumeMounts`; `[]` when it needs none), and a JSONL decoder that emits normalized
 events plus one terminal completion or failure. Register it in `agents/index.ts`; do not branch
 the loop or renderer by provider. `runLoop` remains provider-neutral and continues to gate only
 on the first stage's returned completion text.

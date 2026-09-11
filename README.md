@@ -171,7 +171,9 @@ inside the Linux sandbox.
 (`env.ANTHROPIC_MODEL`, else the `model` key `/model` stored; its "(default)"
 entry stores no model) → `claude-opus-5[1m]`, Ralph's own default. Ralph passes
 `--model` rather than letting the container choose, because the sandbox image's
-CLI is frozen at image build time and its built-in default can lag the host's.
+CLI is frozen at image build time and its built-in default can lag the host's
+(the per-stage `claude update` refreshes the CLI, but not under
+`RALPH_CLAUDE_UPDATE=0` or offline — see "Troubleshooting").
 The exception is third-party routing: when the host settings enable
 `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, or
 `CLAUDE_CODE_USE_FOUNDRY`, model IDs are provider-specific, so Ralph sends no
@@ -215,6 +217,12 @@ This release provides one baked system Python and does not select versions from
 `.python-version`, `.tool-versions`, `.mise.toml`, `pyproject.toml`, or similar
 manifests. Repositories pinned to another Python version need a custom
 `RALPH_IMAGE` until future version-detection support is added.
+
+The Claude Code CLI baked into the image is likewise a build-time snapshot, but
+Claude Code releases roughly daily, so every Claude stage runs `claude update`
+before its own command and caches the result in the host-wide `ralph-claude-home`
+Docker volume; `RALPH_CLAUDE_UPDATE=0` runs the image's copy as shipped. See
+"Troubleshooting" for the cost and cleanup.
 
 #### Publishing a new image (maintainers)
 
@@ -442,7 +450,7 @@ wsl bash -c "ralph-afk './docs/plans/inventory.md ./docs/prd/PRD-Inventory.md' 1
    - `` !?`git log -n 5 …|||No commits found` `` → recent commits (try-shell)
    - `{{ INPUTS }}` → the plan/PRD string
    - `@include:prompt.md` → the agent playbook (inlined by the Node renderer, no shell)
-2. **Implementer stage** (gate) — `docker run ralph-sandbox <selected-agent> …` with the rendered prompt streamed in via a tempfile under `.ralph-tmp/` (avoids Windows 32 KB argv limit). Provider events are normalized and rendered live; the terminal completion is captured.
+2. **Implementer stage** (gate) — `docker run ralph-sandbox <selected-agent> …` with the rendered prompt streamed in via a tempfile under `.ralph-tmp/` (avoids Windows 32 KB argv limit); a Claude stage runs `claude update` before its own command (see "Troubleshooting"). Provider events are normalized and rendered live; the terminal completion is captured.
 3. **Sentinel check** — if the completion carries `<promise>NO MORE TASKS</promise>` on a line of its own, the loop skips the reviewer and exits 0; a mention inside prose does not stop the run.
 4. **Reviewer stage** — runs `packages/core/templates/review.md`. Reads the HEAD commit (the `git show --stat` summary inline, the full patch spilled to `.ralph-tmp/spill-…/head.diff` via `@spill?:head.diff`), then either commits a `fix(review): …` patch or emits `<review>OK</review>` / `<review>SKIP</review>` and stops. Single pass; never amends the implementer's commit. It runs only when the implementer stage moved HEAD; otherwise the loop records a `skipped` history entry and starts no container.
 5. **Run summary** — every non-signal exit (sentinel, iteration cap, failed stage) prints one stdout line with the reason, iterations completed, stages run and skipped, cost, tokens and wall time — e.g. `● Ralph ended · cap · 3/3 iterations · 5 stages (1 skipped) · $4.12 · 118.3k in / 9.6k out · 42m10s` — and the run's history file ends with a footer carrying the same totals: `--- ended · 3/3 iterations · cap · 5 stages (1 skipped) · $4.12 · 118.3k in / 9.6k out · 42m10s`.
@@ -547,6 +555,7 @@ npx -y @daonhan/ralph ralph-afk "<plan-and-prd>" 5
 | `RALPH_DOCKER_SOCK`          | _(on if a socket is found)_                                        | Set to `0` to disable bind-mounting the host Docker socket into the sandbox. Mounted by default so Testcontainers inside the container can spawn sibling containers — this grants the sandbox **root-equivalent access to the host Docker daemon**. Disable when running untrusted prompts.                   |
 | `RALPH_DOCKER_SOCK_PATH`     | _(auto-detected)_                                                  | Explicit host `docker.sock` path. Auto-detection (when unset) tries `DOCKER_HOST` (`unix://` only), then `/var/run/docker.sock`, Docker Desktop, Colima, Rancher Desktop, and rootless Docker/Podman socket locations.                                                                                        |
 | `RALPH_ISOLATE_NODE_MODULES` | _(on except Linux)_                                                | `0` shares the bind-mounted host `node_modules/` with the sandbox; `1` isolates on Linux too. Otherwise the sandbox gets container-local `node_modules` volumes at every package directory plus a shared package-manager store volume, so an install inside the container never rewrites the host tree.       |
+| `RALPH_CLAUDE_UPDATE`        | _(on)_                                                             | `0` skips the `claude update` every Claude stage runs before its own command **and** the `ralph-claude-home` volume mount that caches the updated CLI across containers, so the stage runs the image's baked CLI. Any other value keeps both. Ignored for `--agent codex`.                                    |
 | `RALPH_MODEL`                | Claude `claude-opus-5[1m]`; isolated Codex uses `gpt-5.6-sol`/high | Model override for the selected agent. Claude falls back to the model pinned in host `~/.claude/settings.json`, then Ralph's own default instead of the sandbox CLI's frozen one — except under third-party routing (`CLAUDE_CODE_USE_BEDROCK`/`_VERTEX`/`_FOUNDRY`), where the container CLI still resolves. |
 | `DOCKER_HOST`                | _(unset)_                                                          | A `unix:///…` value is parsed for the docker-socket bind-mount; `tcp://` / `npipe://` / `ssh://` are not bind-mountable.                                                                                                                                                                                      |
 | `XDG_RUNTIME_DIR`            | _(unset)_                                                          | Searched for rootless Docker/Podman sockets during auto-detection.                                                                                                                                                                                                                                            |
@@ -691,6 +700,7 @@ To add another, drop a directory with a `SKILL.md` beside `ralph-tdd/`, name it 
   docker volume rm <name>…
   ```
   The shared store volume is `ralph-pm-store` (label `ralph.kind=pm-store`). They are named volumes, so a plain `docker volume prune` skips them (it removes only anonymous ones); `docker volume prune -a` clears them along with every other unused volume. The only cost is a cold install on the next run.
+- **`docker  Checking for updates to latest version...` / `docker  Claude Code is up to date (2.1.267)` before every Claude stage** — expected. The Claude Code CLI baked into the image is a build-time snapshot while Claude Code releases roughly daily, so each Claude stage runs `claude update` before its own command (the report goes to stderr; stdout stays reserved for the stream-json Ralph decodes). The updated CLI lives in the named volume `ralph-claude-home`, mounted at `/home/agent/.local` and shared by every workspace and both bins on the host, so the first stage on a host pays one download (~200 MB, ~20–35 s) and every later stage costs a version check (~2 s). If the update fails (offline, registry down) the stage runs with whatever version is installed; two loops running at once on one host share the volume, and a concurrent update is a benign race. `RALPH_CLAUDE_UPDATE=0` disables both the update and the volume mount, so the stage runs the image's copy directly (the mount is dropped too — a stale volume would otherwise shadow a fresher image); `ralph-afk --print-config` shows a `claude update` row with what is in effect. Codex is unaffected. The volume outlives the run (label `ralph.kind=claude-home`, so it appears in `docker volume ls --filter label=ralph.kind`); remove it with `docker volume rm ralph-claude-home` — the only cost is one download on the next run.
 - **`Not logged in · Please run /login`** — Claude credentials are missing inside the container. Run the interactive `docker run … claude /login` step from "First-run setup".
 - **Codex reports that login is missing** — ensure `cli_auth_credentials_store = "file"`, run `codex login` from the same shell environment as Ralph (per the same-shell rule), and confirm `codex login status` succeeds and `~/.codex/auth.json` exists in that environment's home.
 - **Codex fails with `Operation not permitted (os error 1)` / `EPERM` at startup** — the container's `CODEX_HOME` is sitting on a Windows bind mount, which cannot host the unix socket and symlinks Codex creates at startup. Current Ralph avoids this by copying credentials into a container-local `CODEX_HOME`; upgrade `@daonhan/ralph` if you see this.

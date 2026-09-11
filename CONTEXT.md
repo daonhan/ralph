@@ -61,6 +61,7 @@ Deeper: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the end-to-end data flo
 | `RALPH_IMAGE` / `RALPH_DOCKER_CONTEXT`  | Sandbox image ref / build-fallback context               |
 | `RALPH_DOCKER_SOCK=0`                   | Disable host Docker socket mount                         |
 | `RALPH_ISOLATE_NODE_MODULES`            | Container-local sandbox `node_modules` (on except Linux) |
+| `RALPH_CLAUDE_UPDATE=0`                 | Skip the per-stage `claude update` + its cache volume    |
 | `RALPH_RESULT_GRACE_MS`                 | Kill timer after the agent reports completion            |
 | `--detach`, `--notify`, `--max-retries` | AFK ergonomics (background run, toast, retry budget)     |
 | `--print-config`                        | Show resolved workspace / image / agent / model, no run  |
@@ -80,7 +81,7 @@ Pre-commit runs prettier on staged files then typecheck. Image changes: `pnpm sm
 - **Windows shell.** `render.ts` picks `bash.exe` from `PATH` if found, else `cmd.exe`. Use the `!?` try-shell form for anything that might not exist under `cmd.exe`.
 - **Same-shell credentials.** PowerShell and WSL have different `$HOME`. Log in (`claude`, `codex`, `gh`) from the shell you will launch Ralph from.
 - **Codex `CODEX_HOME` cannot be a bind mount on Windows** (EPERM). Credentials are mounted read-only elsewhere and copied in by a setup script.
-- **Sandbox CLI default model is frozen at image build.** Ralph always passes `--model` explicitly so it tracks the host's setting.
+- **Sandbox CLI default model is frozen at image build** (each Claude stage runs `claude update` first, but not under `RALPH_CLAUDE_UPDATE=0` or offline). Ralph always passes `--model` explicitly so it tracks the host's setting.
 - **`pnpm link --global` breaks here.** Use `pnpm pack` + `npm i -g` to smoke-test the tarballs.
 - **Node modules built in WSL break native-Windows bins** (husky, prettier). Reinstall from the environment you commit from.
 - **A sandbox install rewrites the bind-mounted `node_modules`** the same way (Linux store path, Linux symlinks, a stray `.pnpm-store/`). Container-local `node_modules` volumes prevent it by default off Linux (`RALPH_ISOLATE_NODE_MODULES`); as the backstop, Ralph warns on stderr at loop end and the history footer carries `warning: sandbox-install`; reinstall on the host.

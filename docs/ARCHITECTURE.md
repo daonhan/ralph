@@ -93,25 +93,25 @@ On a hit the loop prints the `Ralph ended · no-more-tasks · …` summary line 
 
 [`../packages/core/src`](../packages/core/src) holds the orchestration modules, provider adapters, and `__tests__/`.
 
-| Module                                                      | Responsibility                                                                                                                                                           |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`main.ts`](../packages/core/src/main.ts)                   | `runAfk` bin entry: parse flags, resolve dirs, optionally detach, then `runLoop([implementer, reviewer], inputs=planAndPrd)`.                                            |
-| [`gh-main.ts`](../packages/core/src/gh-main.ts)             | `runGhAfk` bin entry: same shape, `runLoop([ghafkImplementer, reviewer], inputs="")`.                                                                                    |
-| [`loop.ts`](../packages/core/src/loop.ts)                   | `runLoop` — iteration driver: wake-lock, signal handlers, `ensureImage` once, per-stage render→runStage with retries, sentinel gate, notify on terminal events.          |
-| [`render.ts`](../packages/core/src/render.ts)               | `renderTemplate` — expand the five tag forms; `resolveShell` picks the host shell for shell/spill tags.                                                                  |
-| [`runner.ts`](../packages/core/src/runner.ts)               | Docker plumbing: `ensureImage` (sync + async overloads), `runStage`, `streamDocker`, socket detection/mount, image-ref helpers, `stageLogPath`, TTY-gated color exports. |
-| [`stages.ts`](../packages/core/src/stages.ts)               | `STAGES` registry: `implementer` (afk.md), `ghafkImplementer` (ghafk.md), `reviewer` (review.md), all `bypassPermissions`; `Stage` type.                                 |
-| [`agents/types.ts`](../packages/core/src/agents/types.ts)   | Provider-neutral adapter, command context, mount, decoder, and normalized render-event contracts, including `skillsMount` and `skillsMounted`.                           |
-| [`agents/claude.ts`](../packages/core/src/agents/claude.ts) | Claude command/model resolution, selected credential mounts, `skillsMount` + the `--add-dir` skills root, and stream-json decoder.                                       |
-| [`agents/codex.ts`](../packages/core/src/agents/codex.ts)   | Codex command/model/config resolution, `CODEX_HOME`, selected credential mount, `skillsMount` (`~/.agents/skills`), and JSONL terminal contract.                         |
-| [`agents/index.ts`](../packages/core/src/agents/index.ts)   | Provider registry plus `--agent`/`RALPH_AGENT` selection and validation.                                                                                                 |
-| [`index.ts`](../packages/core/src/index.ts)                 | Public barrel — see exact exports below.                                                                                                                                 |
-| [`cli-help.ts`](../packages/core/src/cli-help.ts)           | `parseFlags`, `printHelp`, `printVersion`, `printConfig`, `readCoreVersion`. **Internal** (not exported from `index.ts`).                                                |
-| [`retry.ts`](../packages/core/src/retry.ts)                 | `withRetries`, `backoffFor`, `DEFAULT_BACKOFF_MS`, `DEFAULT_MAX_RETRIES`. **Internal.**                                                                                  |
-| [`keepalive.ts`](../packages/core/src/keepalive.ts)         | `acquire` — OS wake-lock, returns a `Releaser`; per-platform inhibitor. **Internal.**                                                                                    |
-| [`detach.ts`](../packages/core/src/detach.ts)               | `detachAndExit`, `stripDetachFlags` — fork loop into background, parent exits 0. **Internal.**                                                                           |
-| [`notify.ts`](../packages/core/src/notify.ts)               | `notify`, `notifyComplete`, `notifyError` — OS toast + terminal bell. **Internal.**                                                                                      |
-| `__tests__/`                                                | Vitest suites for providers/decoders, CLI wiring, loop, runner/stream rendering, templates, and AFK machinery.                                                           |
+| Module                                                      | Responsibility                                                                                                                                                                                                                 |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`main.ts`](../packages/core/src/main.ts)                   | `runAfk` bin entry: parse flags, resolve dirs, optionally detach, then `runLoop([implementer, reviewer], inputs=planAndPrd)`.                                                                                                  |
+| [`gh-main.ts`](../packages/core/src/gh-main.ts)             | `runGhAfk` bin entry: same shape, `runLoop([ghafkImplementer, reviewer], inputs="")`.                                                                                                                                          |
+| [`loop.ts`](../packages/core/src/loop.ts)                   | `runLoop` — iteration driver: wake-lock, signal handlers, `ensureImage` once, per-stage render→runStage with retries, sentinel gate, notify on terminal events.                                                                |
+| [`render.ts`](../packages/core/src/render.ts)               | `renderTemplate` — expand the five tag forms; `resolveShell` picks the host shell for shell/spill tags.                                                                                                                        |
+| [`runner.ts`](../packages/core/src/runner.ts)               | Docker plumbing: `ensureImage` (sync + async overloads), `runStage`, `streamDocker`, socket detection/mount, provider volume mounts (`resolveAgentVolumeArgs`), image-ref helpers, `stageLogPath`, TTY-gated color exports.    |
+| [`stages.ts`](../packages/core/src/stages.ts)               | `STAGES` registry: `implementer` (afk.md), `ghafkImplementer` (ghafk.md), `reviewer` (review.md), all `bypassPermissions`; `Stage` type.                                                                                       |
+| [`agents/types.ts`](../packages/core/src/agents/types.ts)   | Provider-neutral adapter, command context, mount, decoder, and normalized render-event contracts, including `skillsMount`, `skillsMounted`, and `volumeMounts`.                                                                |
+| [`agents/claude.ts`](../packages/core/src/agents/claude.ts) | Claude command/model resolution, the per-stage `claude update` wrapper + `ralph-claude-home` volume (`RALPH_CLAUDE_UPDATE`), selected credential mounts, `skillsMount` + the `--add-dir` skills root, and stream-json decoder. |
+| [`agents/codex.ts`](../packages/core/src/agents/codex.ts)   | Codex command/model/config resolution, `CODEX_HOME`, selected credential mount, `skillsMount` (`~/.agents/skills`), and JSONL terminal contract.                                                                               |
+| [`agents/index.ts`](../packages/core/src/agents/index.ts)   | Provider registry plus `--agent`/`RALPH_AGENT` selection and validation.                                                                                                                                                       |
+| [`index.ts`](../packages/core/src/index.ts)                 | Public barrel — see exact exports below.                                                                                                                                                                                       |
+| [`cli-help.ts`](../packages/core/src/cli-help.ts)           | `parseFlags`, `printHelp`, `printVersion`, `printConfig`, `readCoreVersion`. **Internal** (not exported from `index.ts`).                                                                                                      |
+| [`retry.ts`](../packages/core/src/retry.ts)                 | `withRetries`, `backoffFor`, `DEFAULT_BACKOFF_MS`, `DEFAULT_MAX_RETRIES`. **Internal.**                                                                                                                                        |
+| [`keepalive.ts`](../packages/core/src/keepalive.ts)         | `acquire` — OS wake-lock, returns a `Releaser`; per-platform inhibitor. **Internal.**                                                                                                                                          |
+| [`detach.ts`](../packages/core/src/detach.ts)               | `detachAndExit`, `stripDetachFlags` — fork loop into background, parent exits 0. **Internal.**                                                                                                                                 |
+| [`notify.ts`](../packages/core/src/notify.ts)               | `notify`, `notifyComplete`, `notifyError` — OS toast + terminal bell. **Internal.**                                                                                                                                            |
+| `__tests__/`                                                | Vitest suites for providers/decoders, CLI wiring, loop, runner/stream rendering, templates, and AFK machinery.                                                                                                                 |
 
 `index.ts` re-exports **exactly**:
 
@@ -261,6 +261,7 @@ docker run --rm -i \
   [ selected-provider credential mounts and env ] \
   [ -v <HOME>/.config/gh:/home/agent/.config/gh:ro ] \
   [ -v <core>/templates/skills:/home/agent/ralph-skills/.claude/skills:ro | :/home/agent/.agents/skills:ro ] \
+  [ --mount type=volume,source=ralph-claude-home,target=/home/agent/.local,volume-label=ralph.kind=claude-home ] \
   [ -v <sock>:/var/run/docker.sock  --group-add <gid|0> ] \
   [ -v ralph-nm-<hash>:/home/agent/workspace[/<pkg-dir>]/node_modules … ] \
   [ -v ralph-pm-store:/home/agent/.pm-store \
@@ -272,8 +273,9 @@ docker run --rm -i \
 The selected-provider argv is one of:
 
 ```bash
-# Claude (default)
-claude --add-dir /home/agent/ralph-skills \
+# Claude (default) — the bash -c wrapper is dropped under RALPH_CLAUDE_UPDATE=0
+bash -c 'claude update 1>&2 || true; exec "$0" "$@"' \
+  claude --add-dir /home/agent/ralph-skills \
   --verbose --print --output-format stream-json \
   --permission-mode bypassPermissions \
   [--model "${RALPH_MODEL:-<host ~/.claude/settings.json model, else claude-opus-5[1m]>}"] \
@@ -288,11 +290,25 @@ codex exec --json --ephemeral \
   "Read the full instructions from the file ./.ralph-tmp/<run-file> in the current workspace and execute them."
 ```
 
+For Claude, the `bash -c` wrapper runs `claude update` before the stage's own command
+(`exec "$0" "$@"` re-execs the argv that follows the script, `claude` being `$0`): the
+image's CLI is a build-time snapshot while Claude Code releases roughly daily. The update's
+report is redirected to stderr — it surfaces on the host as dim `docker  Checking for updates
+to latest version...` / `docker  Claude Code is up to date (…)` lines — so stdout stays
+reserved for the stream-json the runner decodes; a failed update (offline, registry down)
+falls through to the installed version (`|| true`). The updated CLI persists across
+containers in the `ralph-claude-home` volume described under the mounts below; measured cost
+is one ~200 MB download (~20–35 s) for the first stage on a host, then a ~2 s version check
+per stage. `RALPH_CLAUDE_UPDATE=0` drops both the wrapper and the volume mount, so the stage
+runs the image's baked CLI (a stale volume left mounted would shadow a fresher image). Codex
+has no equivalent.
+
 For Claude, the `--model` value resolves as `RALPH_MODEL` → the model pinned by the
 host's `~/.claude/settings.json` (`env.ANTHROPIC_MODEL`, else the `model` key `/model`
 stored; its "(default)" entry stores no model) → `DEFAULT_CLAUDE_MODEL`
 (`claude-opus-5[1m]`). Ralph sends the flag rather than deferring to the container: the
-sandbox CLI's own built-in default is frozen at image build time and can lag the host
+sandbox CLI's own built-in default is frozen at image build time (the per-stage
+`claude update` refreshes it, but not under `RALPH_CLAUDE_UPDATE=0` or offline) and can lag the host
 CLI's across model transitions, so an omitted `--model` silently downgrades the run.
 `env.ANTHROPIC_MODEL` is read because the bind-mounted settings file applies it inside
 the container, where `--model` would otherwise outrank it.
@@ -316,6 +332,7 @@ also unset, both model and reasoning effort come from `~/.codex/config.toml`.
 - **Git env injection:** `GIT_CONFIG_COUNT/KEY_0/VALUE_0` forces `safe.directory=*` so git works against a bind-mount whose UID differs from the container user (a Windows-host pain point).
 - **Credential mounts** (only if the host path exists, resolved against `HOME || USERPROFILE`) are selected-provider-only: Claude mounts `~/.claude` and `~/.claude.json` (**rw**); Codex mounts `~/.codex` (**ro**) at `/mnt/codex-creds` and injects `CODEX_HOME=/home/agent/.codex` — a setup script wrapped around the `codex` invocation copies `auth.json`, `config.toml`, and `AGENTS.md` (when present) into the container-local `CODEX_HOME` before exec, because a bind-mounted `CODEX_HOME` cannot host the unix socket / symlinks Codex creates at startup (EPERM on Docker Desktop for Windows). Codex's `auth.json` is a reusable secret available to the process. Both may mount `~/.config/gh` (**ro**).
 - **Shipped skills mount:** `runStage` also mounts the installed core package's `templates/skills` directory (today one skill, `ralph-tdd`) at the container path the selected adapter's `skillsMount` returns, always **read-only**: `/home/agent/ralph-skills/.claude/skills` for Claude — whose argv then carries `--add-dir /home/agent/ralph-skills` — and `/home/agent/.agents/skills` for Codex. Both are container-local paths outside every bind mount, so no host directory is created and nothing lands in the workspace; the mount is added only when the host directory exists (`resolveSkillsMountArgs`).
+- **Claude home volume:** for Claude, `runStage` also mounts the named volume `ralph-claude-home` at `/home/agent/.local` — where the native installer keeps `~/.local/share/claude/versions/<ver>` and the `~/.local/bin/claude` launcher symlink — so the CLI that `claude update` installs persists across containers. The adapter declares it via `volumeMounts()` (Codex returns `[]`) and `resolveAgentVolumeArgs` emits it as `--mount type=volume,source=ralph-claude-home,target=/home/agent/.local,volume-label=ralph.kind=claude-home`, right after the skills mount and before the `node_modules` volumes. Unlike those, it needs no `chown` or other preparation: docker creates it on first use and seeds it from the image's `/home/agent/.local`, already owned by the sandbox user. It is host-wide — one volume shared by every workspace and both bins, because it is a cache (two loops running at once share it; a concurrent update is a benign race) — and `docker volume ls --filter label=ralph.kind` lists it alongside the `node_modules` volumes; `docker volume rm ralph-claude-home` clears it. `RALPH_CLAUDE_UPDATE=0` drops the mount together with the update.
 - **Approval bypass** is provider-specific: Claude receives stage `permissionMode=bypassPermissions`; Codex receives `--dangerously-bypass-approvals-and-sandbox`.
 
 On Windows, the generic `HOME || USERPROFILE` resolution is a supported native
@@ -440,6 +457,10 @@ docker build -t docker.io/daonhan/ralph-sandbox:latest `
   -f packages/core/templates/Dockerfile .
 ```
 
+The Claude Code CLI in the image is a build-time snapshot; every Claude stage refreshes it with
+`claude update` at run time and caches the result in the `ralph-claude-home` volume (see the
+`docker run` argv shape), unless `RALPH_CLAUDE_UPDATE=0`.
+
 Python runtime selection is static: the image supplies one baked system Python,
 and the runner does not inspect `.python-version`, `.tool-versions`, `.mise.toml`,
 `pyproject.toml`, or similar manifests. Repositories pinned to another version
@@ -475,6 +496,7 @@ Release/publishing (release-please → tag-driven npm + image workflows) is the 
 | `RALPH_DOCKER_SOCK`          | on                                                            | `0` disables the host `docker.sock` bind-mount.                                                                                                                                                                                                                                  |
 | `RALPH_DOCKER_SOCK_PATH`     | auto-detect                                                   | Explicit host socket path.                                                                                                                                                                                                                                                       |
 | `RALPH_ISOLATE_NODE_MODULES` | on except Linux                                               | `0` shares the bind-mounted host `node_modules/`; `1` isolates on Linux too.                                                                                                                                                                                                     |
+| `RALPH_CLAUDE_UPDATE`        | on                                                            | `0` skips the per-stage `claude update` and the `ralph-claude-home` volume mount together, so Claude stages run the image's baked CLI. Ignored for Codex.                                                                                                                        |
 | `DOCKER_HOST`                | —                                                             | `unix://…` parsed as a socket candidate.                                                                                                                                                                                                                                         |
 | `XDG_RUNTIME_DIR`            | —                                                             | Rootless Docker/Podman socket candidates.                                                                                                                                                                                                                                        |
 | `NO_COLOR` / `TERM=dumb`     | —                                                             | Disable ANSI on both streams.                                                                                                                                                                                                                                                    |
