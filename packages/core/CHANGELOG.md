@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.13.0...ralph-core-v0.14.0) (2026-09-11)
+
+
+### Features
+
+* **core:** run claude update before each stage, cached in a host volume ([c320f8a](https://github.com/daonhan/ralph/commit/c320f8a7536b4e6e3ef3b4fcf30c9f195b6cfbce))
+* **core:** run claude update before each stage, cached in a host volume ([1cd7060](https://github.com/daonhan/ralph/commit/1cd7060e93c4628a5424edcb3a20c743e756c0b0))
+
 ## [0.13.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.12.0...ralph-core-v0.13.0) (2026-09-10)
 
 
