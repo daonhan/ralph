@@ -11,6 +11,7 @@ import {
 } from "../agents/index.js";
 import {
   buildClaudeArgs,
+  CLAUDE_HOME_VOLUME,
   DEFAULT_CLAUDE_MODEL,
   readHostClaudeModel,
   resolveClaudeModel,
@@ -71,10 +72,15 @@ describe("Claude adapter", () => {
     expect(resolveModelArgs(" opus ")).toEqual(["--model", "opus"]);
   });
 
+  // The update runs in the same container as the stage so a fresh CLI is
+  // in place before claude starts; `$0` is the claude argv the script execs.
   it("preserves the complete Claude argv", () => {
     expect(
       buildClaudeArgs(stage, ".ralph-tmp/prompt.md", ["--model", "opus"])
     ).toEqual([
+      "bash",
+      "-c",
+      'claude update 1>&2 || true; exec "$0" "$@"',
       "claude",
       "--verbose",
       "--print",
@@ -103,6 +109,36 @@ describe("Claude adapter", () => {
     expect(adapter.containerEnv).toEqual({});
   });
 
+  // ~/.local holds the native installer's versions dir and launcher symlink;
+  // one host-wide volume there is what makes the per-stage update cheap.
+  it("keeps the updated CLI in a host-wide volume over ~/.local", () => {
+    expect(getAgentAdapter("claude").volumeMounts()).toEqual([
+      {
+        name: CLAUDE_HOME_VOLUME,
+        containerPath: "/home/agent/.local",
+        labels: ["ralph.kind=claude-home"],
+      },
+    ]);
+  });
+
+  describe("with RALPH_CLAUDE_UPDATE=0", () => {
+    const original = process.env.RALPH_CLAUDE_UPDATE;
+    afterEach(() => {
+      if (original === undefined) delete process.env.RALPH_CLAUDE_UPDATE;
+      else process.env.RALPH_CLAUDE_UPDATE = original;
+    });
+
+    // Both go together: a volume mounted without the update would shadow a
+    // fresher image with whatever it last cached.
+    it("runs the image's claude directly and mounts no volume", () => {
+      process.env.RALPH_CLAUDE_UPDATE = "0";
+      const args = buildClaudeArgs(stage, ".ralph-tmp/prompt.md", []);
+      expect(args[0]).toBe("claude");
+      expect(args).not.toContain("bash");
+      expect(getAgentAdapter("claude").volumeMounts()).toEqual([]);
+    });
+  });
+
   it("mounts the shipped skills where Claude discovers them", () => {
     expect(
       getAgentAdapter("claude").skillsMount("/pkg/templates/skills")
@@ -124,7 +160,7 @@ describe("Claude adapter", () => {
       home: "",
       skillsMounted: true,
     });
-    expect(args.slice(0, 4)).toEqual([
+    expect(args.slice(3, 7)).toEqual([
       "claude",
       "--add-dir",
       "/home/agent/ralph-skills",
@@ -480,6 +516,10 @@ describe("Codex adapter", () => {
       "gpt-custom",
       promptInstruction,
     ]);
+  });
+
+  it("mounts no volumes of its own", () => {
+    expect(getAgentAdapter("codex").volumeMounts()).toEqual([]);
   });
 
   it("declares only Codex credentials and CODEX_HOME", () => {

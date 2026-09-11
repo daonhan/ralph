@@ -263,13 +263,36 @@ export function resolveClaudeModel(
  */
 export const CLAUDE_SKILLS_ROOT = "/home/agent/ralph-skills";
 
+/**
+ * The image's claude CLI is frozen at build time while Claude Code releases
+ * roughly daily, so every stage runs `claude update` first. The native
+ * installer keeps its versions and launcher symlink under `~/.local`; that
+ * directory is a named volume shared by every workspace on the host, so the
+ * download (~200 MB) is paid once and every later stage costs a version check
+ * (~2 s). `RALPH_CLAUDE_UPDATE=0` skips the update and the mount together: a
+ * volume left mounted without updates would shadow a fresher image.
+ */
+export const CLAUDE_HOME_VOLUME = "ralph-claude-home";
+export const CLAUDE_HOME_PATH = "/home/agent/.local";
+
+export function claudeUpdateEnabled(): boolean {
+  return process.env.RALPH_CLAUDE_UPDATE?.trim() !== "0";
+}
+
+// `claude update` reports on stdout, which the runner decodes as stream-json,
+// so the report goes to stderr (shown on the host as `docker  …` lines). A
+// failed update (offline, registry down) runs the version already installed.
+const CLAUDE_UPDATE_SCRIPT = 'claude update 1>&2 || true; exec "$0" "$@"';
+
 function buildClaudeCommand(
   stage: Stage,
   promptInstruction: string,
   modelArgs: string[],
   skillsMounted = false
 ): string[] {
-  const args = ["claude"];
+  const args = claudeUpdateEnabled()
+    ? ["bash", "-c", CLAUDE_UPDATE_SCRIPT, "claude"]
+    : ["claude"];
   // `--add-dir <directories...>` is variadic, so it goes first: emitted right
   // before the prompt positional it would swallow it (the argv shape when
   // `--model` is omitted under third-party routing).
@@ -337,6 +360,16 @@ export const claudeAdapter = {
       containerPath: `${CLAUDE_SKILLS_ROOT}/.claude/skills`,
       readOnly: true,
     };
+  },
+  volumeMounts() {
+    if (!claudeUpdateEnabled()) return [];
+    return [
+      {
+        name: CLAUDE_HOME_VOLUME,
+        containerPath: CLAUDE_HOME_PATH,
+        labels: ["ralph.kind=claude-home"],
+      },
+    ];
   },
   buildCommand: buildFromContext,
   createDecoder: createClaudeDecoder,

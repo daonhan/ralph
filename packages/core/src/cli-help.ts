@@ -8,6 +8,8 @@ import {
   type AgentSelectionSource,
 } from "./agents/index.js";
 import {
+  CLAUDE_HOME_VOLUME,
+  claudeUpdateEnabled,
   readHostClaudeModel,
   resolveClaudeModel,
   type HostClaudeModel,
@@ -314,6 +316,12 @@ export function printConfig(
       "shared with the host bind mount (linux default; RALPH_ISOLATE_NODE_MODULES=1 to isolate)";
   }
 
+  const claudeUpdateStatus = claudeUpdateEnabled()
+    ? `on before every stage, cached in volume ${CLAUDE_HOME_VOLUME} (RALPH_CLAUDE_UPDATE=0 to run the image's copy)`
+    : "off (RALPH_CLAUDE_UPDATE=0) — running the image's copy";
+  const claudeUpdateLine =
+    agent === "claude" ? `  claude update         ${claudeUpdateStatus}\n` : "";
+
   const keepAliveStatus = noKeepAlive ? "off" : "on (system sleep only)";
   const detachStatus =
     detach && detachLogPath ? `on (log: ${detachLogPath})` : "off";
@@ -346,7 +354,7 @@ export function printConfig(
 ${providerLines}
   RALPH_DOCKER_SOCK     ${sockStatus}
   node_modules          ${nodeModulesStatus}
-  keep-alive            ${keepAliveStatus}
+${claudeUpdateLine}  keep-alive            ${keepAliveStatus}
   max-retries           ${maxRetries}
   detach                ${detachStatus}
   notify                ${notifyStatus}

@@ -137,6 +137,38 @@ it("prints the history dir under the resolved workspace", () => {
   );
 });
 
+describe("printConfig claude update", () => {
+  const KNOB = "RALPH_CLAUDE_UPDATE";
+  const original = process.env[KNOB];
+
+  function capture(): string {
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    printConfig("ralph-afk", "/repo", "/ctx", "/pkg");
+    return write.mock.calls.map((call) => String(call[0])).join("");
+  }
+
+  afterEach(() => {
+    if (original === undefined) delete process.env[KNOB];
+    else process.env[KNOB] = original;
+  });
+
+  it("reports the per-stage update and its volume by default", () => {
+    delete process.env[KNOB];
+    expect(capture()).toContain(
+      "claude update         on before every stage, cached in volume ralph-claude-home (RALPH_CLAUDE_UPDATE=0 to run the image's copy)"
+    );
+  });
+
+  it("reports the variable turning the update off", () => {
+    process.env[KNOB] = "0";
+    expect(capture()).toContain(
+      "claude update         off (RALPH_CLAUDE_UPDATE=0) — running the image's copy"
+    );
+  });
+});
+
 describe("printConfig node_modules isolation", () => {
   const KNOB = "RALPH_ISOLATE_NODE_MODULES";
   const original = process.env[KNOB];

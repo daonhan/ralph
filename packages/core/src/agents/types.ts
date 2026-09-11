@@ -1,3 +1,4 @@
+import type { SandboxVolume } from "../sandbox-volumes.js";
 import type { Stage } from "../stages.js";
 
 export type AgentName = "claude" | "codex";
@@ -77,6 +78,12 @@ export interface AgentAdapter {
   credentialMounts(home: string): AgentMount[];
   /** Read-only mount of the shipped skills directory where this provider discovers skills. */
   skillsMount(hostDir: string): AgentMount;
+  /**
+   * Named volumes mounted over image paths the provider writes to at runtime.
+   * Docker creates each on first use and seeds it from the image, so the
+   * mount needs no preparation. Empty when the provider keeps nothing.
+   */
+  volumeMounts(): SandboxVolume[];
   buildCommand(context: AgentCommandContext): string[];
   createDecoder(): AgentStreamDecoder;
 }
