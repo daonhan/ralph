@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.7.0...ralph-sandbox-v0.7.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* **runner:** author sandbox commits with the host git identity ([5dc4a8a](https://github.com/daonhan/ralph/commit/5dc4a8aa941118e65a7ae6d047b7b3088218f7cd))
+
 ## [0.7.0](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.6.1...ralph-sandbox-v0.7.0) (2026-09-10)
 
 
