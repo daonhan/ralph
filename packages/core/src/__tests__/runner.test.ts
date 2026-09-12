@@ -174,7 +174,10 @@ describe("resolveAgentVolumeArgs", () => {
       "--mount",
       "type=volume,source=ralph-claude-home,target=/home/agent/.local,volume-label=ralph.kind=claude-home",
     ]);
-    expect(resolveAgentVolumeArgs(getAgentAdapter("codex"))).toEqual([]);
+    expect(resolveAgentVolumeArgs(getAgentAdapter("codex"))).toEqual([
+      "--mount",
+      "type=volume,source=ralph-codex-cli,target=/home/agent/.npm-global,volume-label=ralph.kind=codex-cli",
+    ]);
   });
 });
 

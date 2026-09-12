@@ -34,10 +34,6 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 
 RUN corepack enable
 
-ARG CODEX_VERSION=0.144.4
-RUN npm install --global "@openai/codex@${CODEX_VERSION}" \
-  && test "$(codex --version)" = "codex-cli ${CODEX_VERSION}"
-
 # Rename the base image's "node" user (UID 1000) to "agent".
 # Keeps UID 1000 so --user 1000:1000 maps to the right home dir owner.
 RUN usermod -d /home/agent -m -l agent node
@@ -46,6 +42,16 @@ USER agent
 # Bind-mounted host workspace may show foreign UID inside container.
 # Tell git to trust any path so `git ...` works against the mount.
 RUN git config --global --add safe.directory '*'
+
+# Codex CLI. Installed as `agent` under an agent-owned npm prefix so that
+# `codex update` can replace it at runtime: the runner mounts this directory
+# as a named volume and refreshes it before every stage (agents/codex.ts).
+# The pin is the floor the volume is seeded from, not the version that runs.
+ENV NPM_CONFIG_PREFIX="/home/agent/.npm-global" \
+    PATH="/home/agent/.npm-global/bin:$PATH"
+ARG CODEX_VERSION=0.154.0
+RUN npm install --global "@openai/codex@${CODEX_VERSION}" \
+  && test "$(codex --version)" = "codex-cli ${CODEX_VERSION}"
 
 # Claude Code CLI
 RUN curl -fsSL https://claude.ai/install.sh | bash

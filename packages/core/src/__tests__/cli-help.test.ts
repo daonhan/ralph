@@ -169,6 +169,48 @@ describe("printConfig claude update", () => {
   });
 });
 
+describe("printConfig codex update", () => {
+  const KNOB = "RALPH_CODEX_UPDATE";
+  const original = process.env[KNOB];
+
+  function capture(): string {
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    printConfig("ralph-afk", "/repo", "/ctx", "/pkg", { agent: "codex" });
+    return write.mock.calls.map((call) => String(call[0])).join("");
+  }
+
+  afterEach(() => {
+    if (original === undefined) delete process.env[KNOB];
+    else process.env[KNOB] = original;
+  });
+
+  it("reports the per-stage update and its volume by default", () => {
+    delete process.env[KNOB];
+    expect(capture()).toContain(
+      "codex update          on before every stage, cached in volume ralph-codex-cli (RALPH_CODEX_UPDATE=0 to run the image's copy)"
+    );
+  });
+
+  it("reports the variable turning the update off", () => {
+    process.env[KNOB] = "0";
+    expect(capture()).toContain(
+      "codex update          off (RALPH_CODEX_UPDATE=0) — running the image's copy"
+    );
+  });
+
+  it("does not report a codex update line for Claude", () => {
+    delete process.env[KNOB];
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    printConfig("ralph-afk", "/repo", "/ctx", "/pkg");
+    const output = write.mock.calls.map((call) => String(call[0])).join("");
+    expect(output).not.toContain("codex update");
+  });
+});
+
 describe("printConfig node_modules isolation", () => {
   const KNOB = "RALPH_ISOLATE_NODE_MODULES";
   const original = process.env[KNOB];

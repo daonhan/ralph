@@ -439,6 +439,7 @@ describe("Codex adapter", () => {
   // (EPERM on the unix socket / symlinks Codex creates at startup).
   const setupScript =
     'mkdir -p "$CODEX_HOME"; ' +
+    "codex update 1>&2 || true; " +
     "for f in auth.json config.toml AGENTS.md; do " +
     'if [ -f "/mnt/codex-creds/$f" ]; then cp "/mnt/codex-creds/$f" "$CODEX_HOME/"; fi; ' +
     "done; " +
@@ -518,8 +519,38 @@ describe("Codex adapter", () => {
     ]);
   });
 
-  it("mounts no volumes of its own", () => {
-    expect(getAgentAdapter("codex").volumeMounts()).toEqual([]);
+  it("caches the updated CLI in a named volume", () => {
+    expect(getAgentAdapter("codex").volumeMounts()).toEqual([
+      {
+        name: "ralph-codex-cli",
+        containerPath: "/home/agent/.npm-global",
+        labels: ["ralph.kind=codex-cli"],
+      },
+    ]);
+  });
+
+  describe("with RALPH_CODEX_UPDATE=0", () => {
+    const original = process.env.RALPH_CODEX_UPDATE;
+    afterEach(() => {
+      if (original === undefined) delete process.env.RALPH_CODEX_UPDATE;
+      else process.env.RALPH_CODEX_UPDATE = original;
+    });
+
+    // Both go together: a volume mounted without the update would shadow a
+    // fresher image with whatever it last cached.
+    it("skips the update step and mounts no volume", () => {
+      process.env.RALPH_CODEX_UPDATE = "0";
+      const args = buildCodexArgs({
+        stage,
+        promptInstruction,
+        rawModel: undefined,
+        codexUserConfig: false,
+        home: "",
+      });
+      expect(args[2]).not.toContain("codex update");
+      expect(args[2]).toContain('mkdir -p "$CODEX_HOME"');
+      expect(getAgentAdapter("codex").volumeMounts()).toEqual([]);
+    });
   });
 
   it("declares only Codex credentials and CODEX_HOME", () => {

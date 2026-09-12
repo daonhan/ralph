@@ -69,7 +69,7 @@ export function runImageSmoke(options, { run, log }) {
       entrypoint: "codex",
       args: ["--version"],
       validateOutput(output) {
-        return output.trim() === "codex-cli 0.144.4"
+        return output.trim() === "codex-cli 0.154.0"
           ? null
           : `got ${output.trim() || "(empty)"}`;
       },
@@ -90,6 +90,15 @@ export function runImageSmoke(options, { run, log }) {
         const missing = required.filter((flag) => !options.has(flag));
         return missing.length === 0 ? null : `missing ${missing.join(", ")}`;
       },
+    },
+    {
+      // Every stage runs `codex update`, which shells out to `npm install -g`.
+      // A root-owned prefix makes that fail with EACCES, and the setup script
+      // swallows it (`|| true`) — so the CLI would silently freeze at the
+      // pinned version again. This asserts the prefix the agent can write.
+      label: "Codex CLI sits in an agent-writable npm prefix",
+      entrypoint: "sh",
+      args: ["-c", 'test -w "$(npm root -g)"'],
     },
     {
       label: "python resolves to Python 3",

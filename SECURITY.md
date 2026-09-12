@@ -64,6 +64,13 @@ The trust boundary is:
   workspace on the host, mounted at `/home/agent/.local`). Set `RALPH_CLAUDE_UPDATE=0`
   to pin the stage to the image's baked copy and drop the volume mount.
 
+- **The Codex sandbox does the same.** Every Codex stage runs `codex update` before
+  its own command, fetching from the npm registry with the same trust as the
+  build-time `npm install --global "@openai/codex@${CODEX_VERSION}"`, and caches it
+  in the host-wide named Docker volume `ralph-codex-cli` (mounted at the agent-owned
+  npm prefix `/home/agent/.npm-global`). Set `RALPH_CODEX_UPDATE=0` to pin the stage
+  to the copy the image ships and drop the volume mount.
+
 ### Reducing blast radius
 
 - Set `RALPH_DOCKER_SOCK=0` unless you specifically need Testcontainers.
