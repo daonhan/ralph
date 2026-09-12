@@ -12,6 +12,7 @@ Ralph drives Claude Code by default, or Codex when selected with `--agent codex`
 - **Node.js 20+** with `npm`. Native Windows Node and WSL Node both work.
 - **(Windows, recommended)** `bash.exe` on your `PATH` — comes free with [Git for Windows](https://git-scm.com/download/win). The renderer prefers it over `cmd.exe`; without it, it falls back to `cmd.exe`.
 - **`gh`** — only if you will use `ralph-ghafk` (the GitHub-issue loop).
+- **A git identity** — `git config --global user.name "…"` and `git config --global user.email "…"`. Ralph passes them into the sandbox so the agent's commits are authored by you; without one, Ralph warns and the agent may invent an author.
 
 ## 2. Install
 

@@ -43,6 +43,7 @@ If defects found:
   - Frontend / Node: `pnpm run test`, `pnpm run typecheck`
   - Backend / Dotnet: `dotnet test`, `dotnet build` (apply MSB3248 workaround from the implementer playbook if it triggers)
 - Commit with `git commit -am "fix(review): <short reason>"`. Subject ≤72 chars. No `Co-Authored-By` line. No file lists.
+- Never set or override the git author: no `git config user.*`, no `-c user.name=`/`-c user.email=`, no `--author`. The harness supplies the identity; if git says it cannot auto-detect one, stop and report it rather than inventing a name.
 
 If clean: output `<review>OK</review>` and stop. Do NOT commit.
 
