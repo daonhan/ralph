@@ -103,7 +103,7 @@ On a hit the loop prints the `Ralph ended · no-more-tasks · …` summary line 
 | [`stages.ts`](../packages/core/src/stages.ts)               | `STAGES` registry: `implementer` (afk.md), `ghafkImplementer` (ghafk.md), `reviewer` (review.md), all `bypassPermissions`; `Stage` type.                                                                                       |
 | [`agents/types.ts`](../packages/core/src/agents/types.ts)   | Provider-neutral adapter, command context, mount, decoder, and normalized render-event contracts, including `skillsMount`, `skillsMounted`, and `volumeMounts`.                                                                |
 | [`agents/claude.ts`](../packages/core/src/agents/claude.ts) | Claude command/model resolution, the per-stage `claude update` wrapper + `ralph-claude-home` volume (`RALPH_CLAUDE_UPDATE`), selected credential mounts, `skillsMount` + the `--add-dir` skills root, and stream-json decoder. |
-| [`agents/codex.ts`](../packages/core/src/agents/codex.ts)   | Codex command/model/config resolution, `CODEX_HOME`, selected credential mount, `skillsMount` (`~/.agents/skills`), and JSONL terminal contract.                                                                               |
+| [`agents/codex.ts`](../packages/core/src/agents/codex.ts)   | Codex command/model/config resolution, `CODEX_HOME`, per-stage `codex update` + `ralph-codex-cli` volume (`RALPH_CODEX_UPDATE`), selected credential mount, `skillsMount` (`~/.agents/skills`), and JSONL terminal contract.   |
 | [`agents/index.ts`](../packages/core/src/agents/index.ts)   | Provider registry plus `--agent`/`RALPH_AGENT` selection and validation.                                                                                                                                                       |
 | [`index.ts`](../packages/core/src/index.ts)                 | Public barrel — see exact exports below.                                                                                                                                                                                       |
 | [`cli-help.ts`](../packages/core/src/cli-help.ts)           | `parseFlags`, `printHelp`, `printVersion`, `printConfig`, `readCoreVersion`. **Internal** (not exported from `index.ts`).                                                                                                      |
@@ -264,6 +264,7 @@ docker run --rm -i \
   [ -v <HOME>/.config/gh:/home/agent/.config/gh:ro ] \
   [ -v <core>/templates/skills:/home/agent/ralph-skills/.claude/skills:ro | :/home/agent/.agents/skills:ro ] \
   [ --mount type=volume,source=ralph-claude-home,target=/home/agent/.local,volume-label=ralph.kind=claude-home ] \
+  [ --mount type=volume,source=ralph-codex-cli,target=/home/agent/.npm-global,volume-label=ralph.kind=codex-cli ] \
   [ -v <sock>:/var/run/docker.sock  --group-add <gid|0> ] \
   [ -v ralph-nm-<hash>:/home/agent/workspace[/<pkg-dir>]/node_modules … ] \
   [ -v ralph-pm-store:/home/agent/.pm-store \
@@ -283,8 +284,10 @@ bash -c 'claude update 1>&2 || true; exec "$0" "$@"' \
   [--model "${RALPH_MODEL:-<host ~/.claude/settings.json model, else claude-opus-5[1m]>}"] \
   "Read the full instructions from the file ./.ralph-tmp/<run-file> in the current workspace and execute them."
 
-# Codex (isolated configuration by default)
-codex exec --json --ephemeral \
+# Codex (isolated configuration by default) — the setup script's `codex update`
+# step is dropped under RALPH_CODEX_UPDATE=0
+bash -c 'mkdir -p "$CODEX_HOME"; codex update 1>&2 || true; <copy creds into $CODEX_HOME>; exec "$0" "$@"' \
+  codex exec --json --ephemeral \
   --dangerously-bypass-approvals-and-sandbox \
   --ignore-user-config \
   --model "${RALPH_MODEL:-gpt-5.6-sol}" \
@@ -302,8 +305,17 @@ falls through to the installed version (`|| true`). The updated CLI persists acr
 containers in the `ralph-claude-home` volume described under the mounts below; measured cost
 is one ~200 MB download (~20–35 s) for the first stage on a host, then a ~2 s version check
 per stage. `RALPH_CLAUDE_UPDATE=0` drops both the wrapper and the volume mount, so the stage
-runs the image's baked CLI (a stale volume left mounted would shadow a fresher image). Codex
-has no equivalent.
+runs the image's baked CLI (a stale volume left mounted would shadow a fresher image).
+
+Codex works the same way, for a sharper reason: the server rejects models its CLI predates
+(`The 'gpt-6-astra' model requires a newer version of Codex`, HTTP 400), which kills every
+stage of a run. Its setup script leads with `codex update 1>&2 || true;` ahead of the
+credential copy and the same `exec "$0" "$@"` re-exec, and the updated CLI persists in the
+`ralph-codex-cli` volume mounted over `/home/agent/.npm-global` — the agent-owned npm prefix
+the image installs `@openai/codex` into, so `npm` can replace it without root.
+`ARG CODEX_VERSION` is therefore the floor the volume is seeded from, not the version
+that runs.
+`RALPH_CODEX_UPDATE=0` drops the update and the mount together.
 
 For Claude, the `--model` value resolves as `RALPH_MODEL` → the model pinned by the
 host's `~/.claude/settings.json` (`env.ANTHROPIC_MODEL`, else the `model` key `/model`
@@ -334,7 +346,8 @@ also unset, both model and reasoning effort come from `~/.codex/config.toml`.
 - **Git env injection:** `resolveGitConfigArgs(workspaceDir)` builds the whole `GIT_CONFIG_*` block. Entry 0 always forces `safe.directory=*` so git works against a bind-mount whose UID differs from the container user (a Windows-host pain point). Entries 1–2 carry `user.name`/`user.email`, read on the **host** with `git -C <workspaceDir> config --get` so git's own repo-local-over-global precedence decides and an identity a repo deliberately sets for itself is never clobbered. The container never sees the host's `~/.gitconfig`, so without that pair a commit inside the sandbox dies on `unable to auto-detect email address (got 'agent@<cid>.(none)')` and the agent invents an author to get past it — repos carrying a local identity inside the bind-mounted `.git/config` were immune by accident, every other repo got commits attributed to a fabricated name. If the host resolves only one of the pair, or neither, no identity is injected and the runner warns once per process on stderr; fabricating one in the harness would be the same bug wearing a different hat.
 - **Credential mounts** (only if the host path exists, resolved against `HOME || USERPROFILE`) are selected-provider-only: Claude mounts `~/.claude` and `~/.claude.json` (**rw**); Codex mounts `~/.codex` (**ro**) at `/mnt/codex-creds` and injects `CODEX_HOME=/home/agent/.codex` — a setup script wrapped around the `codex` invocation copies `auth.json`, `config.toml`, and `AGENTS.md` (when present) into the container-local `CODEX_HOME` before exec, because a bind-mounted `CODEX_HOME` cannot host the unix socket / symlinks Codex creates at startup (EPERM on Docker Desktop for Windows). Codex's `auth.json` is a reusable secret available to the process. Both may mount `~/.config/gh` (**ro**).
 - **Shipped skills mount:** `runStage` also mounts the installed core package's `templates/skills` directory (today one skill, `ralph-tdd`) at the container path the selected adapter's `skillsMount` returns, always **read-only**: `/home/agent/ralph-skills/.claude/skills` for Claude — whose argv then carries `--add-dir /home/agent/ralph-skills` — and `/home/agent/.agents/skills` for Codex. Both are container-local paths outside every bind mount, so no host directory is created and nothing lands in the workspace; the mount is added only when the host directory exists (`resolveSkillsMountArgs`).
-- **Claude home volume:** for Claude, `runStage` also mounts the named volume `ralph-claude-home` at `/home/agent/.local` — where the native installer keeps `~/.local/share/claude/versions/<ver>` and the `~/.local/bin/claude` launcher symlink — so the CLI that `claude update` installs persists across containers. The adapter declares it via `volumeMounts()` (Codex returns `[]`) and `resolveAgentVolumeArgs` emits it as `--mount type=volume,source=ralph-claude-home,target=/home/agent/.local,volume-label=ralph.kind=claude-home`, right after the skills mount and before the `node_modules` volumes. Unlike those, it needs no `chown` or other preparation: docker creates it on first use and seeds it from the image's `/home/agent/.local`, already owned by the sandbox user. It is host-wide — one volume shared by every workspace and both bins, because it is a cache (two loops running at once share it; a concurrent update is a benign race) — and `docker volume ls --filter label=ralph.kind` lists it alongside the `node_modules` volumes; `docker volume rm ralph-claude-home` clears it. `RALPH_CLAUDE_UPDATE=0` drops the mount together with the update.
+- **Claude home volume:** for Claude, `runStage` also mounts the named volume `ralph-claude-home` at `/home/agent/.local` — where the native installer keeps `~/.local/share/claude/versions/<ver>` and the `~/.local/bin/claude` launcher symlink — so the CLI that `claude update` installs persists across containers. The adapter declares it via `volumeMounts()` and `resolveAgentVolumeArgs` emits it as `--mount type=volume,source=ralph-claude-home,target=/home/agent/.local,volume-label=ralph.kind=claude-home`, right after the skills mount and before the `node_modules` volumes. Unlike those, it needs no `chown` or other preparation: docker creates it on first use and seeds it from the image's `/home/agent/.local`, already owned by the sandbox user. It is host-wide — one volume shared by every workspace and both bins, because it is a cache (two loops running at once share it; a concurrent update is a benign race) — and `docker volume ls --filter label=ralph.kind` lists it alongside the `node_modules` volumes; `docker volume rm ralph-claude-home` clears it. `RALPH_CLAUDE_UPDATE=0` drops the mount together with the update.
+- **Codex CLI volume:** for Codex, the same mechanism keeps the CLI itself: the named volume `ralph-codex-cli` is mounted at `/home/agent/.npm-global` — the npm prefix the image installs `@openai/codex` into as `agent`, so `codex update` can replace it without root — and `resolveAgentVolumeArgs` emits it as `--mount type=volume,source=ralph-codex-cli,target=/home/agent/.npm-global,volume-label=ralph.kind=codex-cli`. Like the Claude volume it needs no `chown` (docker seeds it from the image, already owned by the sandbox user), is host-wide because it is a cache, is listed by `docker volume ls --filter label=ralph.kind`, and is cleared with `docker volume rm ralph-codex-cli`. `RALPH_CODEX_UPDATE=0` drops the mount together with the update.
 - **Approval bypass** is provider-specific: Claude receives stage `permissionMode=bypassPermissions`; Codex receives `--dangerously-bypass-approvals-and-sandbox`.
 
 On Windows, the generic `HOME || USERPROFILE` resolution is a supported native
@@ -461,7 +474,9 @@ docker build -t docker.io/daonhan/ralph-sandbox:latest `
 
 The Claude Code CLI in the image is a build-time snapshot; every Claude stage refreshes it with
 `claude update` at run time and caches the result in the `ralph-claude-home` volume (see the
-`docker run` argv shape), unless `RALPH_CLAUDE_UPDATE=0`.
+`docker run` argv shape), unless `RALPH_CLAUDE_UPDATE=0`. The pinned Codex CLI is refreshed
+the same way — `codex update` per stage, cached in `ralph-codex-cli`, unless
+`RALPH_CODEX_UPDATE=0` — so `ARG CODEX_VERSION` sets the floor, not the running version.
 
 Python runtime selection is static: the image supplies one baked system Python,
 and the runner does not inspect `.python-version`, `.tool-versions`, `.mise.toml`,
@@ -499,6 +514,7 @@ Release/publishing (release-please → tag-driven npm + image workflows) is the 
 | `RALPH_DOCKER_SOCK_PATH`     | auto-detect                                                   | Explicit host socket path.                                                                                                                                                                                                                                                       |
 | `RALPH_ISOLATE_NODE_MODULES` | on except Linux                                               | `0` shares the bind-mounted host `node_modules/`; `1` isolates on Linux too.                                                                                                                                                                                                     |
 | `RALPH_CLAUDE_UPDATE`        | on                                                            | `0` skips the per-stage `claude update` and the `ralph-claude-home` volume mount together, so Claude stages run the image's baked CLI. Ignored for Codex.                                                                                                                        |
+| `RALPH_CODEX_UPDATE`         | on                                                            | `0` skips the per-stage `codex update` and the `ralph-codex-cli` volume mount together, so Codex stages run the image's pinned CLI. Ignored for Claude.                                                                                                                          |
 | `DOCKER_HOST`                | —                                                             | `unix://…` parsed as a socket candidate.                                                                                                                                                                                                                                         |
 | `XDG_RUNTIME_DIR`            | —                                                             | Rootless Docker/Podman socket candidates.                                                                                                                                                                                                                                        |
 | `NO_COLOR` / `TERM=dumb`     | —                                                             | Disable ANSI on both streams.                                                                                                                                                                                                                                                    |

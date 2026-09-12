@@ -15,7 +15,11 @@ import {
   type HostClaudeModel,
 } from "./agents/claude.js";
 import { resolveHostHome } from "./agents/shared.js";
-import { resolveCodexModel } from "./agents/codex.js";
+import {
+  CODEX_CLI_VOLUME,
+  codexUpdateEnabled,
+  resolveCodexModel,
+} from "./agents/codex.js";
 import { DEFAULT_MAX_RETRIES } from "./retry.js";
 import {
   IMAGE_REF,
@@ -322,6 +326,12 @@ export function printConfig(
   const claudeUpdateLine =
     agent === "claude" ? `  claude update         ${claudeUpdateStatus}\n` : "";
 
+  const codexUpdateStatus = codexUpdateEnabled()
+    ? `on before every stage, cached in volume ${CODEX_CLI_VOLUME} (RALPH_CODEX_UPDATE=0 to run the image's copy)`
+    : "off (RALPH_CODEX_UPDATE=0) — running the image's copy";
+  const codexUpdateLine =
+    agent === "codex" ? `  codex update          ${codexUpdateStatus}\n` : "";
+
   const keepAliveStatus = noKeepAlive ? "off" : "on (system sleep only)";
   const detachStatus =
     detach && detachLogPath ? `on (log: ${detachLogPath})` : "off";
@@ -354,7 +364,7 @@ export function printConfig(
 ${providerLines}
   RALPH_DOCKER_SOCK     ${sockStatus}
   node_modules          ${nodeModulesStatus}
-${claudeUpdateLine}  keep-alive            ${keepAliveStatus}
+${claudeUpdateLine}${codexUpdateLine}  keep-alive            ${keepAliveStatus}
   max-retries           ${maxRetries}
   detach                ${detachStatus}
   notify                ${notifyStatus}

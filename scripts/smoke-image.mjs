@@ -92,6 +92,15 @@ export function runImageSmoke(options, { run, log }) {
       },
     },
     {
+      // Every stage runs `codex update`, which shells out to `npm install -g`.
+      // A root-owned prefix makes that fail with EACCES, and the setup script
+      // swallows it (`|| true`) — so the CLI would silently freeze at the
+      // pinned version again. This asserts the prefix the agent can write.
+      label: "Codex CLI sits in an agent-writable npm prefix",
+      entrypoint: "sh",
+      args: ["-c", 'test -w "$(npm root -g)"'],
+    },
+    {
       label: "python resolves to Python 3",
       entrypoint: "python",
       args: ["--version"],

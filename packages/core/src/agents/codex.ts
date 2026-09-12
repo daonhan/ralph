@@ -295,18 +295,45 @@ const CODEX_CREDS_MOUNT = "/mnt/codex-creds";
 // --ignore-user-config and --ephemeral, so mounting there needs no flag.
 export const CODEX_SKILLS_ROOT = "/home/agent/.agents/skills";
 
-const CODEX_SETUP_SCRIPT =
-  'mkdir -p "$CODEX_HOME"; ' +
-  "for f in auth.json config.toml AGENTS.md; do " +
-  `if [ -f "${CODEX_CREDS_MOUNT}/$f" ]; then cp "${CODEX_CREDS_MOUNT}/$f" "$CODEX_HOME/"; fi; ` +
-  "done; " +
-  'exec "$0" "$@"';
+/**
+ * The image's codex CLI is frozen at build time, and a stale one is not merely
+ * old: the server refuses models it predates ("The 'gpt-6-astra' model requires
+ * a newer version of Codex", HTTP 400), which kills every stage of a run. So
+ * every stage runs `codex update` first. npm owns the install, so the CLI lives
+ * under an agent-owned prefix rather than the root-owned global one — that
+ * directory is a named volume shared by every workspace on the host, so the
+ * download is paid once and every later stage costs a version check.
+ * `RALPH_CODEX_UPDATE=0` skips the update and the mount together: a volume left
+ * mounted without updates would shadow a fresher image.
+ */
+export const CODEX_CLI_VOLUME = "ralph-codex-cli";
+export const CODEX_CLI_PATH = "/home/agent/.npm-global";
+
+export function codexUpdateEnabled(): boolean {
+  return process.env.RALPH_CODEX_UPDATE?.trim() !== "0";
+}
+
+// `codex update` reports on stdout, which the runner decodes as JSONL, so the
+// report goes to stderr (shown on the host as `docker  …` lines). A failed
+// update (offline, registry down) leaves the installed version in place.
+const CODEX_UPDATE_STEP = "codex update 1>&2 || true; ";
+
+export function codexSetupScript(): string {
+  return (
+    'mkdir -p "$CODEX_HOME"; ' +
+    (codexUpdateEnabled() ? CODEX_UPDATE_STEP : "") +
+    "for f in auth.json config.toml AGENTS.md; do " +
+    `if [ -f "${CODEX_CREDS_MOUNT}/$f" ]; then cp "${CODEX_CREDS_MOUNT}/$f" "$CODEX_HOME/"; fi; ` +
+    "done; " +
+    'exec "$0" "$@"'
+  );
+}
 
 export function buildCodexArgs(context: AgentCommandContext): string[] {
   const args = [
     "bash",
     "-c",
-    CODEX_SETUP_SCRIPT,
+    codexSetupScript(),
     "codex",
     "exec",
     "--json",
@@ -353,7 +380,14 @@ export const codexAdapter = {
     };
   },
   volumeMounts() {
-    return [];
+    if (!codexUpdateEnabled()) return [];
+    return [
+      {
+        name: CODEX_CLI_VOLUME,
+        containerPath: CODEX_CLI_PATH,
+        labels: ["ralph.kind=codex-cli"],
+      },
+    ];
   },
   buildCommand: buildCodexArgs,
   createDecoder: createCodexDecoder,
