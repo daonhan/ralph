@@ -24,7 +24,7 @@ function successfulResult(args) {
   let stdout = "";
   if (entrypoint === "id") stdout = "agent\n";
   else if (entrypoint === "codex") {
-    stdout = args.includes("exec") ? CODEX_HELP + "\n" : "codex-cli 0.144.4\n";
+    stdout = args.includes("exec") ? CODEX_HELP + "\n" : "codex-cli 0.154.0\n";
   } else if (entrypoint === "python" || entrypoint === "python3") {
     stdout = "Python 3.11.2\n";
   } else if (entrypoint === "uv") {
@@ -194,7 +194,7 @@ test("reports a failed image build in plain language", () => {
 });
 
 test("Dockerfile pins the verified Codex CLI version", () => {
-  assert.match(DOCKERFILE, /ARG CODEX_VERSION=0\.144\.4/);
+  assert.match(DOCKERFILE, /ARG CODEX_VERSION=0\.154\.0/);
   assert.match(
     DOCKERFILE,
     /npm install --global "@openai\/codex@\${CODEX_VERSION}"/

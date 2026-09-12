@@ -290,7 +290,7 @@ pinned in Ralph's sandbox from the same shell environment that will launch
 Ralph:
 
 ```bash
-npm install --global @openai/codex@0.144.4
+npm install --global @openai/codex@0.154.0
 codex --version
 ```
 

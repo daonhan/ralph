@@ -69,7 +69,7 @@ export function runImageSmoke(options, { run, log }) {
       entrypoint: "codex",
       args: ["--version"],
       validateOutput(output) {
-        return output.trim() === "codex-cli 0.144.4"
+        return output.trim() === "codex-cli 0.154.0"
           ? null
           : `got ${output.trim() || "(empty)"}`;
       },

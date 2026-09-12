@@ -34,7 +34,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 
 RUN corepack enable
 
-ARG CODEX_VERSION=0.144.4
+ARG CODEX_VERSION=0.154.0
 RUN npm install --global "@openai/codex@${CODEX_VERSION}" \
   && test "$(codex --version)" = "codex-cli ${CODEX_VERSION}"
 
