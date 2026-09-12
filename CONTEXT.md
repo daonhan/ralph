@@ -80,6 +80,7 @@ Pre-commit runs prettier on staged files then typecheck. Image changes: `pnpm sm
 
 - **Windows shell.** `render.ts` picks `bash.exe` from `PATH` if found, else `cmd.exe`. Use the `!?` try-shell form for anything that might not exist under `cmd.exe`.
 - **Same-shell credentials.** PowerShell and WSL have different `$HOME`. Log in (`claude`, `codex`, `gh`) from the shell you will launch Ralph from.
+- **The sandbox never sees `~/.gitconfig`.** `runStage` passes the host's `user.name`/`user.email` in as `GIT_CONFIG_*` (resolved with `git -C <workspace> config --get`, so a repo-local identity still wins). With no identity set anywhere, nothing is injected, Ralph warns once on stderr, and commits made in the sandbox carry an author the agent makes up.
 - **Codex `CODEX_HOME` cannot be a bind mount on Windows** (EPERM). Credentials are mounted read-only elsewhere and copied in by a setup script.
 - **Sandbox CLI default model is frozen at image build** (each Claude stage runs `claude update` first, but not under `RALPH_CLAUDE_UPDATE=0` or offline). Ralph always passes `--model` explicitly so it tracks the host's setting.
 - **`pnpm link --global` breaks here.** Use `pnpm pack` + `npm i -g` to smoke-test the tarballs.

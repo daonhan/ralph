@@ -68,6 +68,7 @@ Make a single `git commit -am` with a short message:
 - Subject line (≤72 chars): what changed
 - Optional body (≤3 bullets): key decision, blocker for next iteration
 - No file lists (git tracks them), no `Co-Authored-By`
+- Never set or override the git author: no `git config user.*`, no `-c user.name=`/`-c user.email=`, no `--author`. The harness supplies the identity; if git says it cannot auto-detect one, stop and report it rather than inventing a name.
 
 # RECORDING PROGRESS
 

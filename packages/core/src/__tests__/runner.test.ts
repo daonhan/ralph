@@ -1,8 +1,9 @@
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { getAgentAdapter } from "../agents/index.js";
 import {
@@ -10,6 +11,7 @@ import {
   parseGraceMs,
   resolveAgentRuntimeArgs,
   resolveAgentVolumeArgs,
+  resolveGitConfigArgs,
   resolveModelArgs,
   resolveSkillsMountArgs,
 } from "../runner.js";
@@ -205,5 +207,85 @@ describe("resolveSkillsMountArgs", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("resolveGitConfigArgs", () => {
+  // Point git at config files we own, so the host's real identity can neither
+  // leak into the "no identity" cases nor mask the precedence one.
+  const sandbox = mkdtempSync(join(tmpdir(), "ralph-gitid-"));
+  const globalCfg = join(sandbox, "gitconfig-global");
+  const saved = {
+    global: process.env.GIT_CONFIG_GLOBAL,
+    system: process.env.GIT_CONFIG_SYSTEM,
+  };
+
+  beforeEach(() => {
+    process.env.GIT_CONFIG_GLOBAL = globalCfg;
+    process.env.GIT_CONFIG_SYSTEM = join(sandbox, "gitconfig-system");
+    writeFileSync(globalCfg, "");
+  });
+
+  afterAll(() => {
+    process.env.GIT_CONFIG_GLOBAL = saved.global;
+    process.env.GIT_CONFIG_SYSTEM = saved.system;
+    rmSync(sandbox, { recursive: true, force: true });
+  });
+
+  function setGlobal(name: string, email: string): void {
+    writeFileSync(globalCfg, `[user]\n\tname = ${name}\n\temail = ${email}\n`);
+  }
+
+  function repo(name?: string, email?: string): string {
+    const dir = mkdtempSync(join(sandbox, "repo-"));
+    const git = (...args: string[]) =>
+      spawnSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+    git("init", "-q");
+    if (name !== undefined) git("config", "--local", "user.name", name);
+    if (email !== undefined) git("config", "--local", "user.email", email);
+    return dir;
+  }
+
+  it("always trusts the bind-mounted workspace", () => {
+    const args = resolveGitConfigArgs(repo("A", "a@example.com"));
+    expect(args).toContain("GIT_CONFIG_KEY_0=safe.directory");
+    expect(args).toContain("GIT_CONFIG_VALUE_0=*");
+  });
+
+  it("injects the workspace's git identity so the agent cannot invent one", () => {
+    const args = resolveGitConfigArgs(repo("Ada Lovelace", "ada@example.com"));
+    expect(args).toContain("GIT_CONFIG_COUNT=3");
+    expect(args).toContain("GIT_CONFIG_KEY_1=user.name");
+    expect(args).toContain("GIT_CONFIG_VALUE_1=Ada Lovelace");
+    expect(args).toContain("GIT_CONFIG_KEY_2=user.email");
+    expect(args).toContain("GIT_CONFIG_VALUE_2=ada@example.com");
+  });
+
+  it("falls back to the host's global identity when the repo sets none", () => {
+    setGlobal("Global Name", "global@example.com");
+    const args = resolveGitConfigArgs(repo());
+    expect(args).toContain("GIT_CONFIG_VALUE_1=Global Name");
+    expect(args).toContain("GIT_CONFIG_VALUE_2=global@example.com");
+  });
+
+  it("prefers a repo-local identity over the host's global one", () => {
+    // We read through `git -C <dir>`, so git's own local-over-global
+    // precedence decides — a per-repo identity is never clobbered.
+    setGlobal("Global Name", "global@example.com");
+    const args = resolveGitConfigArgs(repo("Repo Local", "local@example.com"));
+    expect(args).toContain("GIT_CONFIG_VALUE_1=Repo Local");
+    expect(args).toContain("GIT_CONFIG_VALUE_2=local@example.com");
+  });
+
+  it("injects no identity when neither the repo nor the host has one", () => {
+    const args = resolveGitConfigArgs(repo());
+    expect(args).toContain("GIT_CONFIG_COUNT=1");
+    expect(args).not.toContain("GIT_CONFIG_KEY_1=user.name");
+  });
+
+  it("injects no identity when only half the pair is set", () => {
+    const args = resolveGitConfigArgs(repo("Half Only"));
+    expect(args).toContain("GIT_CONFIG_COUNT=1");
+    expect(args.join(" ")).not.toContain("Half Only");
   });
 });

@@ -57,6 +57,9 @@ const DEFAULT_RESULT_GRACE_MS = 30_000;
 // Emit the docker.sock blast-radius warning at most once per process.
 let dockerSockWarned = false;
 
+// Emit the missing-git-identity warning at most once per process.
+let gitIdentityWarned = false;
+
 /**
  * Parse `RALPH_RESULT_GRACE_MS`. Returns the configured millisecond budget,
  * `0` to disable the timer entirely, or `defaultMs` for any invalid input
@@ -190,6 +193,66 @@ export function resolveDockerSocketMount(): string[] | null {
     args.push("--group-add", "0");
   }
 
+  return args;
+}
+
+/**
+ * Read one git identity key as the host would resolve it *for this workspace*.
+ * Running through `git -C <workspaceDir>` applies git's own precedence
+ * (repo-local .git/config over the host's global ~/.gitconfig), so we never
+ * override an identity a repo deliberately sets for itself.
+ */
+function readGitIdentity(
+  workspaceDir: string,
+  key: string
+): string | undefined {
+  const res = spawnSync("git", ["-C", workspaceDir, "config", "--get", key], {
+    encoding: "utf8",
+  });
+  if (res.status !== 0) return undefined;
+  const value = res.stdout.trim();
+  return value === "" ? undefined : value;
+}
+
+/**
+ * Build the `GIT_CONFIG_*` env args for the sandbox.
+ *
+ * `safe.directory=*` makes git trust the bind-mounted workspace across the UID
+ * mismatch. The identity pair matters just as much: the container never sees
+ * the host's `~/.gitconfig`, so without it a commit inside the sandbox dies on
+ * "unable to auto-detect email address (got 'agent@<cid>.(none)')" and the
+ * agent invents an author to get past it. Repos carrying a local identity
+ * inside the bind mount were immune by accident; every other repo got commits
+ * attributed to a fabricated name.
+ *
+ * If the host has no identity at all we inject none and warn — fabricating one
+ * here would be the same bug wearing a different hat.
+ */
+export function resolveGitConfigArgs(workspaceDir: string): string[] {
+  const entries: Array<[string, string]> = [["safe.directory", "*"]];
+
+  const name = readGitIdentity(workspaceDir, "user.name");
+  const email = readGitIdentity(workspaceDir, "user.email");
+  if (name && email) {
+    entries.push(["user.name", name], ["user.email", email]);
+  } else if (!gitIdentityWarned) {
+    gitIdentityWarned = true;
+    process.stderr.write(
+      `${red(SYM.bullet)} ${bold("no git identity")} ${dim(
+        "— git user.name/user.email are unset for this workspace, so commits made in the sandbox carry an author the agent makes up. Set one with `git config --global user.name` and `git config --global user.email`."
+      )}\n`
+    );
+  }
+
+  const args: string[] = ["-e", `GIT_CONFIG_COUNT=${entries.length}`];
+  entries.forEach(([key, value], i) => {
+    args.push(
+      "-e",
+      `GIT_CONFIG_KEY_${i}=${key}`,
+      "-e",
+      `GIT_CONFIG_VALUE_${i}=${value}`
+    );
+  });
   return args;
 }
 
@@ -562,12 +625,7 @@ export async function runStage(
       `${workspaceDir}:${CONTAINER_WORKSPACE}`,
       "-w",
       CONTAINER_WORKSPACE,
-      "-e",
-      "GIT_CONFIG_COUNT=1",
-      "-e",
-      "GIT_CONFIG_KEY_0=safe.directory",
-      "-e",
-      "GIT_CONFIG_VALUE_0=*",
+      ...resolveGitConfigArgs(workspaceDir),
     ];
 
     const home = resolveHostHome();
