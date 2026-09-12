@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.14.1...ralph-core-v0.15.0) (2026-09-12)
+
+
+### Features
+
+* **sandbox:** refresh the Codex CLI before every stage ([c42d603](https://github.com/daonhan/ralph/commit/c42d603c693d439b0940a3b5d3e046ac71372642))
+
 ## [0.14.1](https://github.com/daonhan/ralph/compare/ralph-core-v0.14.0...ralph-core-v0.14.1) (2026-09-12)
 
 

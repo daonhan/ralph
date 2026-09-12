@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.7.1...ralph-sandbox-v0.8.0) (2026-09-12)
+
+
+### Features
+
+* **sandbox:** refresh the Codex CLI before every stage ([c42d603](https://github.com/daonhan/ralph/commit/c42d603c693d439b0940a3b5d3e046ac71372642))
+
+
+### Bug Fixes
+
+* **sandbox:** bump pinned Codex CLI to 0.154.0 ([d33c6d9](https://github.com/daonhan/ralph/commit/d33c6d9cab9ec205b2081c80beeb69364b7a8e61))
+
 ## [0.7.1](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.7.0...ralph-sandbox-v0.7.1) (2026-09-12)
 
 
