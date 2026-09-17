@@ -10,6 +10,7 @@ import {
 import { readCoreVersion } from "./cli-help.js";
 import {
   dirtySnapshot,
+  formatDuration,
   headShort,
   loadHistoryTail,
   openHistory,
@@ -28,7 +29,13 @@ import {
   withRetries,
 } from "./retry.js";
 import { ensureImage, runStage, stageLogPath } from "./runner.js";
-import { HEARTBEAT_MS, openRunLog } from "./run-log.js";
+import {
+  HEARTBEAT_MS,
+  findLiveRun,
+  openRunLog,
+  pruneRunLogs,
+  type RunEndReason,
+} from "./run-log.js";
 import {
   USE_COLOR,
   dim,
@@ -158,7 +165,12 @@ export type LoopOptions = {
   codexUserConfig?: boolean;
 };
 
-export async function runLoop(opts: LoopOptions): Promise<void> {
+/**
+ * Drive the stage chain and resolve with how the run ended: `no-more-tasks`,
+ * `cap`, `failed`, or `refused` when another run of this workspace is still
+ * live. A thrown error rejects; a signal exits the process from its handler.
+ */
+export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
   const {
     stages,
     inputs,
@@ -204,6 +216,28 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
       version: coreVersion,
     },
   });
+
+  // One run per workspace. The check runs after this run's own run.started is
+  // on disk, so two launches racing each other both refuse rather than both
+  // proceed. Nothing has been acquired yet, so a refusal just ends the log.
+  const historyDir = dirname(runLog.filePath);
+  const blocker = findLiveRun(historyDir, runLog.runId);
+  if (blocker) {
+    const started = blocker.view.started!;
+    const lastEvent = blocker.view.lastEventAt ?? started.at;
+    const idle = formatDuration(Date.now() - Date.parse(lastEvent));
+    process.stderr.write(
+      `[refused] another ralph run is live in this workspace: pid ${started.pid} on ${started.hostname}, started ${started.at}, last event ${idle} ago (${blocker.filePath})\n`
+    );
+    runLog.append({
+      type: "run.ended",
+      reason: "refused",
+      completedIterations: 0,
+      blockedBy: blocker.runId,
+    });
+    return "refused";
+  }
+  pruneRunLogs(historyDir);
 
   const releaser: Releaser = noKeepAlive
     ? { release: () => {} }
@@ -519,7 +553,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
           });
           history.appendFooter(i, "no-more-tasks", findings);
           printRunSummary(history, "no-more-tasks", i, iterations);
-          return;
+          return "no-more-tasks";
         }
 
         // The gate decides whether the rest of the iteration is worth paying
@@ -539,6 +573,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     });
     history.appendFooter(completedIterations, reason, findings);
     printRunSummary(history, reason, completedIterations, iterations);
+    return reason;
   } catch (err) {
     try {
       runLog.append({

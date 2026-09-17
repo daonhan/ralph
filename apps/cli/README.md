@@ -37,6 +37,12 @@ Every run appends a readable history file under `<workspace>/.ralph/history/` (o
 per run, self-gitignored) and injects the last ten stage entries into the next implementer prompt.
 Needs `@daonhan/ralph-core` 0.8.0 or later.
 
+Beside it each run keeps an append-only event log (`<run>.jsonl`, the newest 20 kept) that a
+supervisor can read to tell whether the run is still going, how it ended, and how long its current
+stage and agent have been silent. Only one run per workspace: a launch while another run is live
+exits `75`. A run whose last iteration failed exits `1`; `no-more-tasks` and the iteration cap exit
+`0`, and `Ctrl+C` exits `130`. Schema: [ARCHITECTURE.md](https://github.com/daonhan/ralph/blob/main/docs/ARCHITECTURE.md#run-event-log).
+
 Claude is the default; `RALPH_AGENT=codex` is the fallback when `--agent` is absent. Requires
 Docker and a login for the selected provider (and `gh` for `ralph-ghafk`). Codex users should
 follow the root README's [file-backed login](https://github.com/daonhan/ralph#codex-login) and

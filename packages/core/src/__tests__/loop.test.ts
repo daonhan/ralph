@@ -7,7 +7,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -57,7 +57,7 @@ vi.mock("../stream-render.js", () => ({
 }));
 
 import { deriveStatus, hasSentinel, runLoop } from "../loop.js";
-import { reduceRunLog } from "../run-log.js";
+import { openRunLog, reduceRunLog } from "../run-log.js";
 
 const stage: Stage = { name: "implementer", template: "stage.md" };
 const sentinel = "<promise>NO MORE TASKS</promise>";
@@ -1074,6 +1074,120 @@ describe("runLoop", () => {
     failImage(new Error("pull hung"));
     await expect(loop).rejects.toThrow("pull hung");
     vi.useRealTimers();
+  });
+
+  it("resolves with how the run ended", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+    await expect(runLoop(loopOptions(dirs))).resolves.toBe("no-more-tasks");
+
+    mocks.runStage.mockResolvedValue(ok("still working"));
+    await expect(runLoop(loopOptions(dirs))).resolves.toBe("cap");
+
+    mocks.runStage.mockRejectedValue(new Error("boom"));
+    await expect(runLoop(loopOptions(dirs, { maxRetries: 0 }))).resolves.toBe(
+      "failed"
+    );
+  });
+
+  it("refuses to start while another run of the workspace is live", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    // A run this very (node) process started and never ended: live by pid.
+    const live = openRunLog({
+      workspaceDir: dirs.workspaceDir,
+      bin: "ghafk",
+      started: {
+        pid: process.pid,
+        hostname: hostname(),
+        platform: process.platform,
+        wslDistro: process.env.WSL_DISTRO_NAME,
+        agent: "claude",
+        iterations: 5,
+        inputs: "",
+        version: "0.15.0",
+      },
+    });
+
+    try {
+      await expect(runLoop(loopOptions(dirs))).resolves.toBe("refused");
+    } finally {
+      live.close();
+    }
+
+    expect(mocks.acquire).not.toHaveBeenCalled();
+    expect(mocks.ensureImage).not.toHaveBeenCalled();
+    expect(mocks.runStage).not.toHaveBeenCalled();
+    expect(readStderr()).toContain(
+      `[refused] another ralph run is live in this workspace: pid ${process.pid} on ${hostname()}`
+    );
+    const refused = readRunLog(dirs.workspaceDir);
+    expect(refused.view.started?.runId).not.toBe(live.runId);
+    expect(refused.events.map((e) => e.type)).toEqual([
+      "run.started",
+      "run.ended",
+    ]);
+    expect(refused.view.ended).toMatchObject({
+      reason: "refused",
+      blockedBy: live.runId,
+    });
+    expect(historyFiles(dirs.workspaceDir, ".md")).toEqual([]);
+  });
+
+  it("starts after a run whose log never ended once its process is gone", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const crashed = openRunLog({
+      workspaceDir: dirs.workspaceDir,
+      bin: "ghafk",
+      started: {
+        pid: 2 ** 31 - 1, // no such process
+        hostname: hostname(),
+        platform: process.platform,
+        wslDistro: process.env.WSL_DISTRO_NAME,
+        agent: "claude",
+        iterations: 5,
+        inputs: "",
+        version: "0.15.0",
+      },
+    });
+    crashed.close(); // killed: no run.ended
+
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+    await expect(runLoop(loopOptions(dirs))).resolves.toBe("no-more-tasks");
+  });
+
+  it("keeps only the newest 20 run logs", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    for (let k = 0; k < 22; k++) {
+      openRunLog({
+        workspaceDir: dirs.workspaceDir,
+        bin: "afk",
+        started: {
+          pid: process.pid,
+          hostname: hostname(),
+          platform: process.platform,
+          agent: "claude",
+          iterations: 1,
+          inputs: "",
+          version: "0.15.0",
+        },
+        now: new Date(Date.UTC(2026, 0, 1, 0, 0, k)),
+      }).append({ type: "run.ended", reason: "cap", completedIterations: 1 });
+    }
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+
+    await runLoop(loopOptions(dirs));
+
+    const left = historyFiles(dirs.workspaceDir, ".jsonl");
+    expect(left).toHaveLength(20);
+    expect(left[0]).toBe("2026-01-01-000003-afk.jsonl");
+    expect(readRunLog(dirs.workspaceDir).view.ended?.reason).toBe(
+      "no-more-tasks"
+    );
   });
 
   it("records the sandbox-install findings on run.ended", async () => {

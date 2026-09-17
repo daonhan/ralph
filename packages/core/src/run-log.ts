@@ -1,11 +1,17 @@
+import { execFileSync } from "node:child_process";
 import {
   closeSync,
   existsSync,
   fsyncSync,
   mkdirSync,
   openSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
+import { hostname } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -27,7 +33,7 @@ import {
 export const RUN_LOG_VERSION = 1;
 
 export type RunEndReason =
-  "no-more-tasks" | "cap" | "failed" | "aborted" | "error";
+  "no-more-tasks" | "cap" | "failed" | "aborted" | "error" | "refused";
 
 export type RunStarted = {
   type: "run.started";
@@ -82,6 +88,8 @@ export type RunEnded = {
   reason: RunEndReason;
   completedIterations: number;
   signal?: "SIGINT" | "SIGTERM";
+  /** For `refused`: the runId of the live run that blocked this launch. */
+  blockedBy?: string;
   /** The host check's sandbox-install findings, when any. */
   findings?: string[];
   error?: string;
@@ -115,11 +123,16 @@ export type RunView = {
   /** From the latest heartbeat: when the agent last wrote to stdout, if ever. */
   lastOutputAt?: string | null;
   entries: StageEntry[];
+  /**
+   * Completed stages per status. The end reason only reflects the last
+   * iteration, so a mid-run `failed` or `error` shows up here.
+   */
+  statusCounts: Record<string, number>;
   ended?: RunEnded & { at: string };
 };
 
 export function emptyRunView(): RunView {
-  return { entries: [] };
+  return { entries: [], statusCounts: {} };
 }
 
 /** Fold one record into the view. Pure; unknown event types leave it unchanged. */
@@ -155,6 +168,10 @@ export function applyEvent(view: RunView, record: RunRecord): RunView {
     case "stage.completed": {
       const { v: _v, seq: _seq, at: _at, type: _type, ...entry } = record;
       next.entries = [...view.entries, entry];
+      next.statusCounts = {
+        ...view.statusCounts,
+        [entry.status]: (view.statusCounts[entry.status] ?? 0) + 1,
+      };
       next.stage = undefined;
       break;
     }
@@ -385,4 +402,177 @@ export function openRunLog(opts: OpenRunLogOptions): RunLog {
     throw err;
   }
   return log;
+}
+
+// --- Liveness: is another run of this workspace still going? ---
+
+export type Liveness = "ended" | "live" | "dead";
+
+/** Across hosts or platforms, a log untouched this long is taken for dead. */
+export const STALE_AFTER_MS = 5 * 60_000;
+
+/** What the reader knows about its own host, and how it probes a pid there. */
+export type LivenessProbe = {
+  now: number;
+  hostname: string;
+  platform: string;
+  wslDistro?: string;
+  /** Whether a process with this pid exists. */
+  isAlive(pid: number): boolean;
+  /** Whether that process is node; true when the probe cannot tell. */
+  isNode(pid: number): boolean;
+};
+
+/**
+ * Judge a run from its view. `ended` once it logged `run.ended`; `dead` when it
+ * never logged a readable `run.started`. On the host that started it the pid
+ * decides — alive and still node means `live`, however old the last heartbeat,
+ * because a hung run is still running. From another host or platform (WSL and
+ * Windows share a hostname but not a pid space) only the file's age can:
+ * `live` while it was written within {@link STALE_AFTER_MS}.
+ */
+export function runLiveness(
+  view: RunView,
+  mtimeMs: number,
+  probe: LivenessProbe
+): Liveness {
+  if (view.ended) return "ended";
+  const started = view.started;
+  if (!started) return "dead";
+  const sameHost =
+    started.hostname === probe.hostname &&
+    started.platform === probe.platform &&
+    started.wslDistro === probe.wslDistro;
+  if (sameHost) {
+    return probe.isAlive(started.pid) && probe.isNode(started.pid)
+      ? "live"
+      : "dead";
+  }
+  return probe.now - mtimeMs < STALE_AFTER_MS ? "live" : "dead";
+}
+
+/** Whether a process with `pid` exists; EPERM (someone else's process) counts. */
+export function pidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * Whether the process with `pid` is node, the guard against a dead run's pid
+ * reused by something else. False only when the probe positively shows another
+ * program or no process; any failure to probe answers true, erring toward
+ * refusing a second run.
+ */
+export function pidIsNode(pid: number): boolean {
+  try {
+    if (process.platform === "win32") {
+      const out = execFileSync(
+        "tasklist",
+        ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"],
+        {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+          windowsHide: true,
+        }
+      );
+      // A match is one CSV row whose first field is the image name; no match
+      // prints an INFO line instead.
+      const row = out.split(/\r?\n/).find((l) => l.startsWith('"'));
+      return (
+        row !== undefined && row.split(",")[0].toLowerCase().includes("node")
+      );
+    }
+    if (process.platform === "linux") {
+      return readFileSync(`/proc/${pid}/comm`, "utf8").includes("node");
+    }
+    const out = execFileSync("ps", ["-p", String(pid), "-o", "comm="], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return out.includes("node");
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { status?: number };
+    // The process is gone: no /proc entry on Linux, or ps exiting 1 for no match.
+    if (process.platform === "linux") return e.code !== "ENOENT";
+    if (process.platform !== "win32") return e.status !== 1;
+    return true;
+  }
+}
+
+/** This host, probed for real. */
+export function hostProbe(): LivenessProbe {
+  return {
+    now: Date.now(),
+    hostname: hostname(),
+    platform: process.platform,
+    wslDistro: process.env.WSL_DISTRO_NAME,
+    isAlive: pidAlive,
+    isNode: pidIsNode,
+  };
+}
+
+export type LiveRun = { runId: string; filePath: string; view: RunView };
+
+/** The run logs in a history dir, oldest first (names sort chronologically). */
+function runLogNames(historyDir: string): string[] {
+  try {
+    return readdirSync(historyDir)
+      .filter((f) => f.endsWith(".jsonl"))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The first run, other than `selfRunId`, that is still live in `historyDir`.
+ * Called after this run's own `run.started` is on disk, so two launches racing
+ * each other both see the other and both refuse — never both proceed. Every log
+ * is read, not only the newest: a torn or dead newer log must not hide a live
+ * older one. An unreadable log is skipped.
+ */
+export function findLiveRun(
+  historyDir: string,
+  selfRunId: string,
+  probe: LivenessProbe = hostProbe()
+): LiveRun | undefined {
+  for (const name of runLogNames(historyDir)) {
+    const runId = name.slice(0, -".jsonl".length);
+    if (runId === selfRunId) continue;
+    const filePath = join(historyDir, name);
+    try {
+      const { view } = reduceRunLog(readFileSync(filePath, "utf8"));
+      if (runLiveness(view, statSync(filePath).mtimeMs, probe) === "live") {
+        return { runId, filePath, view };
+      }
+    } catch {
+      // Vanished or unreadable: nothing to judge.
+    }
+  }
+  return undefined;
+}
+
+/** How many run logs a workspace keeps, the current run's included. */
+export const RETAIN_RUN_LOGS = 20;
+
+/**
+ * Delete all but the newest `keep` run logs. Call it only after
+ * {@link findLiveRun} found no other live run, so everything deleted has ended
+ * or died. Markdown history is never touched. A log that cannot be deleted
+ * (say, open in a reader on Windows) is left for the next run.
+ */
+export function pruneRunLogs(historyDir: string, keep = RETAIN_RUN_LOGS): void {
+  const names = runLogNames(historyDir);
+  for (const name of names.slice(0, Math.max(0, names.length - keep))) {
+    try {
+      rmSync(join(historyDir, name), { force: true });
+    } catch {
+      // Left for the next run.
+    }
+  }
 }
