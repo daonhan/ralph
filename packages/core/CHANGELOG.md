@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.16.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.15.0...ralph-core-v0.16.0) (2026-09-17)
+
+
+### Features
+
+* **cli:** one live run per workspace, and exit codes that report the end ([dcb972f](https://github.com/daonhan/ralph/commit/dcb972ffa988e169a3ac86f9420a8d45cd8506f0))
+* **core:** harden the run claim and the log writer ([8722c3e](https://github.com/daonhan/ralph/commit/8722c3e680677f573198a79e02e7d76ddce46ed7))
+* **core:** heartbeat the run log with the agent's last output time ([b55b865](https://github.com/daonhan/ralph/commit/b55b86580223112aac1dc988f194c942c4a5f231))
+* **core:** refuse a launch while a killed run's container still runs ([215ce1c](https://github.com/daonhan/ralph/commit/215ce1c9301b8910943a596fe3b4565db20948aa))
+* **core:** run each stage attempt in a named, labelled container ([bdfd91d](https://github.com/daonhan/ralph/commit/bdfd91d8ac695d8b4da2dc840c956e57af7f8190))
+* **core:** write a durable per-run event log beside the history file ([267c382](https://github.com/daonhan/ralph/commit/267c3824a52261cef837f43fe6942a1122c27400))
+
+
+### Bug Fixes
+
+* **core:** close the run log when a refusal cannot be written ([aa6050c](https://github.com/daonhan/ralph/commit/aa6050cb7992c017f620f7fed776fa5a75770b27))
+
 ## [0.15.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.14.1...ralph-core-v0.15.0) (2026-09-12)
 
 
