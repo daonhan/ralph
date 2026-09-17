@@ -234,12 +234,18 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
     `ralph-${runLog.runId}-i${i}-s${s}-a${attempt}`;
   const refuse = (message: string, blockedBy: string): "refused" => {
     process.stderr.write(`[refused] ${message}\n`);
-    runLog.append({
-      type: "run.ended",
-      reason: "refused",
-      completedIterations: 0,
-      blockedBy,
-    });
+    try {
+      runLog.append({
+        type: "run.ended",
+        reason: "refused",
+        completedIterations: 0,
+        blockedBy,
+      });
+    } finally {
+      // A failed write leaves the log open, and this process would go on
+      // reading the unended log as a run it still owns, refusing every launch.
+      runLog.close();
+    }
     pruneRunLogs(historyDir, runLog.runId);
     return "refused";
   };
@@ -338,6 +344,23 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
     } catch {
       // Same: the exit code still reports the signal.
     }
+  };
+  // A run that ends by itself: the host check, then `run.ended` to the log
+  // (fsynced) before the history footer and the summary line.
+  const endRun = (
+    writer: HistoryWriter,
+    reason: RunEndReason
+  ): RunEndReason => {
+    const findings = warnSandboxInstall(workspaceDir);
+    runLog.append({
+      type: "run.ended",
+      reason,
+      completedIterations,
+      findings: findings.length ? findings : undefined,
+    });
+    writer.appendFooter(completedIterations, reason, findings);
+    printRunSummary(writer, reason, completedIterations, iterations);
+    return reason;
   };
 
   const onSigint = (): void => {
@@ -593,16 +616,7 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
         if (hitSentinel) {
           sentinelHit = true;
           completedIterations = i;
-          const findings = warnSandboxInstall(workspaceDir);
-          runLog.append({
-            type: "run.ended",
-            reason: "no-more-tasks",
-            completedIterations: i,
-            findings: findings.length ? findings : undefined,
-          });
-          history.appendFooter(i, "no-more-tasks", findings);
-          printRunSummary(history, "no-more-tasks", i, iterations);
-          return "no-more-tasks";
+          return endRun(history, "no-more-tasks");
         }
 
         // The gate decides whether the rest of the iteration is worth paying
@@ -612,17 +626,7 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
       }
       completedIterations = i;
     }
-    const reason = runFailed ? "failed" : "cap";
-    const findings = warnSandboxInstall(workspaceDir);
-    runLog.append({
-      type: "run.ended",
-      reason,
-      completedIterations,
-      findings: findings.length ? findings : undefined,
-    });
-    history.appendFooter(completedIterations, reason, findings);
-    printRunSummary(history, reason, completedIterations, iterations);
-    return reason;
+    return endRun(history, runFailed ? "failed" : "cap");
   } catch (err) {
     try {
       runLog.append({

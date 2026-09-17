@@ -96,10 +96,12 @@ Vitest unit tests, `packages/core/src/__tests__/` (pure logic, mocked I/O):
 | `agents.test.ts`            | Provider selection, Claude/Codex command construction, credential mounts, and model/config precedence.         |
 | `agent-decoders.test.ts`    | Claude and Codex JSONL decoding, normalized events, completion, and failure contracts.                         |
 | `loop.test.ts`              | `runLoop` iteration walk, the gate sentinel, wake-lock acquire/release, per-stage retry, SIGINT/SIGTERM abort. |
+| `run-log.test.ts`           | Run event log writer and reducer, pid liveness, the claim (`findLiveRun`, `findRunContainer`), `pruneRunLogs`. |
 | `runner.test.ts`            | `parseGraceMs` (post-completion grace timer env parsing).                                                      |
 | `runner-stream.test.ts`     | Selected-provider streaming, credential isolation, completion, and process-exit behavior.                      |
+| `runner-containers.test.ts` | `parseRunContainers` / `runningRunContainers`: the claim's `docker ps` label probe; no docker reads as none.   |
 | `stream-render.test.ts`     | Console rendering of normalized provider events.                                                               |
-| `run-bin.test.ts`           | CLI provider selection and selected-agent wiring into the loop.                                                |
+| `run-bin.test.ts`           | CLI provider selection, agent wiring into the loop, `EXIT_CODES` (`failed` → 1, `refused` → 75, else 0).       |
 | `cli-help.test.ts`          | `--agent`, `--codex-user-config`, help, and resolved config output.                                            |
 | `retry.test.ts`             | `withRetries` / `backoffFor` (per-stage retry policy).                                                         |
 | `detach.test.ts`            | `stripDetachFlags` / `detachAndExit` (`--detach` flag handling).                                               |

@@ -617,7 +617,7 @@ export function resolveContainerArgs(container?: StageContainer): string[] {
 export function parseRunContainers(stdout: string): StageContainer[] {
   const containers: StageContainer[] = [];
   for (const line of stdout.split(/\r?\n/)) {
-    const [runId, name] = line.trim().split(" ");
+    const [, runId, name] = /^(\S+) (.+)$/.exec(line.trim()) ?? [];
     if (runId && name) containers.push({ name, runId });
   }
   return containers;

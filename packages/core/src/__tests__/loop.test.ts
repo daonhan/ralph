@@ -1303,6 +1303,38 @@ describe("runLoop", () => {
     expect(historyFiles(dirs.workspaceDir, ".md")).toEqual([]);
   });
 
+  it("does not block the next launch when its refusal cannot be logged", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const live = openRunLog({
+      workspaceDir: dirs.workspaceDir,
+      bin: "ghafk",
+      started: {
+        pid: process.pid,
+        hostname: hostname(),
+        platform: process.platform,
+        wslDistro: process.env.WSL_DISTRO_NAME,
+        agent: "claude",
+        iterations: 5,
+        inputs: "",
+        version: "0.15.0",
+      },
+    });
+    faults.write = (data) => String(data).includes('"refused"');
+
+    try {
+      await expect(runLoop(loopOptions(dirs))).rejects.toThrow("ENOSPC");
+    } finally {
+      faults.write = undefined;
+      live.close();
+    }
+
+    // The failed refusal's log never ended, but its launch is over: this
+    // process must not read it as a run it still has open.
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+    await expect(runLoop(loopOptions(dirs))).resolves.toBe("no-more-tasks");
+  });
+
   it("refuses beside a live run written by a newer ralph", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);

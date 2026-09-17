@@ -296,6 +296,17 @@ describe("reduceRunLog", () => {
     expect(reduceRunLog(text)).toMatchObject({ events: [{}], truncated: true });
   });
 
+  it("stops at a heartbeat whose lastOutputAt is neither a string nor null", () => {
+    const text =
+      startedLine +
+      line(2, "heartbeat", { lastOutputAt: null }) +
+      line(3, "heartbeat", { lastOutputAt: "2026-09-17T10:15:30.000Z" }) +
+      line(4, "heartbeat", { lastOutputAt: 42 });
+    const { events, truncated } = reduceRunLog(text);
+    expect(truncated).toBe(true);
+    expect(events).toHaveLength(3);
+  });
+
   it("requires run.started first and only first", () => {
     expect(reduceRunLog(line(1, "stage.started", stageStarted))).toMatchObject({
       events: [],
@@ -476,11 +487,24 @@ describe("runLiveness", () => {
   });
 
   it("on the same host, this process's own pid is live only for a log it has open", () => {
+    // Its own pid is alive and node by definition, so neither is probed.
+    const unprobed = {
+      isAlive: () => {
+        throw new Error("probed this process's own pid");
+      },
+      isNode: () => {
+        throw new Error("probed this process's own pid");
+      },
+    };
     // This process opened the log and has not closed it: its run is going.
-    const owner = probe([7], { pid: 7, ownsRun: (runId) => runId === "r" });
+    const owner = probe([], {
+      pid: 7,
+      ownsRun: (runId) => runId === "r",
+      ...unprobed,
+    });
     expect(runLiveness(viewOf(7), stale, owner)).toBe("live");
     // A killed run's pid handed back to this very launch is not that run.
-    const reused = probe([7], { pid: 7, ownsRun: () => false });
+    const reused = probe([], { pid: 7, ownsRun: () => false, ...unprobed });
     expect(runLiveness(viewOf(7), recent, reused)).toBe("dead");
   });
 

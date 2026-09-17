@@ -516,8 +516,8 @@ export function pidAlive(pid: number): boolean {
  * true, erring toward refusing a second run.
  */
 export function pidIsNode(pid: number): boolean {
-  try {
-    if (process.platform === "win32") {
+  if (process.platform === "win32") {
+    try {
       const out = execFileSync(
         "tasklist",
         ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"],
@@ -534,10 +534,19 @@ export function pidIsNode(pid: number): boolean {
       return (
         row !== undefined && row.split(",")[0].toLowerCase().includes("node")
       );
+    } catch {
+      return true;
     }
-    if (process.platform === "linux") {
+  }
+  if (process.platform === "linux") {
+    try {
       return readFileSync(`/proc/${pid}/comm`, "utf8").includes("node");
+    } catch (err) {
+      // No /proc entry: the process is gone.
+      return (err as NodeJS.ErrnoException).code !== "ENOENT";
     }
+  }
+  try {
     const out = execFileSync("ps", ["-p", String(pid), "-o", "comm="], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
@@ -545,11 +554,8 @@ export function pidIsNode(pid: number): boolean {
     });
     return out.includes("node");
   } catch (err) {
-    const e = err as NodeJS.ErrnoException & { status?: number };
-    // The process is gone: no /proc entry on Linux, or ps exiting 1 for no match.
-    if (process.platform === "linux") return e.code !== "ENOENT";
-    if (process.platform !== "win32") return e.status !== 1;
-    return true;
+    // ps exits 1 when no process matches: the process is gone.
+    return (err as { status?: number | null }).status !== 1;
   }
 }
 
@@ -569,12 +575,13 @@ export function hostProbe(): LivenessProbe {
 
 export type LiveRun = { runId: string; filePath: string; view: RunView };
 
-/** The run logs in a history dir, oldest first (names sort chronologically). */
-function runLogNames(historyDir: string): string[] {
+/** The runIds logged in a history dir, oldest first (names sort chronologically). */
+function runLogIds(historyDir: string): string[] {
   try {
     return readdirSync(historyDir)
       .filter((f) => f.endsWith(".jsonl"))
-      .sort();
+      .sort()
+      .map((f) => f.slice(0, -".jsonl".length));
   } catch {
     return [];
   }
@@ -610,10 +617,9 @@ export function findLiveRun(
   selfRunId: string,
   probe: LivenessProbe = hostProbe()
 ): LiveRun | undefined {
-  for (const name of runLogNames(historyDir)) {
-    const runId = name.slice(0, -".jsonl".length);
+  for (const runId of runLogIds(historyDir)) {
     if (runId === selfRunId) continue;
-    const filePath = join(historyDir, name);
+    const filePath = join(historyDir, `${runId}.jsonl`);
     try {
       const text = readFileSync(filePath, "utf8");
       const { view } = reduceRunLog(text);
@@ -642,9 +648,7 @@ export function findRunContainer<C extends { name: string; runId: string }>(
   selfRunId: string,
   running: C[]
 ): C | undefined {
-  const logged = new Set(
-    runLogNames(historyDir).map((name) => name.slice(0, -".jsonl".length))
-  );
+  const logged = new Set(runLogIds(historyDir));
   return running.find((c) => c.runId !== selfRunId && logged.has(c.runId));
 }
 
@@ -677,8 +681,8 @@ export function pruneRunLogs(
 ): void {
   let keptRuns = 0;
   let keptRefused = false;
-  for (const name of runLogNames(historyDir).reverse()) {
-    const filePath = join(historyDir, name);
+  for (const runId of runLogIds(historyDir).reverse()) {
+    const filePath = join(historyDir, `${runId}.jsonl`);
     if (isRefused(filePath)) {
       if (!keptRefused) {
         keptRefused = true;
@@ -688,7 +692,7 @@ export function pruneRunLogs(
       keptRuns++;
       continue;
     }
-    if (name === `${selfRunId}.jsonl`) continue;
+    if (runId === selfRunId) continue;
     try {
       rmSync(filePath, { force: true });
     } catch {
