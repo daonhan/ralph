@@ -627,6 +627,24 @@ export function findLiveRun(
   return undefined;
 }
 
+/**
+ * The first running container, among `running`, of another run logged in
+ * `historyDir`. Its host process may be gone — killed, while the container it
+ * started goes on committing — so the workspace is not free until it stops.
+ * Matched by runId, never by path, so a launch from Windows and one from WSL
+ * see the same containers.
+ */
+export function findRunContainer<C extends { name: string; runId: string }>(
+  historyDir: string,
+  selfRunId: string,
+  running: C[]
+): C | undefined {
+  const logged = new Set(
+    runLogNames(historyDir).map((name) => name.slice(0, -".jsonl".length))
+  );
+  return running.find((c) => c.runId !== selfRunId && logged.has(c.runId));
+}
+
 /** How many run logs a workspace keeps, the current run's included. */
 export const RETAIN_RUN_LOGS = 20;
 

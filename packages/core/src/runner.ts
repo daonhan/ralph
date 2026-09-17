@@ -611,6 +611,42 @@ export function resolveContainerArgs(container?: StageContainer): string[] {
   return ["--name", container.name, "--label", `ralph.run=${container.runId}`];
 }
 
+/** The `<runId> <name>` pairs {@link runningRunContainers} lists, one per line. */
+export function parseRunContainers(stdout: string): StageContainer[] {
+  const containers: StageContainer[] = [];
+  for (const line of stdout.split(/\r?\n/)) {
+    const [runId, name] = line.trim().split(" ");
+    if (runId && name) containers.push({ name, runId });
+  }
+  return containers;
+}
+
+/**
+ * The running containers labelled with a run, for the one-run-per-workspace
+ * claim. No docker, a stopped daemon or a probe past 10 s reads as none: the
+ * image setup that follows reports a docker fault on its own.
+ */
+export function runningRunContainers(): StageContainer[] {
+  const res = spawnSync(
+    "docker",
+    [
+      "ps",
+      "--filter",
+      "label=ralph.run",
+      "--format",
+      '{{.Label "ralph.run"}} {{.Names}}',
+    ],
+    {
+      encoding: "utf8",
+      timeout: 10_000,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "ignore"],
+    }
+  );
+  if (res.error || res.status !== 0) return [];
+  return parseRunContainers(res.stdout);
+}
+
 /**
  * Remove a stage container Ralph is abandoning, in the background. Killing the
  * `docker run` client does not stop its container — on Windows the kill never

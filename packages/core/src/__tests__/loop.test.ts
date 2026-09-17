@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   notifyError: vi.fn(),
   release: vi.fn(),
   runStage: vi.fn(),
+  runningRunContainers: vi.fn(),
 }));
 
 // Disk faults for the run log, armed per test: a write that fails partway
@@ -67,6 +68,7 @@ vi.mock("../notify.js", () => ({
 vi.mock("../runner.js", () => ({
   ensureImage: mocks.ensureImage,
   runStage: mocks.runStage,
+  runningRunContainers: mocks.runningRunContainers,
   stageLogPath: (workspaceDir: string, iteration: number, stageName: string) =>
     join(
       workspaceDir,
@@ -244,6 +246,7 @@ describe("runLoop", () => {
     vi.useRealTimers();
     for (const mock of Object.values(mocks)) mock.mockReset();
     mocks.acquire.mockReturnValue({ release: mocks.release });
+    mocks.runningRunContainers.mockReturnValue([]);
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   });
@@ -1391,6 +1394,45 @@ describe("runLoop", () => {
 
     mocks.runStage.mockResolvedValue(ok(sentinel));
     await expect(runLoop(loopOptions(dirs))).resolves.toBe("no-more-tasks");
+  });
+
+  it("refuses while a container of a killed run is still running", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const killed = openRunLog({
+      workspaceDir: dirs.workspaceDir,
+      bin: "ghafk",
+      started: {
+        pid: 2 ** 31 - 1, // the host process is gone
+        hostname: hostname(),
+        platform: process.platform,
+        wslDistro: process.env.WSL_DISTRO_NAME,
+        agent: "claude",
+        iterations: 5,
+        inputs: "",
+        version: "0.15.0",
+      },
+    });
+    killed.close();
+    const orphan = {
+      runId: killed.runId,
+      name: `ralph-${killed.runId}-i2-s0-a1`,
+    };
+    mocks.runningRunContainers.mockReturnValue([orphan]);
+
+    await expect(runLoop(loopOptions(dirs))).resolves.toBe("refused");
+
+    expect(mocks.acquire).not.toHaveBeenCalled();
+    expect(mocks.ensureImage).not.toHaveBeenCalled();
+    expect(mocks.runStage).not.toHaveBeenCalled();
+    expect(readStderr()).toContain(
+      `[refused] run ${killed.runId} still has a running container (${orphan.name}); remove it: docker rm -f $(docker ps -aq --filter label=ralph.run=${killed.runId})`
+    );
+    expect(readRunLog(dirs.workspaceDir).view.ended).toMatchObject({
+      reason: "refused",
+      blockedBy: killed.runId,
+    });
+    expect(historyFiles(dirs.workspaceDir, ".md")).toEqual([]);
   });
 
   it("keeps only the newest 20 run logs", async () => {

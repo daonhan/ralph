@@ -49,6 +49,7 @@ vi.mock("node:fs", async () => {
 import {
   STALE_AFTER_MS,
   findLiveRun,
+  findRunContainer,
   openRunLog,
   pidAlive,
   pidIsNode,
@@ -639,6 +640,37 @@ describe("findLiveRun", () => {
   it("finds nothing in a missing history dir", () => {
     expect(
       findLiveRun(join(makeWorkspace(), "nope"), "x", probe())
+    ).toBeUndefined();
+  });
+});
+
+describe("findRunContainer", () => {
+  it("finds a running container of another run logged in this workspace", () => {
+    const dir = join(makeWorkspace(), ".ralph", "history");
+    mkdirSync(dir, { recursive: true });
+    const dead = "2026-09-17-100000-ghafk";
+    const self = "2026-09-17-110000-ghafk";
+    for (const runId of [dead, self]) {
+      writeFileSync(join(dir, `${runId}.jsonl`), startedLine);
+    }
+    const elsewhere = {
+      runId: "2026-09-17-100000-afk",
+      name: "ralph-2026-09-17-100000-afk-i1-s0-a1",
+    };
+    const mine = { runId: self, name: `ralph-${self}-i1-s0-a1` };
+    const orphan = { runId: dead, name: `ralph-${dead}-i3-s0-a2` };
+
+    expect(findRunContainer(dir, self, [elsewhere, mine, orphan])).toEqual(
+      orphan
+    );
+    // Another workspace's run, or this run's own: not a blocker.
+    expect(findRunContainer(dir, self, [elsewhere, mine])).toBeUndefined();
+  });
+
+  it("finds nothing in a missing history dir", () => {
+    const orphan = { runId: "r", name: "ralph-r-i1-s0-a1" };
+    expect(
+      findRunContainer(join(makeWorkspace(), "nope"), "self", [orphan])
     ).toBeUndefined();
   });
 });

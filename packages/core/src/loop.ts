@@ -28,10 +28,16 @@ import {
   backoffFor,
   withRetries,
 } from "./retry.js";
-import { ensureImage, runStage, stageLogPath } from "./runner.js";
+import {
+  ensureImage,
+  runStage,
+  runningRunContainers,
+  stageLogPath,
+} from "./runner.js";
 import {
   HEARTBEAT_MS,
   findLiveRun,
+  findRunContainer,
   openRunLog,
   pruneRunLogs,
   type RunEndReason,
@@ -248,6 +254,19 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
     return refuse(
       `another ralph run is live in this workspace: ${who} (${blocker.filePath})`,
       blocker.runId
+    );
+  }
+  // A killed host process leaves its container running, and committing: the
+  // workspace is not free until that container stops too.
+  const orphan = findRunContainer(
+    historyDir,
+    runLog.runId,
+    runningRunContainers()
+  );
+  if (orphan) {
+    return refuse(
+      `run ${orphan.runId} still has a running container (${orphan.name}); remove it: docker rm -f $(docker ps -aq --filter label=ralph.run=${orphan.runId})`,
+      orphan.runId
     );
   }
   pruneRunLogs(historyDir, runLog.runId);
