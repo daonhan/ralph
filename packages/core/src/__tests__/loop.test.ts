@@ -1007,6 +1007,75 @@ describe("runLoop", () => {
     vi.useRealTimers();
   });
 
+  it("heartbeats the agent's last output time while a stage runs", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 8, 17, 10, 0, 0)));
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    let finish!: (value: unknown) => void;
+    mocks.runStage.mockImplementation(
+      (_stage, _prompt, _workspace, _iteration, _spill, _log, options) => {
+        options.onOutput(); // the agent writes its first record at 10:00:00
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      }
+    );
+
+    const loop = runLoop(loopOptions(dirs));
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    const during = readRunLog(dirs.workspaceDir);
+    expect(during.events.map((e) => e.type)).toEqual([
+      "run.started",
+      "stage.started",
+      "heartbeat",
+    ]);
+    expect(during.view.stage?.name).toBe("implementer");
+    expect(during.view.lastOutputAt).toBe("2026-09-17T10:00:00.000Z");
+    expect(during.view.lastHeartbeatAt).toBe("2026-09-17T10:00:30.000Z");
+
+    finish(ok(sentinel));
+    await loop;
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    // The heartbeat stops with the run: nothing follows run.ended.
+    const after = readRunLog(dirs.workspaceDir);
+    expect(after.truncated).toBe(false);
+    expect(after.events.at(-1)?.type).toBe("run.ended");
+    expect(after.events.filter((e) => e.type === "heartbeat")).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  it("heartbeats a null last output before the agent has written anything", async () => {
+    vi.useFakeTimers();
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    // Image setup hangs: no stage, no output — the heartbeat still proves the
+    // host process is alive.
+    let failImage!: (err: Error) => void;
+    mocks.ensureImage.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        failImage = reject;
+      })
+    );
+
+    const loop = runLoop(loopOptions(dirs));
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    const { events, view } = readRunLog(dirs.workspaceDir);
+    expect(events.map((e) => e.type)).toEqual(["run.started", "heartbeat"]);
+    expect(view.lastOutputAt).toBeNull();
+    expect(view.stage).toBeUndefined();
+
+    // Settle the run so its handlers, timer and log handle are released.
+    failImage(new Error("pull hung"));
+    await expect(loop).rejects.toThrow("pull hung");
+    vi.useRealTimers();
+  });
+
   it("records the sandbox-install findings on run.ended", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);

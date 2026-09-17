@@ -68,6 +68,15 @@ export type StageRetry = {
 
 export type StageCompleted = { type: "stage.completed" } & StageEntry;
 
+/** Written every {@link HEARTBEAT_MS} while the run is open, stage or not. */
+export type Heartbeat = {
+  type: "heartbeat";
+  /** When the agent last wrote a record to stdout; null before its first one. */
+  lastOutputAt: string | null;
+};
+
+export const HEARTBEAT_MS = 30_000;
+
 export type RunEnded = {
   type: "run.ended";
   reason: RunEndReason;
@@ -79,7 +88,12 @@ export type RunEnded = {
 };
 
 export type RunEvent =
-  RunStarted | StageStarted | StageRetry | StageCompleted | RunEnded;
+  | RunStarted
+  | StageStarted
+  | StageRetry
+  | StageCompleted
+  | Heartbeat
+  | RunEnded;
 
 /** One log line: an event plus the envelope the writer stamps on it. */
 export type RunRecord = RunEvent & { v: number; seq: number; at: string };
@@ -97,6 +111,9 @@ export type RunView = {
     retry?: { attempt: number; at: string; backoffMs: number };
   };
   lastEventAt?: string;
+  lastHeartbeatAt?: string;
+  /** From the latest heartbeat: when the agent last wrote to stdout, if ever. */
+  lastOutputAt?: string | null;
   entries: StageEntry[];
   ended?: RunEnded & { at: string };
 };
@@ -141,6 +158,10 @@ export function applyEvent(view: RunView, record: RunRecord): RunView {
       next.stage = undefined;
       break;
     }
+    case "heartbeat":
+      next.lastHeartbeatAt = record.at;
+      next.lastOutputAt = record.lastOutputAt;
+      break;
     case "run.ended": {
       const { v: _v, seq: _seq, ...ended } = record;
       next.ended = ended;
@@ -152,7 +173,10 @@ export function applyEvent(view: RunView, record: RunRecord): RunView {
 }
 
 /** Required fields per known event type; unknown types only need the envelope. */
-const REQUIRED: Record<string, Record<string, "string" | "number">> = {
+const REQUIRED: Record<
+  string,
+  Record<string, "string" | "number" | "string-or-null">
+> = {
   "run.started": {
     runId: "string",
     pid: "number",
@@ -186,6 +210,7 @@ const REQUIRED: Record<string, Record<string, "string" | "number">> = {
     logPath: "string",
     body: "string",
   },
+  heartbeat: { lastOutputAt: "string-or-null" },
   "run.ended": { reason: "string", completedIterations: "number" },
 };
 
@@ -220,7 +245,12 @@ function parseRecord(
   }
   const fields = REQUIRED[r.type] ?? {};
   for (const [name, kind] of Object.entries(fields)) {
-    if (typeof r[name] !== kind) return undefined;
+    const value = r[name];
+    const ok =
+      kind === "string-or-null"
+        ? value === null || typeof value === "string"
+        : typeof value === kind;
+    if (!ok) return undefined;
   }
   return r as RunRecord;
 }

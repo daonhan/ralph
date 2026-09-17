@@ -45,6 +45,8 @@ export type RunStageOptions = {
   codexUserConfig?: boolean;
   /** Host dir of the shipped skills (<core>/templates/skills); mounted read-only when it exists. */
   skillsHostDir?: string;
+  /** Called for every JSON record the agent writes to stdout (the loop's last-output clock). */
+  onOutput?: () => void;
 };
 
 export const IMAGE_REF =
@@ -746,6 +748,7 @@ export function streamDocker(
     rl.on("line", (line) => {
       if (settled || !line.startsWith("{")) return;
 
+      options.onOutput?.();
       appendFileSync(logFd, line + "\n");
 
       let parsed: unknown;

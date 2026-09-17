@@ -77,6 +77,27 @@ describe("streamDocker", () => {
     expect(readFileSync(logPath, "utf8")).toContain('"turn.completed"');
   });
 
+  it("reports each JSON record the agent writes, and nothing else", async () => {
+    const onOutput = vi.fn();
+    const run = streamDocker(
+      [],
+      join(root, "output.ndjson"),
+      createCodexDecoder(),
+      { onOutput }
+    );
+    writeJson(child, { type: "turn.started" });
+    child.stdout.write("not a record\n");
+    writeJson(child, {
+      type: "item.completed",
+      item: { type: "agent_message", text: "finished" },
+    });
+    writeJson(child, { type: "turn.completed" });
+    child.emit("close", 0);
+
+    await expect(run).resolves.toEqual({ text: "finished", meta: {} });
+    expect(onOutput).toHaveBeenCalledTimes(3);
+  });
+
   it("kills and rejects on a provider failure event", async () => {
     const run = streamDocker(
       [],

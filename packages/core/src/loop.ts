@@ -28,7 +28,7 @@ import {
   withRetries,
 } from "./retry.js";
 import { ensureImage, runStage, stageLogPath } from "./runner.js";
-import { openRunLog } from "./run-log.js";
+import { HEARTBEAT_MS, openRunLog } from "./run-log.js";
 import {
   USE_COLOR,
   dim,
@@ -291,7 +291,34 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
   process.on("SIGINT", onSigint);
   process.on("SIGTERM", onSigterm);
 
+  // Liveness for whoever watches the log: a heartbeat every HEARTBEAT_MS
+  // carrying when the agent last wrote to stdout, so a supervisor can age a
+  // silent stage. Ralph only reports the ages; judging "stuck" is the reader's.
+  // A failed heartbeat write warns once and never ends the run.
+  let lastOutputAt: number | undefined;
+  let heartbeatWarned = false;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+
   try {
+    heartbeat = setInterval(() => {
+      try {
+        runLog.append({
+          type: "heartbeat",
+          lastOutputAt:
+            lastOutputAt === undefined
+              ? null
+              : new Date(lastOutputAt).toISOString(),
+        });
+      } catch (err) {
+        if (heartbeatWarned) return;
+        heartbeatWarned = true;
+        process.stderr.write(
+          `[warning] run log heartbeat failed: ${(err as Error).message}\n`
+        );
+      }
+    }, HEARTBEAT_MS);
+    heartbeat.unref?.();
+
     await ensureImage(ralphDir, { signal: stageAbort.signal });
 
     // History opens only after the image is confirmed: an image failure must
@@ -395,6 +422,9 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
                   agent,
                   codexUserConfig,
                   skillsHostDir: join(packageDir, "templates", "skills"),
+                  onOutput: () => {
+                    lastOutputAt = Date.now();
+                  },
                 }
               );
             },
@@ -525,6 +555,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
   } finally {
     process.off("SIGINT", onSigint);
     process.off("SIGTERM", onSigterm);
+    clearInterval(heartbeat);
     runLog.close();
     releaseOnce();
     if (notify && (sentinelHit || completedIterations === iterations)) {
