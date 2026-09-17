@@ -92,7 +92,10 @@ export type RunEnded = {
   reason: RunEndReason;
   completedIterations: number;
   signal?: "SIGINT" | "SIGTERM";
-  /** For `refused`: the runId of the live run that blocked this launch. */
+  /**
+   * For `refused`: the runId that blocked this launch — a live run, or a run
+   * (possibly dead or ended) whose container is still running.
+   */
   blockedBy?: string;
   /** The host check's sandbox-install findings, when any. */
   findings?: string[];
