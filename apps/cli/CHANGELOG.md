@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0](https://github.com/daonhan/ralph/compare/ralph-v0.6.13...ralph-v0.7.0) (2026-09-17)
+
+
+### Features
+
+* **cli:** one live run per workspace, and exit codes that report the end ([dcb972f](https://github.com/daonhan/ralph/commit/dcb972ffa988e169a3ac86f9420a8d45cd8506f0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @daonhan/ralph-core bumped to 0.16.0
+
 ## [0.6.13](https://github.com/daonhan/ralph/compare/ralph-v0.6.12...ralph-v0.6.13) (2026-09-12)
 
 
