@@ -6,11 +6,45 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Disk faults, armed per test: a write that fails partway through the record,
+// or an fsync that fails after the bytes landed. Unarmed, node:fs is untouched.
+const faults = vi.hoisted(() => ({
+  write: undefined as ((data: unknown) => boolean) | undefined,
+  fsync: false,
+}));
+
+vi.mock("node:fs", async () => {
+  const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+  return {
+    ...actual,
+    writeFileSync: (...args: Parameters<typeof actual.writeFileSync>) => {
+      if (faults.write?.(args[1])) {
+        if (typeof args[0] === "number") {
+          actual.writeSync(args[0], String(args[1]).slice(0, 12));
+        }
+        throw Object.assign(new Error("ENOSPC: no space left on device"), {
+          code: "ENOSPC",
+        });
+      }
+      return actual.writeFileSync(...args);
+    },
+    fsyncSync: (fd: number) => {
+      if (faults.fsync) {
+        throw Object.assign(new Error("EIO: i/o error, fsync"), {
+          code: "EIO",
+        });
+      }
+      return actual.fsyncSync(fd);
+    },
+  };
+});
 
 import {
   STALE_AFTER_MS,
@@ -37,6 +71,8 @@ function makeWorkspace(): string {
 }
 
 afterEach(() => {
+  faults.write = undefined;
+  faults.fsync = false;
   // Close before removing: Windows refuses to delete a file with an open handle.
   while (logs.length > 0) logs.pop()!.close();
   while (roots.length > 0)
@@ -168,6 +204,42 @@ describe("openRunLog", () => {
     const { view, truncated } = reduceRunLog(text);
     expect(truncated).toBe(false);
     expect(view.ended).toMatchObject({ reason: "cap", completedIterations: 3 });
+  });
+
+  it("counts a record whose fsync failed, so the next one keeps the sequence", () => {
+    const log = open(makeWorkspace());
+    faults.fsync = true;
+    expect(() => log.append(stageStarted)).toThrow("EIO");
+    faults.fsync = false;
+
+    log.append({ type: "run.ended", reason: "cap", completedIterations: 1 });
+
+    const { events, view, truncated } = reduceRunLog(
+      readFileSync(log.filePath, "utf8")
+    );
+    expect(truncated).toBe(false);
+    expect(events.map((e) => e.type)).toEqual([
+      "run.started",
+      "stage.started",
+      "run.ended",
+    ]);
+    expect(view).toEqual(log.view);
+  });
+
+  it("refuses every append after a write that failed partway", () => {
+    const log = open(makeWorkspace());
+    faults.write = (data) => String(data).includes('"stage.started"');
+    expect(() => log.append(stageStarted)).toThrow("ENOSPC");
+    faults.write = undefined;
+
+    // The torn fragment is on disk; a record after it would be unreadable.
+    expect(() => log.append(stageCompleted)).toThrow(/failed write/);
+
+    const { events, truncated } = reduceRunLog(
+      readFileSync(log.filePath, "utf8")
+    );
+    expect(truncated).toBe(true);
+    expect(events.map((e) => e.type)).toEqual(["run.started"]);
   });
 });
 
@@ -319,6 +391,8 @@ function probe(alive: number[] = [], overrides: Partial<LivenessProbe> = {}) {
     now: Date.UTC(2026, 8, 17, 12, 0, 0),
     hostname: "box",
     platform: "win32",
+    pid: 1,
+    ownsRun: () => false,
     isAlive: (pid: number) => alive.includes(pid),
     isNode: () => true,
     ...overrides,
@@ -385,6 +459,15 @@ describe("runLiveness", () => {
     expect(
       runLiveness(viewOf(7), recent, probe([7], { isNode: () => false }))
     ).toBe("dead");
+  });
+
+  it("on the same host, this process's own pid is live only for a log it has open", () => {
+    // This process opened the log and has not closed it: its run is going.
+    const owner = probe([7], { pid: 7, ownsRun: (runId) => runId === "r" });
+    expect(runLiveness(viewOf(7), stale, owner)).toBe("live");
+    // A killed run's pid handed back to this very launch is not that run.
+    const reused = probe([7], { pid: 7, ownsRun: () => false });
+    expect(runLiveness(viewOf(7), recent, reused)).toBe("dead");
   });
 
   it("from another platform or WSL distro, only the log's age decides", () => {
@@ -493,6 +576,53 @@ describe("findLiveRun", () => {
     expect(findLiveRun(historyDir(ws), b.runId, racing)?.runId).toBe(a.runId);
   });
 
+  it("reads this process's never-ended log as live only while it is open", () => {
+    const ws = makeWorkspace();
+    const mine = openRunLog({
+      workspaceDir: ws,
+      bin: "ghafk",
+      started: {
+        ...started,
+        pid: process.pid,
+        hostname: hostname(),
+        platform: process.platform,
+        wslDistro: process.env.WSL_DISTRO_NAME,
+      },
+      now: new Date(Date.UTC(2026, 8, 17, 10, 0, 0)),
+    });
+    logs.push(mine);
+
+    expect(findLiveRun(historyDir(ws), "self")?.runId).toBe(mine.runId);
+    // Closed without run.ended, as a killed run leaves it, while the pid it
+    // recorded now names the caller: dead, not a live run blocking itself.
+    mine.close();
+    expect(findLiveRun(historyDir(ws), "self")).toBeUndefined();
+  });
+
+  it("judges a log from a newer schema by its age alone", () => {
+    const dir = historyDir(makeWorkspace());
+    mkdirSync(dir, { recursive: true });
+    const runId = "2026-09-17-100000-ghafk";
+    const file = join(dir, `${runId}.jsonl`);
+    // A newer ralph wrote it: this reader cannot fold it, but must not start
+    // beside it while it is still being written.
+    writeFileSync(
+      file,
+      `${JSON.stringify({ v: 2, seq: 1, at: "2026-09-17T10:00:00.000Z", type: "run.started" })}\n`
+    );
+    const reader = probe([], { now: Date.now() });
+
+    expect(findLiveRun(dir, "self", reader)?.runId).toBe(runId);
+
+    const old = new Date(Date.now() - 2 * STALE_AFTER_MS);
+    utimesSync(file, old, old);
+    expect(findLiveRun(dir, "self", reader)).toBeUndefined();
+
+    // A torn first line proves nothing, whatever it claims to be.
+    writeFileSync(file, `{"v":2,"seq":1`);
+    expect(findLiveRun(dir, "self", reader)).toBeUndefined();
+  });
+
   it("finds nothing in a missing history dir", () => {
     expect(
       findLiveRun(join(makeWorkspace(), "nope"), "x", probe())
@@ -513,12 +643,64 @@ describe("pruneRunLogs", () => {
       writeFileSync(join(dir, `${name}.md`), "# run\n");
     }
 
-    pruneRunLogs(dir, 20);
+    pruneRunLogs(dir, names[22], 20);
 
     const left = readdirSync(dir);
     expect(left.filter((f) => f.endsWith(".jsonl")).sort()).toEqual(
       names.slice(3).map((n) => `${n}.jsonl`)
     );
     expect(left.filter((f) => f.endsWith(".md"))).toHaveLength(23);
+  });
+
+  const endedLine = (reason: string) =>
+    line(2, "run.ended", { reason, completedIterations: 0 });
+
+  it("keeps refused launches out of the count, and only the newest of them", () => {
+    const dir = join(makeWorkspace(), ".ralph", "history");
+    mkdirSync(dir, { recursive: true });
+    // A finished run, then a supervisor retrying exit 75 twenty-two times.
+    const ended = "2026-09-17-090000-ghafk";
+    writeFileSync(join(dir, `${ended}.jsonl`), startedLine + endedLine("cap"));
+    const refused = Array.from(
+      { length: 22 },
+      (_, k) => `2026-09-17-10${String(k).padStart(2, "0")}00-ghafk`
+    );
+    for (const name of refused) {
+      writeFileSync(
+        join(dir, `${name}.jsonl`),
+        startedLine + endedLine("refused")
+      );
+    }
+    const self = "2026-09-17-110000-ghafk";
+    writeFileSync(join(dir, `${self}.jsonl`), startedLine);
+
+    pruneRunLogs(dir, self, 20);
+
+    expect(readdirSync(dir).sort()).toEqual([
+      `${ended}.jsonl`,
+      `${refused[21]}.jsonl`,
+      `${self}.jsonl`,
+    ]);
+  });
+
+  it("never deletes the caller's own log, whatever its name", () => {
+    const dir = join(makeWorkspace(), ".ralph", "history");
+    mkdirSync(dir, { recursive: true });
+    // The clock stepped back: this run's name sorts before every other log.
+    const self = "2026-09-17-080000-ghafk";
+    writeFileSync(join(dir, `${self}.jsonl`), startedLine);
+    const others = Array.from(
+      { length: 21 },
+      (_, k) => `2026-09-17-10${String(k).padStart(2, "0")}00-ghafk`
+    );
+    for (const name of others) {
+      writeFileSync(join(dir, `${name}.jsonl`), startedLine + endedLine("cap"));
+    }
+
+    pruneRunLogs(dir, self, 20);
+
+    expect(readdirSync(dir).sort()).toEqual(
+      [self, ...others.slice(1)].map((n) => `${n}.jsonl`)
+    );
   });
 });

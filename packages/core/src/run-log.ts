@@ -314,8 +314,9 @@ export interface RunLog {
   /** The in-memory view, folded from every record appended so far. */
   readonly view: RunView;
   /**
-   * Write one record, fsync it, then fold it into the view. Throws when the write
-   * fails; a no-op once the log is closed. `run.ended` closes the log.
+   * Write one record, fold it into the view, then fsync it. Throws when the write
+   * or the fsync fails; after a failed write every later append throws too. A
+   * no-op once the log is closed. `run.ended` closes the log.
    */
   append(event: RunEvent): void;
   close(): void;
@@ -323,6 +324,13 @@ export interface RunLog {
 
 /** How many seconds past `now` to try before giving up on a free file name. */
 const MAX_NAME_TRIES = 60;
+
+/**
+ * The runIds whose logs this process has open. A log carrying this process's
+ * own pid is live only when it is one of these: otherwise the pid was a killed
+ * run's, handed back to this launch.
+ */
+const openRunIds = new Set<string>();
 
 /**
  * Open a run's event log and write its `run.started` record. Creates
@@ -363,6 +371,10 @@ export function openRunLog(opts: OpenRunLogOptions): RunLog {
   let seq = 0;
   let view = emptyRunView();
   let closed = false;
+  // Set when a write threw: part of the record may be on disk, and a reader
+  // stops at that torn line, so nothing after it could ever be read.
+  let broken = false;
+  openRunIds.add(runId);
 
   const log: RunLog = {
     filePath,
@@ -372,21 +384,35 @@ export function openRunLog(opts: OpenRunLogOptions): RunLog {
     },
     append(event: RunEvent): void {
       if (closed) return;
+      if (broken) {
+        throw new Error(`run log ${filePath} is unusable after a failed write`);
+      }
       const record = {
         v: RUN_LOG_VERSION,
         seq: seq + 1,
         at: new Date().toISOString(),
         ...event,
       } as RunRecord;
-      writeFileSync(fd, `${JSON.stringify(record)}\n`);
-      fsyncSync(fd);
+      try {
+        writeFileSync(fd, `${JSON.stringify(record)}\n`);
+      } catch (err) {
+        broken = true;
+        throw err;
+      }
+      // The line is on disk: count it before the fsync, which may still throw,
+      // so the next record never reuses its seq.
       seq = record.seq;
       view = applyEvent(view, record);
-      if (event.type === "run.ended") log.close();
+      try {
+        fsyncSync(fd);
+      } finally {
+        if (event.type === "run.ended") log.close();
+      }
     },
     close(): void {
       if (closed) return;
       closed = true;
+      openRunIds.delete(runId);
       try {
         closeSync(fd);
       } catch {
@@ -417,6 +443,10 @@ export type LivenessProbe = {
   hostname: string;
   platform: string;
   wslDistro?: string;
+  /** The reader's own pid. */
+  pid: number;
+  /** Whether the reader itself has this run's log open. */
+  ownsRun(runId: string): boolean;
   /** Whether a process with this pid exists. */
   isAlive(pid: number): boolean;
   /** Whether that process is node; true when the probe cannot tell. */
@@ -427,7 +457,8 @@ export type LivenessProbe = {
  * Judge a run from its view. `ended` once it logged `run.ended`; `dead` when it
  * never logged a readable `run.started`. On the host that started it the pid
  * decides — alive and still node means `live`, however old the last heartbeat,
- * because a hung run is still running. From another host or platform (WSL and
+ * because a hung run is still running; the reader's own pid means `live` only
+ * for a log the reader has open. From another host or platform (WSL and
  * Windows share a hostname but not a pid space) only the file's age can:
  * `live` while it was written within {@link STALE_AFTER_MS}.
  */
@@ -444,6 +475,9 @@ export function runLiveness(
     started.platform === probe.platform &&
     started.wslDistro === probe.wslDistro;
   if (sameHost) {
+    if (started.pid === probe.pid) {
+      return probe.ownsRun(started.runId) ? "live" : "dead";
+    }
     return probe.isAlive(started.pid) && probe.isNode(started.pid)
       ? "live"
       : "dead";
@@ -465,8 +499,8 @@ export function pidAlive(pid: number): boolean {
 /**
  * Whether the process with `pid` is node, the guard against a dead run's pid
  * reused by something else. False only when the probe positively shows another
- * program or no process; any failure to probe answers true, erring toward
- * refusing a second run.
+ * program or no process; any failure to probe, a timeout included, answers
+ * true, erring toward refusing a second run.
  */
 export function pidIsNode(pid: number): boolean {
   try {
@@ -478,6 +512,7 @@ export function pidIsNode(pid: number): boolean {
           encoding: "utf8",
           stdio: ["ignore", "pipe", "ignore"],
           windowsHide: true,
+          timeout: 10_000,
         }
       );
       // A match is one CSV row whose first field is the image name; no match
@@ -493,6 +528,7 @@ export function pidIsNode(pid: number): boolean {
     const out = execFileSync("ps", ["-p", String(pid), "-o", "comm="], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
+      timeout: 10_000,
     });
     return out.includes("node");
   } catch (err) {
@@ -511,6 +547,8 @@ export function hostProbe(): LivenessProbe {
     hostname: hostname(),
     platform: process.platform,
     wslDistro: process.env.WSL_DISTRO_NAME,
+    pid: process.pid,
+    ownsRun: (runId) => openRunIds.has(runId),
     isAlive: pidAlive,
     isNode: pidIsNode,
   };
@@ -530,11 +568,29 @@ function runLogNames(historyDir: string): string[] {
 }
 
 /**
+ * Whether a log's first complete line is a record from a newer schema, which
+ * this reader cannot fold. A torn first line proves nothing.
+ */
+function isNewerSchema(text: string): boolean {
+  const end = text.indexOf("\n");
+  if (end < 0) return false;
+  try {
+    const first: unknown = JSON.parse(text.slice(0, end));
+    const v = (first as { v?: unknown } | null)?.v;
+    return typeof v === "number" && v > RUN_LOG_VERSION;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The first run, other than `selfRunId`, that is still live in `historyDir`.
  * Called after this run's own `run.started` is on disk, so two launches racing
  * each other both see the other and both refuse — never both proceed. Every log
  * is read, not only the newest: a torn or dead newer log must not hide a live
- * older one. An unreadable log is skipped.
+ * older one. A log from a newer schema has no view to judge, so it counts as
+ * live while written within {@link STALE_AFTER_MS}. An unreadable log is
+ * skipped.
  */
 export function findLiveRun(
   historyDir: string,
@@ -546,10 +602,14 @@ export function findLiveRun(
     if (runId === selfRunId) continue;
     const filePath = join(historyDir, name);
     try {
-      const { view } = reduceRunLog(readFileSync(filePath, "utf8"));
-      if (runLiveness(view, statSync(filePath).mtimeMs, probe) === "live") {
-        return { runId, filePath, view };
-      }
+      const text = readFileSync(filePath, "utf8");
+      const { view } = reduceRunLog(text);
+      const mtimeMs = statSync(filePath).mtimeMs;
+      const live =
+        !view.started && isNewerSchema(text)
+          ? probe.now - mtimeMs < STALE_AFTER_MS
+          : runLiveness(view, mtimeMs, probe) === "live";
+      if (live) return { runId, filePath, view };
     } catch {
       // Vanished or unreadable: nothing to judge.
     }
@@ -560,17 +620,46 @@ export function findLiveRun(
 /** How many run logs a workspace keeps, the current run's included. */
 export const RETAIN_RUN_LOGS = 20;
 
+/** Whether a log ended in a refusal; an unreadable log did not. */
+function isRefused(filePath: string): boolean {
+  try {
+    const { view } = reduceRunLog(readFileSync(filePath, "utf8"));
+    return view.ended?.reason === "refused";
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Delete all but the newest `keep` run logs. Call it only after
- * {@link findLiveRun} found no other live run, so everything deleted has ended
- * or died. Markdown history is never touched. A log that cannot be deleted
- * (say, open in a reader on Windows) is left for the next run.
+ * Delete all but the newest `keep` run logs, counting only runs that were not
+ * refused: a supervisor retrying exit 75 must not push the run it waited on out
+ * of the directory. Of the refused launches only the newest is kept. The
+ * caller's own log is never deleted, whatever its name. Everything else deleted
+ * is older than the newest `keep` runs, so it has ended or died. Markdown
+ * history is never touched. A log that cannot be deleted (say, open in a reader
+ * on Windows) is left for the next run.
  */
-export function pruneRunLogs(historyDir: string, keep = RETAIN_RUN_LOGS): void {
-  const names = runLogNames(historyDir);
-  for (const name of names.slice(0, Math.max(0, names.length - keep))) {
+export function pruneRunLogs(
+  historyDir: string,
+  selfRunId: string,
+  keep = RETAIN_RUN_LOGS
+): void {
+  let keptRuns = 0;
+  let keptRefused = false;
+  for (const name of runLogNames(historyDir).reverse()) {
+    const filePath = join(historyDir, name);
+    if (isRefused(filePath)) {
+      if (!keptRefused) {
+        keptRefused = true;
+        continue;
+      }
+    } else if (keptRuns < keep) {
+      keptRuns++;
+      continue;
+    }
+    if (name === `${selfRunId}.jsonl`) continue;
     try {
-      rmSync(join(historyDir, name), { force: true });
+      rmSync(filePath, { force: true });
     } catch {
       // Left for the next run.
     }

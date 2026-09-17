@@ -219,25 +219,34 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
 
   // One run per workspace. The check runs after this run's own run.started is
   // on disk, so two launches racing each other both refuse rather than both
-  // proceed. Nothing has been acquired yet, so a refusal just ends the log.
+  // proceed. Nothing has been acquired yet, so a refusal just ends the log —
+  // and prunes, so a supervisor retrying exit 75 leaves one refused log behind.
   const historyDir = dirname(runLog.filePath);
-  const blocker = findLiveRun(historyDir, runLog.runId);
-  if (blocker) {
-    const started = blocker.view.started!;
-    const lastEvent = blocker.view.lastEventAt ?? started.at;
-    const idle = formatDuration(Date.now() - Date.parse(lastEvent));
-    process.stderr.write(
-      `[refused] another ralph run is live in this workspace: pid ${started.pid} on ${started.hostname}, started ${started.at}, last event ${idle} ago (${blocker.filePath})\n`
-    );
+  const refuse = (message: string, blockedBy: string): "refused" => {
+    process.stderr.write(`[refused] ${message}\n`);
     runLog.append({
       type: "run.ended",
       reason: "refused",
       completedIterations: 0,
-      blockedBy: blocker.runId,
+      blockedBy,
     });
+    pruneRunLogs(historyDir, runLog.runId);
     return "refused";
+  };
+  const blocker = findLiveRun(historyDir, runLog.runId);
+  if (blocker) {
+    const started = blocker.view.started;
+    const who = started
+      ? `pid ${started.pid} on ${started.hostname}, started ${started.at}, last event ${formatDuration(
+          Date.now() - Date.parse(blocker.view.lastEventAt ?? started.at)
+        )} ago`
+      : "written by a newer ralph";
+    return refuse(
+      `another ralph run is live in this workspace: ${who} (${blocker.filePath})`,
+      blocker.runId
+    );
   }
-  pruneRunLogs(historyDir);
+  pruneRunLogs(historyDir, runLog.runId);
 
   const releaser: Releaser = noKeepAlive
     ? { release: () => {} }
@@ -425,6 +434,9 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
         // One message per failed attempt, collected from the retry callback and
         // rendered as `retries:` + `- attempt <k>:` bullets on the entry.
         const attemptErrors: string[] = [];
+        // A stage.retry that cannot be logged fails the run at once: rethrown
+        // from the retry callback, it skips the backoff and every later attempt.
+        let retryLogError: unknown;
         let result: { text: string; meta: StageMeta };
         try {
           result = await withRetries(
@@ -468,14 +480,19 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
               onAttempt: (attempt, err) => {
                 attemptErrors.push((err as Error).message);
                 const wait = backoffFor(DEFAULT_BACKOFF_MS, attempt);
-                runLog.append({
-                  type: "stage.retry",
-                  iteration: i,
-                  stage: stage.name,
-                  attempt,
-                  error: (err as Error).message,
-                  backoffMs: wait,
-                });
+                try {
+                  runLog.append({
+                    type: "stage.retry",
+                    iteration: i,
+                    stage: stage.name,
+                    attempt,
+                    error: (err as Error).message,
+                    backoffMs: wait,
+                  });
+                } catch (appendErr) {
+                  retryLogError = appendErr;
+                  throw appendErr;
+                }
                 const marker = `[retry] attempt ${attempt} of ${maxRetries} after ${wait} ms`;
                 process.stderr.write(
                   `${USE_COLOR ? dim(marker) : marker} ${dim("(" + (err as Error).message + ")")}\n`
@@ -489,6 +506,7 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
             }
           );
         } catch (err) {
+          if (err === retryLogError) throw err;
           const failureMarker = `[failure] iteration ${i} stage ${stage.name} failed after ${maxRetries} retries: ${(err as Error).message}`;
           try {
             appendFileSync(stageLog, failureMarker + "\n");

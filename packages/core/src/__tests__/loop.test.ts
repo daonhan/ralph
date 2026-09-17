@@ -22,6 +22,39 @@ const mocks = vi.hoisted(() => ({
   runStage: vi.fn(),
 }));
 
+// Disk faults for the run log, armed per test: a write that fails partway
+// through a record, or an fsync that fails after the bytes landed.
+const faults = vi.hoisted(() => ({
+  write: undefined as ((data: unknown) => boolean) | undefined,
+  fsync: false,
+}));
+
+vi.mock("node:fs", async () => {
+  const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+  return {
+    ...actual,
+    writeFileSync: (...args: Parameters<typeof actual.writeFileSync>) => {
+      if (faults.write?.(args[1])) {
+        if (typeof args[0] === "number") {
+          actual.writeSync(args[0], String(args[1]).slice(0, 12));
+        }
+        throw Object.assign(new Error("ENOSPC: no space left on device"), {
+          code: "ENOSPC",
+        });
+      }
+      return actual.writeFileSync(...args);
+    },
+    fsyncSync: (fd: number) => {
+      if (faults.fsync) {
+        throw Object.assign(new Error("EIO: i/o error, fsync"), {
+          code: "EIO",
+        });
+      }
+      return actual.fsyncSync(fd);
+    },
+  };
+});
+
 vi.mock("../keepalive.js", () => ({
   acquire: mocks.acquire,
 }));
@@ -216,6 +249,8 @@ describe("runLoop", () => {
   });
 
   afterEach(() => {
+    faults.write = undefined;
+    faults.fsync = false;
     vi.useRealTimers();
     vi.restoreAllMocks();
     while (roots.length > 0) {
@@ -1076,6 +1111,90 @@ describe("runLoop", () => {
     vi.useRealTimers();
   });
 
+  it("warns once and carries on when heartbeats cannot be fsynced", async () => {
+    vi.useFakeTimers();
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    let finish!: (value: unknown) => void;
+    mocks.runStage.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+
+    const loop = runLoop(loopOptions(dirs));
+    await Promise.resolve();
+    await Promise.resolve();
+    faults.fsync = true;
+    await vi.advanceTimersByTimeAsync(60_000);
+    faults.fsync = false;
+    finish(ok(sentinel));
+
+    await expect(loop).resolves.toBe("no-more-tasks");
+    expect(
+      readStderr().split("[warning] run log heartbeat failed: EIO")
+    ).toHaveLength(2);
+    // The heartbeats landed unsynced; the log still reads through to the end.
+    const { events, truncated } = readRunLog(dirs.workspaceDir);
+    expect(truncated).toBe(false);
+    expect(events.filter((e) => e.type === "heartbeat")).toHaveLength(2);
+    expect(events.at(-1)?.type).toBe("run.ended");
+  });
+
+  it("ends the run when a stage event cannot be written", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    faults.write = (data) => String(data).includes('"stage.started"');
+
+    await expect(runLoop(loopOptions(dirs))).rejects.toThrow("ENOSPC");
+
+    expect(mocks.runStage).not.toHaveBeenCalled();
+    expect(mocks.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends the run at once when a retry cannot be logged", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockRejectedValue(new Error("boom"));
+    faults.write = (data) => String(data).includes('"stage.retry"');
+
+    // No backoff wait, no further attempt: the log is known to be broken.
+    await expect(runLoop(loopOptions(dirs))).rejects.toThrow("ENOSPC");
+
+    expect(mocks.runStage).toHaveBeenCalledTimes(1);
+    expect(mocks.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("still exits 130 and releases once when the abort cannot be logged", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const exit = vi.spyOn(process, "exit").mockImplementation(((
+      code?: number
+    ) => {
+      throw new Error(`exit ${code}`);
+    }) as never);
+    mocks.runStage.mockImplementation(
+      (_stage, _prompt, _workspace, _iteration, _spill, _log, options) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener("abort", () =>
+            reject(new Error("aborted"))
+          );
+        })
+    );
+
+    const loop = runLoop(loopOptions(dirs, { maxRetries: 0 }));
+    await Promise.resolve();
+    await Promise.resolve();
+    faults.write = (data) => String(data).includes('"stage.completed"');
+
+    expect(() => process.emit("SIGINT")).toThrow("exit 130");
+
+    await loop.catch(() => {});
+    expect(exit).toHaveBeenCalledWith(130);
+    expect(mocks.release).toHaveBeenCalledTimes(1);
+  });
+
   it("resolves with how the run ended", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
@@ -1134,6 +1253,76 @@ describe("runLoop", () => {
       blockedBy: live.runId,
     });
     expect(historyFiles(dirs.workspaceDir, ".md")).toEqual([]);
+  });
+
+  it("refuses beside a live run written by a newer ralph", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const historyDir = join(dirs.workspaceDir, ".ralph", "history");
+    mkdirSync(historyDir, { recursive: true });
+    const newer = "2026-01-01-000000-ghafk";
+    writeFileSync(
+      join(historyDir, `${newer}.jsonl`),
+      `${JSON.stringify({ v: 2, seq: 1, at: "2026-01-01T00:00:00.000Z", type: "run.started" })}\n`
+    );
+
+    await expect(runLoop(loopOptions(dirs))).resolves.toBe("refused");
+
+    expect(mocks.acquire).not.toHaveBeenCalled();
+    expect(readStderr()).toContain(
+      "[refused] another ralph run is live in this workspace: written by a newer ralph"
+    );
+    expect(readRunLog(dirs.workspaceDir).view.ended).toMatchObject({
+      reason: "refused",
+      blockedBy: newer,
+    });
+  });
+
+  it("prunes older refused launches when it refuses too", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const identity = {
+      pid: process.pid,
+      hostname: hostname(),
+      platform: process.platform,
+      wslDistro: process.env.WSL_DISTRO_NAME,
+      agent: "claude",
+      iterations: 1,
+      inputs: "",
+      version: "0.15.0",
+    };
+    const at = (day: number) => new Date(Date.UTC(2026, 0, day));
+    for (const day of [1, 2, 3]) {
+      openRunLog({
+        workspaceDir: dirs.workspaceDir,
+        bin: "afk",
+        started: identity,
+        now: at(day),
+      }).append({
+        type: "run.ended",
+        reason: "refused",
+        completedIterations: 0,
+        blockedBy: "x",
+      });
+    }
+    const live = openRunLog({
+      workspaceDir: dirs.workspaceDir,
+      bin: "afk",
+      started: identity,
+      now: at(4),
+    });
+
+    try {
+      await expect(runLoop(loopOptions(dirs))).resolves.toBe("refused");
+    } finally {
+      live.close();
+    }
+
+    const self = readRunLog(dirs.workspaceDir).view.started!.runId;
+    expect(historyFiles(dirs.workspaceDir, ".jsonl")).toEqual([
+      `${live.runId}.jsonl`,
+      `${self}.jsonl`,
+    ]);
   });
 
   it("starts after a run whose log never ended once its process is gone", async () => {
