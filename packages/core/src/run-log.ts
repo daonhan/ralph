@@ -60,6 +60,8 @@ export type StageStarted = {
   stageIndex: number;
   stage: string;
   logPath: string;
+  /** The first attempt's `docker run --name`; the run is labelled `ralph.run=<runId>`. */
+  container: string;
 };
 
 export type StageRetry = {
@@ -70,6 +72,8 @@ export type StageRetry = {
   attempt: number;
   error: string;
   backoffMs: number;
+  /** The next attempt's container name. */
+  container: string;
 };
 
 export type StageCompleted = { type: "stage.completed" } & StageEntry;
@@ -116,6 +120,8 @@ export type RunView = {
     name: string;
     startedAt: string;
     logPath: string;
+    /** The current attempt's container: the next one's once a retry is logged. */
+    container: string;
     retry?: { attempt: number; at: string; backoffMs: number };
   };
   lastEventAt?: string;
@@ -151,12 +157,14 @@ export function applyEvent(view: RunView, record: RunRecord): RunView {
         name: record.stage,
         startedAt: record.at,
         logPath: record.logPath,
+        container: record.container,
       };
       break;
     case "stage.retry":
       if (next.stage) {
         next.stage = {
           ...next.stage,
+          container: record.container,
           retry: {
             attempt: record.attempt,
             at: record.at,
@@ -210,6 +218,7 @@ const REQUIRED: Record<
     stageIndex: "number",
     stage: "string",
     logPath: "string",
+    container: "string",
   },
   "stage.retry": {
     iteration: "number",
@@ -217,6 +226,7 @@ const REQUIRED: Record<
     attempt: "number",
     error: "string",
     backoffMs: "number",
+    container: "string",
   },
   "stage.completed": {
     iteration: "number",

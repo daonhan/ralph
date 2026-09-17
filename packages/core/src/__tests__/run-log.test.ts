@@ -103,6 +103,7 @@ const stageStarted: RunEvent = {
   stageIndex: 0,
   stage: "implementer",
   logPath: ".ralph-tmp/logs/a.ndjson",
+  container: "ralph-r-i1-s0-a1",
 };
 
 const stageCompleted: RunEvent = {
@@ -286,6 +287,14 @@ describe("reduceRunLog", () => {
     expect(reduceRunLog(text)).toMatchObject({ truncated: true });
   });
 
+  it("requires every stage start to name its container", () => {
+    const { container: _container, ...unnamed } = stageStarted as {
+      container: string;
+    };
+    const text = startedLine + line(2, "stage.started", unnamed);
+    expect(reduceRunLog(text)).toMatchObject({ events: [{}], truncated: true });
+  });
+
   it("requires run.started first and only first", () => {
     expect(reduceRunLog(line(1, "stage.started", stageStarted))).toMatchObject({
       events: [],
@@ -318,7 +327,7 @@ describe("reduceRunLog", () => {
     expect(view.stage).toMatchObject({ name: "implementer" });
   });
 
-  it("keeps the last retry on the open stage", () => {
+  it("keeps the last retry, and the next attempt's container, on the open stage", () => {
     const text =
       startedLine +
       line(2, "stage.started", stageStarted) +
@@ -328,12 +337,15 @@ describe("reduceRunLog", () => {
         attempt: 1,
         error: "429",
         backoffMs: 5_000,
+        container: "ralph-r-i1-s0-a2",
       });
-    expect(reduceRunLog(text).view.stage?.retry).toEqual({
+    const { stage } = reduceRunLog(text).view;
+    expect(stage?.retry).toEqual({
       attempt: 1,
       at: "2026-09-17T10:15:00.000Z",
       backoffMs: 5_000,
     });
+    expect(stage?.container).toBe("ralph-r-i1-s0-a2");
   });
 
   it("reads a real log written through the writer", () => {
@@ -349,6 +361,7 @@ describe("reduceRunLog", () => {
       attempt: 1,
       error: "boom",
       backoffMs: 5_000,
+      container: "ralph-r-i1-s0-a2",
     });
     log.append(stageCompleted);
     log.append({

@@ -222,6 +222,10 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
   // proceed. Nothing has been acquired yet, so a refusal just ends the log —
   // and prunes, so a supervisor retrying exit 75 leaves one refused log behind.
   const historyDir = dirname(runLog.filePath);
+  // One container name per stage attempt: a killed client can leave the previous
+  // attempt's container behind, so a retry must not reuse its name.
+  const containerName = (i: number, s: number, attempt: number): string =>
+    `ralph-${runLog.runId}-i${i}-s${s}-a${attempt}`;
   const refuse = (message: string, blockedBy: string): "refused" => {
     process.stderr.write(`[refused] ${message}\n`);
     runLog.append({
@@ -430,10 +434,12 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
           stageIndex: s,
           stage: stage.name,
           logPath,
+          container: containerName(i, s, 1),
         });
         // One message per failed attempt, collected from the retry callback and
         // rendered as `retries:` + `- attempt <k>:` bullets on the entry.
         const attemptErrors: string[] = [];
+        let attempt = 0;
         // A stage.retry that cannot be logged fails the run at once: rethrown
         // from the retry callback, it skips the backoff and every later attempt.
         let retryLogError: unknown;
@@ -441,6 +447,7 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
         try {
           result = await withRetries(
             () => {
+              attempt++;
               // Render inside the retry: a failing template shell/@spill tag
               // (e.g. a flaky `gh issue list`) is retried with backoff instead
               // of crashing the loop — and a hard failure surfaces as a terminal
@@ -468,6 +475,10 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
                   agent,
                   codexUserConfig,
                   skillsHostDir: join(packageDir, "templates", "skills"),
+                  container: {
+                    name: containerName(i, s, attempt),
+                    runId: runLog.runId,
+                  },
                   onOutput: () => {
                     lastOutputAt = Date.now();
                   },
@@ -488,6 +499,7 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
                     attempt,
                     error: (err as Error).message,
                     backoffMs: wait,
+                    container: containerName(i, s, attempt + 1),
                   });
                 } catch (appendErr) {
                   retryLogError = appendErr;

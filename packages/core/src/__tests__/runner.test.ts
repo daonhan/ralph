@@ -11,6 +11,7 @@ import {
   parseGraceMs,
   resolveAgentRuntimeArgs,
   resolveAgentVolumeArgs,
+  resolveContainerArgs,
   resolveGitConfigArgs,
   resolveModelArgs,
   resolveSkillsMountArgs,
@@ -178,6 +179,26 @@ describe("resolveAgentVolumeArgs", () => {
       "--mount",
       "type=volume,source=ralph-codex-cli,target=/home/agent/.npm-global,volume-label=ralph.kind=codex-cli",
     ]);
+  });
+});
+
+describe("resolveContainerArgs", () => {
+  it("names the container and labels it with its run", () => {
+    expect(
+      resolveContainerArgs({
+        name: "ralph-2026-09-17-101500-ghafk-feat.x-i2-s1-a3",
+        runId: "2026-09-17-101500-ghafk-feat.x",
+      })
+    ).toEqual([
+      "--name",
+      "ralph-2026-09-17-101500-ghafk-feat.x-i2-s1-a3",
+      "--label",
+      "ralph.run=2026-09-17-101500-ghafk-feat.x",
+    ]);
+  });
+
+  it("adds nothing when the caller names no container", () => {
+    expect(resolveContainerArgs()).toEqual([]);
   });
 });
 

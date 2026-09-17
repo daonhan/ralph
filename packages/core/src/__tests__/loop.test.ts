@@ -1042,6 +1042,51 @@ describe("runLoop", () => {
     vi.useRealTimers();
   });
 
+  it("names a container per stage attempt and labels it with the run", async () => {
+    vi.useFakeTimers();
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    const rev: Stage = { name: "reviewer", template: "rev.md" };
+    writeFileSync(join(dirs.packageDir, "templates", "impl.md"), "impl");
+    writeFileSync(join(dirs.packageDir, "templates", "rev.md"), "review");
+    makeCleanRepo(dirs.workspaceDir);
+    mocks.runStage
+      .mockRejectedValueOnce(new Error("flaky"))
+      .mockImplementationOnce(async () => {
+        commitInWorkspace(dirs.workspaceDir, "work.txt");
+        return ok("landed");
+      })
+      .mockResolvedValueOnce(ok("<review>OK</review>"));
+
+    const loop = runLoop(
+      loopOptions(dirs, { stages: [impl, rev] as [Stage, Stage] })
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await loop;
+
+    const { events, view } = readRunLog(dirs.workspaceDir);
+    const runId = view.started!.runId;
+    const names = mocks.runStage.mock.calls.map((call) => call[6].container);
+    expect(names).toEqual([
+      { name: `ralph-${runId}-i1-s0-a1`, runId },
+      { name: `ralph-${runId}-i1-s0-a2`, runId },
+      { name: `ralph-${runId}-i1-s1-a1`, runId },
+    ]);
+    const logged = events.flatMap((e) =>
+      e.type === "stage.started" || e.type === "stage.retry"
+        ? [`${e.type} ${e.container}`]
+        : []
+    );
+    expect(logged).toEqual([
+      `stage.started ralph-${runId}-i1-s0-a1`,
+      `stage.retry ralph-${runId}-i1-s0-a2`,
+      `stage.started ralph-${runId}-i1-s1-a1`,
+    ]);
+  });
+
   it("heartbeats the agent's last output time while a stage runs", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(Date.UTC(2026, 8, 17, 10, 0, 0)));
