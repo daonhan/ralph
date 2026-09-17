@@ -23,6 +23,20 @@ function config(takesInputArg: boolean): RunBinConfig {
 afterEach(() => {
   runLoopMock.mockReset();
   delete process.env.RALPH_AGENT;
+  process.exitCode = undefined;
+});
+
+describe("runBin exit status", () => {
+  it.each([
+    ["no-more-tasks", undefined],
+    ["cap", undefined],
+    ["failed", 1],
+    ["refused", 75],
+  ])("maps a %s run to exit code %s", async (reason, code) => {
+    runLoopMock.mockResolvedValue(reason);
+    await runBin(["2"], config(false));
+    expect(process.exitCode).toBe(code);
+  });
 });
 
 describe("runBin agent forwarding", () => {

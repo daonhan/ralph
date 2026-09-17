@@ -13,7 +13,19 @@ import {
 } from "./agents/index.js";
 import { detachAndExit } from "./detach.js";
 import { runLoop } from "./loop.js";
+import type { RunEndReason } from "./run-log.js";
 import type { Stage } from "./stages.js";
+
+/**
+ * Exit status per run end, so a supervisor can tell a failed run or a refused
+ * launch from success. Unlisted ends (`no-more-tasks`, `cap`) exit 0; signals
+ * exit 130 / 143 from loop.ts; a thrown error exits 1 from the bin's catch.
+ * 75 is EX_TEMPFAIL: another run is live, try again later.
+ */
+export const EXIT_CODES: Partial<Record<RunEndReason, number>> = {
+  failed: 1,
+  refused: 75,
+};
 
 export type RunBinConfig = {
   /** Bin name for usage/version/config output (e.g. "ralph-afk"). */
@@ -103,7 +115,7 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
     });
   }
 
-  await runLoop({
+  const reason = await runLoop({
     stages: cfg.stages,
     inputs: inputs ?? "",
     iterations,
@@ -118,4 +130,6 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
     agent: selection.agent,
     codexUserConfig: flags.codexUserConfig,
   });
+  const exitCode = EXIT_CODES[reason];
+  if (exitCode !== undefined) process.exitCode = exitCode;
 }

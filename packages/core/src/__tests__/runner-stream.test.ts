@@ -23,6 +23,7 @@ type FakeChild = EventEmitter & {
   stdout: PassThrough;
   stderr: PassThrough;
   kill: ReturnType<typeof vi.fn>;
+  unref: ReturnType<typeof vi.fn>;
 };
 
 function fakeChild(): FakeChild {
@@ -30,7 +31,17 @@ function fakeChild(): FakeChild {
     stdout: new PassThrough(),
     stderr: new PassThrough(),
     kill: vi.fn(() => true),
+    unref: vi.fn(),
   });
+}
+
+const container = { name: "ralph-run-i1-s0-a1", runId: "run" };
+
+/** The detached `docker rm -f` calls made after the `docker run` spawn. */
+function removals(): unknown[][] {
+  return spawnMock.mock.calls.filter(
+    (call) => (call[1] as string[])[0] === "rm"
+  );
 }
 
 function writeJson(child: FakeChild, value: unknown): void {
@@ -77,6 +88,27 @@ describe("streamDocker", () => {
     expect(readFileSync(logPath, "utf8")).toContain('"turn.completed"');
   });
 
+  it("reports each JSON record the agent writes, and nothing else", async () => {
+    const onOutput = vi.fn();
+    const run = streamDocker(
+      [],
+      join(root, "output.ndjson"),
+      createCodexDecoder(),
+      { onOutput }
+    );
+    writeJson(child, { type: "turn.started" });
+    child.stdout.write("not a record\n");
+    writeJson(child, {
+      type: "item.completed",
+      item: { type: "agent_message", text: "finished" },
+    });
+    writeJson(child, { type: "turn.completed" });
+    child.emit("close", 0);
+
+    await expect(run).resolves.toEqual({ text: "finished", meta: {} });
+    expect(onOutput).toHaveBeenCalledTimes(3);
+  });
+
   it("kills and rejects on a provider failure event", async () => {
     const run = streamDocker(
       [],
@@ -87,6 +119,45 @@ describe("streamDocker", () => {
 
     await expect(run).rejects.toThrow("auth missing");
     expect(child.kill).toHaveBeenCalledTimes(1);
+    expect(removals()).toEqual([]);
+  });
+
+  it("removes the named container it abandons on a provider failure", async () => {
+    const run = streamDocker(
+      [],
+      join(root, "failure-named.ndjson"),
+      createCodexDecoder(),
+      { container }
+    );
+    writeJson(child, { type: "error", message: "auth missing" });
+
+    await expect(run).rejects.toThrow("auth missing");
+    expect(removals()).toEqual([
+      [
+        "docker",
+        ["rm", "-f", container.name],
+        expect.objectContaining({ detached: true, stdio: "ignore" }),
+      ],
+    ]);
+    expect(child.unref).toHaveBeenCalled();
+  });
+
+  it("removes the named container when the stage is aborted", async () => {
+    const abort = new AbortController();
+    const run = streamDocker(
+      [],
+      join(root, "abort-named.ndjson"),
+      createCodexDecoder(),
+      { container, signal: abort.signal }
+    );
+
+    abort.abort();
+
+    await expect(run).rejects.toThrow();
+    expect(child.kill).toHaveBeenCalledTimes(1);
+    expect(removals().map((call) => call[1])).toEqual([
+      ["rm", "-f", container.name],
+    ]);
   });
 
   it("survives a transient reconnect notice and still completes", async () => {
@@ -164,5 +235,44 @@ describe("streamDocker", () => {
       meta: { graceTimerFired: true },
     });
     expect(child.kill).toHaveBeenCalledTimes(1);
+    expect(removals()).toEqual([]);
+  });
+
+  it("removes the named container the grace timer gives up on", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    process.env.RALPH_RESULT_GRACE_MS = "10";
+    const run = streamDocker(
+      [],
+      join(root, "grace-named.ndjson"),
+      createCodexDecoder(),
+      { container }
+    );
+    writeJson(child, {
+      type: "item.completed",
+      item: { type: "agent_message", text: "finished" },
+    });
+    writeJson(child, { type: "turn.completed" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await vi.advanceTimersByTimeAsync(10);
+
+    await expect(run).resolves.toMatchObject({ text: "finished" });
+    expect(removals().map((call) => call[1])).toEqual([
+      ["rm", "-f", container.name],
+    ]);
+  });
+
+  it("survives a docker CLI that cannot be spawned for the removal", async () => {
+    const run = streamDocker(
+      [],
+      join(root, "failure-nodocker.ndjson"),
+      createCodexDecoder(),
+      { container }
+    );
+    spawnMock.mockImplementation(() => {
+      throw new Error("spawn docker ENOENT");
+    });
+    writeJson(child, { type: "error", message: "auth missing" });
+
+    await expect(run).rejects.toThrow("auth missing");
   });
 });

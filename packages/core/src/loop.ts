@@ -1,4 +1,5 @@
 import { appendFileSync, mkdirSync } from "node:fs";
+import { hostname } from "node:os";
 import { basename, dirname, join, posix } from "node:path";
 
 import {
@@ -9,11 +10,13 @@ import {
 import { readCoreVersion } from "./cli-help.js";
 import {
   dirtySnapshot,
+  formatDuration,
   headShort,
   loadHistoryTail,
   openHistory,
   renderRunTotals,
   type HistoryWriter,
+  type StageEntry,
 } from "./history.js";
 import { detectSandboxInstall } from "./host-check.js";
 import { acquire, type Releaser } from "./keepalive.js";
@@ -25,7 +28,20 @@ import {
   backoffFor,
   withRetries,
 } from "./retry.js";
-import { ensureImage, runStage, stageLogPath } from "./runner.js";
+import {
+  ensureImage,
+  runStage,
+  runningRunContainers,
+  stageLogPath,
+} from "./runner.js";
+import {
+  HEARTBEAT_MS,
+  findLiveRun,
+  findRunContainer,
+  openRunLog,
+  pruneRunLogs,
+  type RunEndReason,
+} from "./run-log.js";
 import {
   USE_COLOR,
   dim,
@@ -155,7 +171,12 @@ export type LoopOptions = {
   codexUserConfig?: boolean;
 };
 
-export async function runLoop(opts: LoopOptions): Promise<void> {
+/**
+ * Drive the stage chain and resolve with how the run ended: `no-more-tasks`,
+ * `cap`, `failed`, or `refused` when another run of this workspace is still
+ * live. A thrown error rejects; a signal exits the process from its handler.
+ */
+export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
   const {
     stages,
     inputs,
@@ -176,10 +197,85 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     throw new Error(CODEX_USER_CONFIG_REQUIRES_CODEX);
   }
 
-  const versionLine = `${bin} ${cliVersion} (core ${readCoreVersion()})`;
+  const coreVersion = readCoreVersion();
+  const versionLine = `${bin} ${cliVersion} (core ${coreVersion})`;
   process.stderr.write(
     `${USE_COLOR ? `${dim("━━━")} ${bold(versionLine)} ${dim("━━━")}` : `== ${versionLine} ==`}\n`
   );
+
+  // The run's event log opens first — before the wake-lock, the signal handlers
+  // and image setup — so a hung pull is visible and a failed open leaks nothing.
+  // `bin` arrives as "ralph-afk" / "ralph-ghafk"; the run files use the short
+  // "afk" / "ghafk" form.
+  const shortBin = bin.replace(/^ralph-/, "");
+  const runLog = openRunLog({
+    workspaceDir,
+    bin: shortBin,
+    started: {
+      pid: process.pid,
+      hostname: hostname(),
+      platform: process.platform,
+      wslDistro: process.env.WSL_DISTRO_NAME,
+      agent,
+      iterations,
+      inputs,
+      version: coreVersion,
+    },
+  });
+
+  // One run per workspace. The check runs after this run's own run.started is
+  // on disk, so two launches racing each other both refuse rather than both
+  // proceed. Nothing has been acquired yet, so a refusal just ends the log —
+  // and prunes, so a supervisor retrying exit 75 leaves one refused log behind.
+  const historyDir = dirname(runLog.filePath);
+  // One container name per stage attempt: a killed client can leave the previous
+  // attempt's container behind, so a retry must not reuse its name.
+  const containerName = (i: number, s: number, attempt: number): string =>
+    `ralph-${runLog.runId}-i${i}-s${s}-a${attempt}`;
+  const refuse = (message: string, blockedBy: string): "refused" => {
+    process.stderr.write(`[refused] ${message}\n`);
+    try {
+      runLog.append({
+        type: "run.ended",
+        reason: "refused",
+        completedIterations: 0,
+        blockedBy,
+      });
+    } finally {
+      // A failed write leaves the log open, and this process would go on
+      // reading the unended log as a run it still owns, refusing every launch.
+      runLog.close();
+    }
+    pruneRunLogs(historyDir, runLog.runId);
+    return "refused";
+  };
+  const blocker = findLiveRun(historyDir, runLog.runId);
+  if (blocker) {
+    const started = blocker.view.started;
+    const who = started
+      ? `pid ${started.pid} on ${started.hostname}, started ${started.at}, last event ${formatDuration(
+          Date.now() - Date.parse(blocker.view.lastEventAt ?? started.at)
+        )} ago`
+      : "written by a newer ralph";
+    return refuse(
+      `another ralph run is live in this workspace: ${who} (${blocker.filePath})`,
+      blocker.runId
+    );
+  }
+  // A killed host process leaves its container running, and committing: the
+  // workspace is not free until that container stops too.
+  const orphan = findRunContainer(
+    historyDir,
+    runLog.runId,
+    runningRunContainers()
+  );
+  if (orphan) {
+    return refuse(
+      `run ${orphan.runId} still has a running container (${orphan.name}); remove it: docker rm -f $(docker ps -aq --filter label=ralph.run=${orphan.runId})`,
+      orphan.runId
+    );
+  }
+  pruneRunLogs(historyDir, runLog.runId);
 
   const releaser: Releaser = noKeepAlive
     ? { release: () => {} }
@@ -198,45 +294,85 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     if (!stageAbort.signal.aborted) stageAbort.abort();
   };
 
+  let completedIterations = 0;
+  let sentinelHit = false;
+  // Whether the last iteration ended in a stage failure; decides the footer
+  // reason (`failed` vs `cap`). Reset at the start of every iteration.
+  let runFailed = false;
+
   // The history writer (opened after ensureImage) and the running stage's
   // `current` slot, both read by the signal handlers. `current` is set at each
   // stage start and cleared once that stage's own entry is written; an empty
   // slot — between stages, or before the image is ready — means a signal records
-  // nothing. On a signal the `aborted` entry is the file's terminal marker: the
-  // handler exits the process directly, so no footer follows.
+  // no entry. Either way the log gets `run.ended aborted`; in the history file
+  // the `aborted` entry is the terminal marker, since the handler exits the
+  // process directly and no footer follows.
   let history: HistoryWriter | undefined;
   let current:
     | { iteration: number; stage: string; startedAt: number; logPath: string }
     | undefined;
-  const recordAbort = (body: string): void => {
-    if (!history || !current) return;
+  // One completed stage, to the log first (fsynced) and then the history file.
+  const recordEntry = (entry: StageEntry): void => {
+    runLog.append({ type: "stage.completed", ...entry });
+    history?.appendEntry(entry);
+  };
+  const recordAbort = (body: string, signal: "SIGINT" | "SIGTERM"): void => {
+    if (current) {
+      try {
+        recordEntry({
+          iteration: current.iteration,
+          stage: current.stage,
+          status: "aborted",
+          durationMs: Date.now() - current.startedAt,
+          head: headShort(workspaceDir),
+          logPath: current.logPath,
+          body,
+          dirty: dirtySnapshot(workspaceDir),
+        });
+      } catch {
+        // History may be unwritable; never block release + exit on the entry.
+      }
+      current = undefined;
+    }
     try {
-      history.appendEntry({
-        iteration: current.iteration,
-        stage: current.stage,
-        status: "aborted",
-        durationMs: Date.now() - current.startedAt,
-        head: headShort(workspaceDir),
-        logPath: current.logPath,
-        body,
-        dirty: dirtySnapshot(workspaceDir),
+      runLog.append({
+        type: "run.ended",
+        reason: "aborted",
+        completedIterations,
+        signal,
       });
     } catch {
-      // History may be unwritable; never block release + exit on the entry.
+      // Same: the exit code still reports the signal.
     }
-    current = undefined;
+  };
+  // A run that ends by itself: the host check, then `run.ended` to the log
+  // (fsynced) before the history footer and the summary line.
+  const endRun = (
+    writer: HistoryWriter,
+    reason: RunEndReason
+  ): RunEndReason => {
+    const findings = warnSandboxInstall(workspaceDir);
+    runLog.append({
+      type: "run.ended",
+      reason,
+      completedIterations,
+      findings: findings.length ? findings : undefined,
+    });
+    writer.appendFooter(completedIterations, reason, findings);
+    printRunSummary(writer, reason, completedIterations, iterations);
+    return reason;
   };
 
   const onSigint = (): void => {
     abortActiveStage();
-    recordAbort("Interrupted (SIGINT).");
+    recordAbort("Interrupted (SIGINT).", "SIGINT");
     if (notify) notifyError("interrupted (SIGINT)");
     releaseOnce();
     process.exit(130);
   };
   const onSigterm = (): void => {
     abortActiveStage();
-    recordAbort("Terminated (SIGTERM).");
+    recordAbort("Terminated (SIGTERM).", "SIGTERM");
     if (notify) notifyError("terminated (SIGTERM)");
     releaseOnce();
     process.exit(143);
@@ -244,22 +380,44 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
   process.on("SIGINT", onSigint);
   process.on("SIGTERM", onSigterm);
 
-  let completedIterations = 0;
-  let sentinelHit = false;
-  // Whether the last iteration ended in a stage failure; decides the footer
-  // reason (`failed` vs `cap`). Reset at the start of every iteration.
-  let runFailed = false;
+  // Liveness for whoever watches the log: a heartbeat every HEARTBEAT_MS
+  // carrying when the agent last wrote to stdout, so a supervisor can age a
+  // silent stage. Ralph only reports the ages; judging "stuck" is the reader's.
+  // A failed heartbeat write warns once and never ends the run.
+  let lastOutputAt: number | undefined;
+  let heartbeatWarned = false;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+
   try {
+    heartbeat = setInterval(() => {
+      try {
+        runLog.append({
+          type: "heartbeat",
+          lastOutputAt:
+            lastOutputAt === undefined
+              ? null
+              : new Date(lastOutputAt).toISOString(),
+        });
+      } catch (err) {
+        if (heartbeatWarned) return;
+        heartbeatWarned = true;
+        process.stderr.write(
+          `[warning] run log heartbeat failed: ${(err as Error).message}\n`
+        );
+      }
+    }, HEARTBEAT_MS);
+    heartbeat.unref?.();
+
     await ensureImage(ralphDir, { signal: stageAbort.signal });
 
     // History opens only after the image is confirmed: an image failure must
-    // leave no .ralph/ directory behind. `bin` arrives as "ralph-afk" /
-    // "ralph-ghafk"; the history file uses the short "afk" / "ghafk" form.
+    // leave no history file behind (the event log records it instead).
     history = openHistory({
       workspaceDir,
-      bin: bin.replace(/^ralph-/, ""),
+      bin: shortBin,
       iterations,
       inputs,
+      baseName: runLog.runId,
     });
 
     for (let i = 1; i <= iterations; i++) {
@@ -279,7 +437,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
           process.stderr.write(
             `${dim(`skipped \u00b7 HEAD unchanged (${skipHead})`)}\n`
           );
-          history.appendEntry({
+          recordEntry({
             iteration: i,
             stage: stage.name,
             status: "skipped",
@@ -312,13 +470,26 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         // A signal arriving now records an `aborted` entry for this stage;
         // cleared once the stage's own entry is written below.
         current = { iteration: i, stage: stage.name, startedAt, logPath };
+        runLog.append({
+          type: "stage.started",
+          iteration: i,
+          stageIndex: s,
+          stage: stage.name,
+          logPath,
+          container: containerName(i, s, 1),
+        });
         // One message per failed attempt, collected from the retry callback and
         // rendered as `retries:` + `- attempt <k>:` bullets on the entry.
         const attemptErrors: string[] = [];
+        let attempt = 0;
+        // A stage.retry that cannot be logged fails the run at once: rethrown
+        // from the retry callback, it skips the backoff and every later attempt.
+        let retryLogError: unknown;
         let result: { text: string; meta: StageMeta };
         try {
           result = await withRetries(
             () => {
+              attempt++;
               // Render inside the retry: a failing template shell/@spill tag
               // (e.g. a flaky `gh issue list`) is retried with backoff instead
               // of crashing the loop — and a hard failure surfaces as a terminal
@@ -346,6 +517,13 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
                   agent,
                   codexUserConfig,
                   skillsHostDir: join(packageDir, "templates", "skills"),
+                  container: {
+                    name: containerName(i, s, attempt),
+                    runId: runLog.runId,
+                  },
+                  onOutput: () => {
+                    lastOutputAt = Date.now();
+                  },
                 }
               );
             },
@@ -355,6 +533,20 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
               onAttempt: (attempt, err) => {
                 attemptErrors.push((err as Error).message);
                 const wait = backoffFor(DEFAULT_BACKOFF_MS, attempt);
+                try {
+                  runLog.append({
+                    type: "stage.retry",
+                    iteration: i,
+                    stage: stage.name,
+                    attempt,
+                    error: (err as Error).message,
+                    backoffMs: wait,
+                    container: containerName(i, s, attempt + 1),
+                  });
+                } catch (appendErr) {
+                  retryLogError = appendErr;
+                  throw appendErr;
+                }
                 const marker = `[retry] attempt ${attempt} of ${maxRetries} after ${wait} ms`;
                 process.stderr.write(
                   `${USE_COLOR ? dim(marker) : marker} ${dim("(" + (err as Error).message + ")")}\n`
@@ -368,6 +560,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
             }
           );
         } catch (err) {
+          if (err === retryLogError) throw err;
           const failureMarker = `[failure] iteration ${i} stage ${stage.name} failed after ${maxRetries} retries: ${(err as Error).message}`;
           try {
             appendFileSync(stageLog, failureMarker + "\n");
@@ -376,7 +569,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
           }
           const msg = `${red(SYM.cross)} ${bold("iteration " + i + " stage " + stage.name + " failed")} after ${maxRetries} retries: ${(err as Error).message}`;
           process.stderr.write(msg + "\n");
-          history.appendEntry({
+          recordEntry({
             iteration: i,
             stage: stage.name,
             status: "failed",
@@ -400,7 +593,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
             `[warning] iteration ${i}: the gate mentioned ${SENTINEL} without emitting it on a line of its own; the loop continues\n`
           );
         }
-        history.appendEntry({
+        recordEntry({
           iteration: i,
           stage: stage.name,
           status: deriveStatus({
@@ -423,13 +616,7 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
         if (hitSentinel) {
           sentinelHit = true;
           completedIterations = i;
-          history.appendFooter(
-            i,
-            "no-more-tasks",
-            warnSandboxInstall(workspaceDir)
-          );
-          printRunSummary(history, "no-more-tasks", i, iterations);
-          return;
+          return endRun(history, "no-more-tasks");
         }
 
         // The gate decides whether the rest of the iteration is worth paying
@@ -439,19 +626,25 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
       }
       completedIterations = i;
     }
-    const reason = runFailed ? "failed" : "cap";
-    history.appendFooter(
-      completedIterations,
-      reason,
-      warnSandboxInstall(workspaceDir)
-    );
-    printRunSummary(history, reason, completedIterations, iterations);
+    return endRun(history, runFailed ? "failed" : "cap");
   } catch (err) {
+    try {
+      runLog.append({
+        type: "run.ended",
+        reason: "error",
+        completedIterations,
+        error: (err as Error).message,
+      });
+    } catch {
+      // The log may be what failed; the thrown error still exits non-zero.
+    }
     if (notify) notifyError((err as Error).message);
     throw err;
   } finally {
     process.off("SIGINT", onSigint);
     process.off("SIGTERM", onSigterm);
+    clearInterval(heartbeat);
+    runLog.close();
     releaseOnce();
     if (notify && (sentinelHit || completedIterations === iterations)) {
       notifyComplete(completedIterations, sentinelHit);

@@ -45,6 +45,17 @@ export type RunStageOptions = {
   codexUserConfig?: boolean;
   /** Host dir of the shipped skills (<core>/templates/skills); mounted read-only when it exists. */
   skillsHostDir?: string;
+  /** Called for every JSON record the agent writes to stdout (the loop's last-output clock). */
+  onOutput?: () => void;
+  /** Name the container and label it with its run, so a supervisor can stop it. */
+  container?: StageContainer;
+};
+
+export type StageContainer = {
+  /** `docker run --name`; unique per stage attempt. */
+  name: string;
+  /** The run log's runId, set as the `ralph.run` label. */
+  runId: string;
 };
 
 export const IMAGE_REF =
@@ -590,6 +601,77 @@ export function resolveAgentVolumeArgs(adapter: AgentAdapter): string[] {
   return args;
 }
 
+/**
+ * Name the stage container and label it `ralph.run=<runId>`. The label, not a
+ * name pattern, is what to filter on: `docker ps -q --filter label=ralph.run=<runId>`
+ * finds the stage containers a run started, orphans from a killed client
+ * included. The volume chown helper and containers the agent starts through
+ * docker.sock carry no label.
+ */
+export function resolveContainerArgs(container?: StageContainer): string[] {
+  if (!container) return [];
+  return ["--name", container.name, "--label", `ralph.run=${container.runId}`];
+}
+
+/** The `<runId> <name>` pairs {@link runningRunContainers} lists, one per line. */
+export function parseRunContainers(stdout: string): StageContainer[] {
+  const containers: StageContainer[] = [];
+  for (const line of stdout.split(/\r?\n/)) {
+    const [, runId, name] = /^(\S+) (.+)$/.exec(line.trim()) ?? [];
+    if (runId && name) containers.push({ name, runId });
+  }
+  return containers;
+}
+
+/**
+ * The running containers labelled with a run, for the one-run-per-workspace
+ * claim. No docker, a stopped daemon or a probe past 10 s reads as none: the
+ * image setup that follows reports a docker fault on its own.
+ */
+export function runningRunContainers(): StageContainer[] {
+  const res = spawnSync(
+    "docker",
+    [
+      "ps",
+      "--filter",
+      "label=ralph.run",
+      "--format",
+      '{{.Label "ralph.run"}} {{.Names}}',
+    ],
+    {
+      encoding: "utf8",
+      timeout: 10_000,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "ignore"],
+    }
+  );
+  if (res.error || res.status !== 0) return [];
+  return parseRunContainers(res.stdout);
+}
+
+/**
+ * Remove a stage container Ralph is abandoning, in the background. Killing the
+ * `docker run` client does not stop its container — on Windows the kill never
+ * reaches it — so a hung or aborted agent would keep running, and committing,
+ * beside the next attempt or the next run. Best effort: a container the daemon
+ * creates after the removal lands is still left behind.
+ */
+export function removeContainer(name: string): void {
+  try {
+    const child = spawn("docker", ["rm", "-f", name], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    child.on("error", () => {
+      // No docker CLI: nothing to remove with.
+    });
+    child.unref();
+  } catch {
+    // Same: the stage outcome stands either way.
+  }
+}
+
 export async function runStage(
   stage: Stage,
   renderedPrompt: string,
@@ -621,6 +703,7 @@ export async function runStage(
       "run",
       "--rm",
       "-i",
+      ...resolveContainerArgs(options.container),
       "-v",
       `${workspaceDir}:${CONTAINER_WORKSPACE}`,
       "-w",
@@ -733,12 +816,18 @@ export function streamDocker(
     const resolveOnce = (text: string): void =>
       finish(() => resolve({ text, meta }));
 
-    onAbort = (): void => {
+    // Kill the docker client, and remove the container it leaves running.
+    const abandon = (): void => {
       try {
         child.kill();
       } catch {
-        // Already dead; close handling below will settle if needed.
+        // Already exited.
       }
+      if (options.container) removeContainer(options.container.name);
+    };
+
+    onAbort = (): void => {
+      abandon();
       rejectOnce(abortError());
     };
 
@@ -746,6 +835,7 @@ export function streamDocker(
     rl.on("line", (line) => {
       if (settled || !line.startsWith("{")) return;
 
+      options.onOutput?.();
       appendFileSync(logFd, line + "\n");
 
       let parsed: unknown;
@@ -763,11 +853,7 @@ export function streamDocker(
       if (decoded.meta) Object.assign(meta, decoded.meta);
 
       if (decoded.failure !== undefined) {
-        try {
-          child.kill();
-        } catch {
-          // Child already exited; rejectOnce remains authoritative.
-        }
+        abandon();
         rejectOnce(new Error(decoded.failure));
         return;
       }
@@ -781,11 +867,7 @@ export function streamDocker(
               `${dim(`grace timer fired after ${graceMs}ms post-completion — killing docker child`)}\n`
             );
             meta.graceTimerFired = true;
-            try {
-              child.kill();
-            } catch {
-              // Child already exited; resolveOnce remains authoritative.
-            }
+            abandon();
             resolveOnce(finalResult);
           }, graceMs);
           graceTimer.unref?.();

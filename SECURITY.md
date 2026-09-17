@@ -71,6 +71,15 @@ The trust boundary is:
   npm prefix `/home/agent/.npm-global`). Set `RALPH_CODEX_UPDATE=0` to pin the stage
   to the copy the image ships and drop the volume mount.
 
+- **The run event log is advisory, not a security boundary.** Each run's
+  `.ralph/history/<runId>.jsonl` sits in the bind-mounted workspace the agent can
+  write to, so the agent can forge, edit or delete records. The one-run-per-workspace
+  check and any supervisor reading the log trust what it says; a forged live log
+  can refuse relaunches (exit 75) until it is removed, and a deleted one lets a
+  second run start. The log repeats `inputs` (the plan/PRD string) and every
+  stage's agent output, so it carries the same sensitivity as the Markdown history
+  beside it.
+
 ### Reducing blast radius
 
 - Set `RALPH_DOCKER_SOCK=0` unless you specifically need Testcontainers.

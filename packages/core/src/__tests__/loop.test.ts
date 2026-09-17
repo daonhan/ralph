@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -8,7 +7,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -21,7 +20,41 @@ const mocks = vi.hoisted(() => ({
   notifyError: vi.fn(),
   release: vi.fn(),
   runStage: vi.fn(),
+  runningRunContainers: vi.fn(),
 }));
+
+// Disk faults for the run log, armed per test: a write that fails partway
+// through a record, or an fsync that fails after the bytes landed.
+const faults = vi.hoisted(() => ({
+  write: undefined as ((data: unknown) => boolean) | undefined,
+  fsync: false,
+}));
+
+vi.mock("node:fs", async () => {
+  const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+  return {
+    ...actual,
+    writeFileSync: (...args: Parameters<typeof actual.writeFileSync>) => {
+      if (faults.write?.(args[1])) {
+        if (typeof args[0] === "number") {
+          actual.writeSync(args[0], String(args[1]).slice(0, 12));
+        }
+        throw Object.assign(new Error("ENOSPC: no space left on device"), {
+          code: "ENOSPC",
+        });
+      }
+      return actual.writeFileSync(...args);
+    },
+    fsyncSync: (fd: number) => {
+      if (faults.fsync) {
+        throw Object.assign(new Error("EIO: i/o error, fsync"), {
+          code: "EIO",
+        });
+      }
+      return actual.fsyncSync(fd);
+    },
+  };
+});
 
 vi.mock("../keepalive.js", () => ({
   acquire: mocks.acquire,
@@ -35,6 +68,7 @@ vi.mock("../notify.js", () => ({
 vi.mock("../runner.js", () => ({
   ensureImage: mocks.ensureImage,
   runStage: mocks.runStage,
+  runningRunContainers: mocks.runningRunContainers,
   stageLogPath: (workspaceDir: string, iteration: number, stageName: string) =>
     join(
       workspaceDir,
@@ -58,6 +92,7 @@ vi.mock("../stream-render.js", () => ({
 }));
 
 import { deriveStatus, hasSentinel, runLoop } from "../loop.js";
+import { openRunLog, reduceRunLog } from "../run-log.js";
 
 const stage: Stage = { name: "implementer", template: "stage.md" };
 const sentinel = "<promise>NO MORE TASKS</promise>";
@@ -131,6 +166,21 @@ function readHistory(workspaceDir: string): string {
   return readFileSync(join(dir, md!), "utf8");
 }
 
+/** Names in the history dir with the given extension, oldest run first. */
+function historyFiles(workspaceDir: string, ext: string): string[] {
+  return readdirSync(join(workspaceDir, ".ralph", "history"))
+    .filter((f) => f.endsWith(ext))
+    .sort();
+}
+
+/** The newest run's event log, folded. */
+function readRunLog(workspaceDir: string) {
+  const file = historyFiles(workspaceDir, ".jsonl").at(-1)!;
+  return reduceRunLog(
+    readFileSync(join(workspaceDir, ".ralph", "history", file), "utf8")
+  );
+}
+
 /**
  * Turn a workspace into a git repo with one committed `.gitignore` (so the
  * loop's own `.ralph-tmp/` and `.ralph/` scratch never counts as dirty) and
@@ -196,11 +246,14 @@ describe("runLoop", () => {
     vi.useRealTimers();
     for (const mock of Object.values(mocks)) mock.mockReset();
     mocks.acquire.mockReturnValue({ release: mocks.release });
+    mocks.runningRunContainers.mockReturnValue([]);
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   });
 
   afterEach(() => {
+    faults.write = undefined;
+    faults.fsync = false;
     vi.useRealTimers();
     vi.restoreAllMocks();
     while (roots.length > 0) {
@@ -508,6 +561,10 @@ describe("runLoop", () => {
 
     expect(capturedSignal?.aborted).toBe(true);
     await expect(loop).rejects.toThrow("image aborted");
+    expect(readRunLog(dirs.workspaceDir).view.ended).toMatchObject({
+      reason: "aborted",
+      signal: "SIGTERM",
+    });
     expect(mocks.runStage).not.toHaveBeenCalled();
     expect(mocks.release).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledWith(143);
@@ -548,8 +605,26 @@ describe("runLoop", () => {
     expect(text).toContain("Interrupted (SIGINT).");
     expect(text).not.toMatch(/--- ended/);
     expect(readStdout()).not.toContain("Ralph ended");
+    const atExit = readRunLog(dirs.workspaceDir);
+    expect(atExit.events.map((e) => e.type)).toEqual([
+      "run.started",
+      "stage.started",
+      "stage.completed",
+      "run.ended",
+    ]);
+    expect(atExit.view.entries[0]).toMatchObject({
+      status: "aborted",
+      dirty: "1 files — wip.txt",
+    });
+    expect(atExit.view.ended).toMatchObject({
+      reason: "aborted",
+      signal: "SIGINT",
+    });
 
     await loop; // let the aborted stage's rejection settle
+    // The loop kept going only because process.exit is mocked; the closed log
+    // took none of that.
+    expect(readRunLog(dirs.workspaceDir)).toEqual(atExit);
     expect(exit).toHaveBeenCalledWith(130);
     expect(mocks.release).toHaveBeenCalledTimes(1);
   });
@@ -599,7 +674,8 @@ describe("runLoop", () => {
       throw new Error(`exit ${code}`);
     }) as never);
     // Signal lands while the image is still resolving: history is not open and
-    // the `current` slot is empty, so the handler records nothing.
+    // the `current` slot is empty, so the handler records no entry — only the
+    // log's run.ended.
     mocks.ensureImage.mockImplementation((_ralphDir, options) => {
       return new Promise((_resolve, reject) => {
         options.signal.addEventListener("abort", () =>
@@ -613,7 +689,14 @@ describe("runLoop", () => {
     await Promise.resolve();
 
     expect(() => process.emit("SIGINT")).toThrow("exit 130");
-    expect(existsSync(join(dirs.workspaceDir, ".ralph"))).toBe(false);
+    expect(historyFiles(dirs.workspaceDir, ".md")).toEqual([]);
+    const log = readRunLog(dirs.workspaceDir);
+    expect(log.events.map((e) => e.type)).toEqual(["run.started", "run.ended"]);
+    expect(log.view.ended).toMatchObject({
+      reason: "aborted",
+      signal: "SIGINT",
+      completedIterations: 0,
+    });
 
     await expect(loop).rejects.toThrow("image aborted");
     expect(mocks.release).toHaveBeenCalledTimes(1);
@@ -852,7 +935,580 @@ describe("runLoop", () => {
     mocks.ensureImage.mockRejectedValue(new Error("no image"));
 
     await expect(runLoop(loopOptions(dirs))).rejects.toThrow("no image");
-    expect(existsSync(join(dirs.workspaceDir, ".ralph"))).toBe(false);
+    expect(historyFiles(dirs.workspaceDir, ".md")).toEqual([]);
+    // The event log still records the attempt and why it ended.
+    const log = readRunLog(dirs.workspaceDir);
+    expect(log.truncated).toBe(false);
+    expect(log.events.map((e) => e.type)).toEqual(["run.started", "run.ended"]);
+    expect(log.view.ended).toMatchObject({
+      reason: "error",
+      error: "no image",
+    });
+  });
+
+  it("logs run.started, each stage, and run.ended beside the history file", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-ghafk", inputs: "" }));
+
+    const log = readRunLog(dirs.workspaceDir);
+    expect(log.truncated).toBe(false);
+    expect(log.events.map((e) => e.type)).toEqual([
+      "run.started",
+      "stage.started",
+      "stage.completed",
+      "run.ended",
+    ]);
+    expect(log.view.started).toMatchObject({
+      pid: process.pid,
+      platform: process.platform,
+      bin: "ghafk",
+      agent: "claude",
+      iterations: 1,
+    });
+    expect(log.view.entries[0]).toMatchObject({
+      iteration: 1,
+      stage: "implementer",
+      status: "no-more-tasks",
+    });
+    expect(log.view.ended).toMatchObject({
+      reason: "no-more-tasks",
+      completedIterations: 1,
+    });
+    // One run, one base name for both files.
+    expect(historyFiles(dirs.workspaceDir, ".md")).toEqual([
+      `${log.view.started!.runId}.md`,
+    ]);
+  });
+
+  it("logs a skipped stage as completed without a start, then the cap", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    const rev: Stage = { name: "reviewer", template: "rev.md" };
+    writeFileSync(join(dirs.packageDir, "templates", "impl.md"), "impl");
+    writeFileSync(join(dirs.packageDir, "templates", "rev.md"), "review");
+    makeCleanRepo(dirs.workspaceDir);
+    mocks.runStage.mockResolvedValue(ok("changed nothing"));
+
+    await runLoop(loopOptions(dirs, { stages: [impl, rev] as [Stage, Stage] }));
+
+    const { events, view } = readRunLog(dirs.workspaceDir);
+    expect(events.map((e) => e.type)).toEqual([
+      "run.started",
+      "stage.started",
+      "stage.completed",
+      "stage.completed",
+      "run.ended",
+    ]);
+    expect(view.entries.map((e) => e.status)).toEqual(["ok", "skipped"]);
+    expect(view.ended).toMatchObject({ reason: "cap", completedIterations: 1 });
+  });
+
+  it("logs each retry and a failed run", async () => {
+    vi.useFakeTimers();
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage
+      .mockRejectedValueOnce(new Error("first boom"))
+      .mockRejectedValue(new Error("final boom"));
+
+    const loop = runLoop(loopOptions(dirs, { maxRetries: 1 }));
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await loop;
+
+    const { events, view } = readRunLog(dirs.workspaceDir);
+    expect(events.map((e) => e.type)).toEqual([
+      "run.started",
+      "stage.started",
+      "stage.retry",
+      "stage.completed",
+      "run.ended",
+    ]);
+    expect(events[2]).toMatchObject({
+      iteration: 1,
+      stage: "implementer",
+      attempt: 1,
+      error: "first boom",
+      backoffMs: 5_000,
+    });
+    expect(view.entries[0]).toMatchObject({
+      status: "failed",
+      body: "final boom",
+      retries: 1,
+    });
+    expect(view.ended).toMatchObject({ reason: "failed" });
+    vi.useRealTimers();
+  });
+
+  it("names a container per stage attempt and labels it with the run", async () => {
+    vi.useFakeTimers();
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    const rev: Stage = { name: "reviewer", template: "rev.md" };
+    writeFileSync(join(dirs.packageDir, "templates", "impl.md"), "impl");
+    writeFileSync(join(dirs.packageDir, "templates", "rev.md"), "review");
+    makeCleanRepo(dirs.workspaceDir);
+    mocks.runStage
+      .mockRejectedValueOnce(new Error("flaky"))
+      .mockImplementationOnce(async () => {
+        commitInWorkspace(dirs.workspaceDir, "work.txt");
+        return ok("landed");
+      })
+      .mockResolvedValueOnce(ok("<review>OK</review>"));
+
+    const loop = runLoop(
+      loopOptions(dirs, { stages: [impl, rev] as [Stage, Stage] })
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await loop;
+
+    const { events, view } = readRunLog(dirs.workspaceDir);
+    const runId = view.started!.runId;
+    const names = mocks.runStage.mock.calls.map((call) => call[6].container);
+    expect(names).toEqual([
+      { name: `ralph-${runId}-i1-s0-a1`, runId },
+      { name: `ralph-${runId}-i1-s0-a2`, runId },
+      { name: `ralph-${runId}-i1-s1-a1`, runId },
+    ]);
+    const logged = events.flatMap((e) =>
+      e.type === "stage.started" || e.type === "stage.retry"
+        ? [`${e.type} ${e.container}`]
+        : []
+    );
+    expect(logged).toEqual([
+      `stage.started ralph-${runId}-i1-s0-a1`,
+      `stage.retry ralph-${runId}-i1-s0-a2`,
+      `stage.started ralph-${runId}-i1-s1-a1`,
+    ]);
+  });
+
+  it("heartbeats the agent's last output time while a stage runs", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 8, 17, 10, 0, 0)));
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    let finish!: (value: unknown) => void;
+    mocks.runStage.mockImplementation(
+      (_stage, _prompt, _workspace, _iteration, _spill, _log, options) => {
+        options.onOutput(); // the agent writes its first record at 10:00:00
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      }
+    );
+
+    const loop = runLoop(loopOptions(dirs));
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    const during = readRunLog(dirs.workspaceDir);
+    expect(during.events.map((e) => e.type)).toEqual([
+      "run.started",
+      "stage.started",
+      "heartbeat",
+    ]);
+    expect(during.view.stage?.name).toBe("implementer");
+    expect(during.view.lastOutputAt).toBe("2026-09-17T10:00:00.000Z");
+    expect(during.view.lastHeartbeatAt).toBe("2026-09-17T10:00:30.000Z");
+
+    finish(ok(sentinel));
+    await loop;
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    // The heartbeat stops with the run: nothing follows run.ended.
+    const after = readRunLog(dirs.workspaceDir);
+    expect(after.truncated).toBe(false);
+    expect(after.events.at(-1)?.type).toBe("run.ended");
+    expect(after.events.filter((e) => e.type === "heartbeat")).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  it("heartbeats a null last output before the agent has written anything", async () => {
+    vi.useFakeTimers();
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    // Image setup hangs: no stage, no output — the heartbeat still proves the
+    // host process is alive.
+    let failImage!: (err: Error) => void;
+    mocks.ensureImage.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        failImage = reject;
+      })
+    );
+
+    const loop = runLoop(loopOptions(dirs));
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    const { events, view } = readRunLog(dirs.workspaceDir);
+    expect(events.map((e) => e.type)).toEqual(["run.started", "heartbeat"]);
+    expect(view.lastOutputAt).toBeNull();
+    expect(view.stage).toBeUndefined();
+
+    // Settle the run so its handlers, timer and log handle are released.
+    failImage(new Error("pull hung"));
+    await expect(loop).rejects.toThrow("pull hung");
+    vi.useRealTimers();
+  });
+
+  it("warns once and carries on when heartbeats cannot be fsynced", async () => {
+    vi.useFakeTimers();
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    let finish!: (value: unknown) => void;
+    mocks.runStage.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+
+    const loop = runLoop(loopOptions(dirs));
+    await Promise.resolve();
+    await Promise.resolve();
+    faults.fsync = true;
+    await vi.advanceTimersByTimeAsync(60_000);
+    faults.fsync = false;
+    finish(ok(sentinel));
+
+    await expect(loop).resolves.toBe("no-more-tasks");
+    expect(
+      readStderr().split("[warning] run log heartbeat failed: EIO")
+    ).toHaveLength(2);
+    // The heartbeats landed unsynced; the log still reads through to the end.
+    const { events, truncated } = readRunLog(dirs.workspaceDir);
+    expect(truncated).toBe(false);
+    expect(events.filter((e) => e.type === "heartbeat")).toHaveLength(2);
+    expect(events.at(-1)?.type).toBe("run.ended");
+  });
+
+  it("ends the run when a stage event cannot be written", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    faults.write = (data) => String(data).includes('"stage.started"');
+
+    await expect(runLoop(loopOptions(dirs))).rejects.toThrow("ENOSPC");
+
+    expect(mocks.runStage).not.toHaveBeenCalled();
+    expect(mocks.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends the run at once when a retry cannot be logged", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockRejectedValue(new Error("boom"));
+    faults.write = (data) => String(data).includes('"stage.retry"');
+
+    // No backoff wait, no further attempt: the log is known to be broken.
+    await expect(runLoop(loopOptions(dirs))).rejects.toThrow("ENOSPC");
+
+    expect(mocks.runStage).toHaveBeenCalledTimes(1);
+    expect(mocks.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("still exits 130 and releases once when the abort cannot be logged", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const exit = vi.spyOn(process, "exit").mockImplementation(((
+      code?: number
+    ) => {
+      throw new Error(`exit ${code}`);
+    }) as never);
+    mocks.runStage.mockImplementation(
+      (_stage, _prompt, _workspace, _iteration, _spill, _log, options) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener("abort", () =>
+            reject(new Error("aborted"))
+          );
+        })
+    );
+
+    const loop = runLoop(loopOptions(dirs, { maxRetries: 0 }));
+    await Promise.resolve();
+    await Promise.resolve();
+    faults.write = (data) => String(data).includes('"stage.completed"');
+
+    expect(() => process.emit("SIGINT")).toThrow("exit 130");
+
+    await loop.catch(() => {});
+    expect(exit).toHaveBeenCalledWith(130);
+    expect(mocks.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves with how the run ended", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+    await expect(runLoop(loopOptions(dirs))).resolves.toBe("no-more-tasks");
+
+    mocks.runStage.mockResolvedValue(ok("still working"));
+    await expect(runLoop(loopOptions(dirs))).resolves.toBe("cap");
+
+    mocks.runStage.mockRejectedValue(new Error("boom"));
+    await expect(runLoop(loopOptions(dirs, { maxRetries: 0 }))).resolves.toBe(
+      "failed"
+    );
+  });
+
+  it("refuses to start while another run of the workspace is live", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    // A run this very (node) process started and never ended: live by pid.
+    const live = openRunLog({
+      workspaceDir: dirs.workspaceDir,
+      bin: "ghafk",
+      started: {
+        pid: process.pid,
+        hostname: hostname(),
+        platform: process.platform,
+        wslDistro: process.env.WSL_DISTRO_NAME,
+        agent: "claude",
+        iterations: 5,
+        inputs: "",
+        version: "0.15.0",
+      },
+    });
+
+    try {
+      await expect(runLoop(loopOptions(dirs))).resolves.toBe("refused");
+    } finally {
+      live.close();
+    }
+
+    expect(mocks.acquire).not.toHaveBeenCalled();
+    expect(mocks.ensureImage).not.toHaveBeenCalled();
+    expect(mocks.runStage).not.toHaveBeenCalled();
+    expect(readStderr()).toContain(
+      `[refused] another ralph run is live in this workspace: pid ${process.pid} on ${hostname()}`
+    );
+    const refused = readRunLog(dirs.workspaceDir);
+    expect(refused.view.started?.runId).not.toBe(live.runId);
+    expect(refused.events.map((e) => e.type)).toEqual([
+      "run.started",
+      "run.ended",
+    ]);
+    expect(refused.view.ended).toMatchObject({
+      reason: "refused",
+      blockedBy: live.runId,
+    });
+    expect(historyFiles(dirs.workspaceDir, ".md")).toEqual([]);
+  });
+
+  it("does not block the next launch when its refusal cannot be logged", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const live = openRunLog({
+      workspaceDir: dirs.workspaceDir,
+      bin: "ghafk",
+      started: {
+        pid: process.pid,
+        hostname: hostname(),
+        platform: process.platform,
+        wslDistro: process.env.WSL_DISTRO_NAME,
+        agent: "claude",
+        iterations: 5,
+        inputs: "",
+        version: "0.15.0",
+      },
+    });
+    faults.write = (data) => String(data).includes('"refused"');
+
+    try {
+      await expect(runLoop(loopOptions(dirs))).rejects.toThrow("ENOSPC");
+    } finally {
+      faults.write = undefined;
+      live.close();
+    }
+
+    // The failed refusal's log never ended, but its launch is over: this
+    // process must not read it as a run it still has open.
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+    await expect(runLoop(loopOptions(dirs))).resolves.toBe("no-more-tasks");
+  });
+
+  it("refuses beside a live run written by a newer ralph", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const historyDir = join(dirs.workspaceDir, ".ralph", "history");
+    mkdirSync(historyDir, { recursive: true });
+    const newer = "2026-01-01-000000-ghafk";
+    writeFileSync(
+      join(historyDir, `${newer}.jsonl`),
+      `${JSON.stringify({ v: 2, seq: 1, at: "2026-01-01T00:00:00.000Z", type: "run.started" })}\n`
+    );
+
+    await expect(runLoop(loopOptions(dirs))).resolves.toBe("refused");
+
+    expect(mocks.acquire).not.toHaveBeenCalled();
+    expect(readStderr()).toContain(
+      "[refused] another ralph run is live in this workspace: written by a newer ralph"
+    );
+    expect(readRunLog(dirs.workspaceDir).view.ended).toMatchObject({
+      reason: "refused",
+      blockedBy: newer,
+    });
+  });
+
+  it("prunes older refused launches when it refuses too", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const identity = {
+      pid: process.pid,
+      hostname: hostname(),
+      platform: process.platform,
+      wslDistro: process.env.WSL_DISTRO_NAME,
+      agent: "claude",
+      iterations: 1,
+      inputs: "",
+      version: "0.15.0",
+    };
+    const at = (day: number) => new Date(Date.UTC(2026, 0, day));
+    for (const day of [1, 2, 3]) {
+      openRunLog({
+        workspaceDir: dirs.workspaceDir,
+        bin: "afk",
+        started: identity,
+        now: at(day),
+      }).append({
+        type: "run.ended",
+        reason: "refused",
+        completedIterations: 0,
+        blockedBy: "x",
+      });
+    }
+    const live = openRunLog({
+      workspaceDir: dirs.workspaceDir,
+      bin: "afk",
+      started: identity,
+      now: at(4),
+    });
+
+    try {
+      await expect(runLoop(loopOptions(dirs))).resolves.toBe("refused");
+    } finally {
+      live.close();
+    }
+
+    const self = readRunLog(dirs.workspaceDir).view.started!.runId;
+    expect(historyFiles(dirs.workspaceDir, ".jsonl")).toEqual([
+      `${live.runId}.jsonl`,
+      `${self}.jsonl`,
+    ]);
+  });
+
+  it("starts after a run whose log never ended once its process is gone", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const crashed = openRunLog({
+      workspaceDir: dirs.workspaceDir,
+      bin: "ghafk",
+      started: {
+        pid: 2 ** 31 - 1, // no such process
+        hostname: hostname(),
+        platform: process.platform,
+        wslDistro: process.env.WSL_DISTRO_NAME,
+        agent: "claude",
+        iterations: 5,
+        inputs: "",
+        version: "0.15.0",
+      },
+    });
+    crashed.close(); // killed: no run.ended
+
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+    await expect(runLoop(loopOptions(dirs))).resolves.toBe("no-more-tasks");
+  });
+
+  it("refuses while a container of a killed run is still running", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const killed = openRunLog({
+      workspaceDir: dirs.workspaceDir,
+      bin: "ghafk",
+      started: {
+        pid: 2 ** 31 - 1, // the host process is gone
+        hostname: hostname(),
+        platform: process.platform,
+        wslDistro: process.env.WSL_DISTRO_NAME,
+        agent: "claude",
+        iterations: 5,
+        inputs: "",
+        version: "0.15.0",
+      },
+    });
+    killed.close();
+    const orphan = {
+      runId: killed.runId,
+      name: `ralph-${killed.runId}-i2-s0-a1`,
+    };
+    mocks.runningRunContainers.mockReturnValue([orphan]);
+
+    await expect(runLoop(loopOptions(dirs))).resolves.toBe("refused");
+
+    expect(mocks.acquire).not.toHaveBeenCalled();
+    expect(mocks.ensureImage).not.toHaveBeenCalled();
+    expect(mocks.runStage).not.toHaveBeenCalled();
+    expect(readStderr()).toContain(
+      `[refused] run ${killed.runId} still has a running container (${orphan.name}); remove it: docker rm -f $(docker ps -aq --filter label=ralph.run=${killed.runId})`
+    );
+    expect(readRunLog(dirs.workspaceDir).view.ended).toMatchObject({
+      reason: "refused",
+      blockedBy: killed.runId,
+    });
+    expect(historyFiles(dirs.workspaceDir, ".md")).toEqual([]);
+  });
+
+  it("keeps only the newest 20 run logs", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    for (let k = 0; k < 22; k++) {
+      openRunLog({
+        workspaceDir: dirs.workspaceDir,
+        bin: "afk",
+        started: {
+          pid: process.pid,
+          hostname: hostname(),
+          platform: process.platform,
+          agent: "claude",
+          iterations: 1,
+          inputs: "",
+          version: "0.15.0",
+        },
+        now: new Date(Date.UTC(2026, 0, 1, 0, 0, k)),
+      }).append({ type: "run.ended", reason: "cap", completedIterations: 1 });
+    }
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+
+    await runLoop(loopOptions(dirs));
+
+    const left = historyFiles(dirs.workspaceDir, ".jsonl");
+    expect(left).toHaveLength(20);
+    expect(left[0]).toBe("2026-01-01-000003-afk.jsonl");
+    expect(readRunLog(dirs.workspaceDir).view.ended?.reason).toBe(
+      "no-more-tasks"
+    );
+  });
+
+  it("records the sandbox-install findings on run.ended", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    makeSandboxInstall(dirs.workspaceDir);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+
+    await runLoop(loopOptions(dirs));
+
+    expect(readRunLog(dirs.workspaceDir).view.ended?.findings).toEqual([
+      "node_modules/.modules.yaml storeDir: /home/agent/workspace/.pnpm-store/v3",
+    ]);
   });
 
   it("injects the previous run's history into the next implementer prompt", async () => {

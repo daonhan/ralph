@@ -31,7 +31,7 @@ Two entry points, same loop, different first stage:
 ## Read path (in this order)
 
 1. `packages/core/src/main.ts`, `gh-main.ts`, `run-bin.ts` — parse flags, pick agent, resolve dirs, call `runLoop`.
-2. `loop.ts` — the iteration driver, sentinel gate, retries, signals, history writes.
+2. `loop.ts` — the iteration driver, sentinel gate, retries, signals, history writes. `run-log.ts` — the `.jsonl` run event log `loop.ts` writes beside each history `.md` from before image setup: fsynced records, liveness, the one-live-run-per-workspace claim (exit 75), retention.
 3. `render.ts` — template tag expansion (`@include`, `@spill`, `` !?` ` ``, `` !` ` ``, `{{ INPUTS }}`). Runs shell on the **host**.
 4. `runner.ts` — `ensureImage` (inspect → pull → build) and `runStage` (tempfile prompt, `docker run`, JSONL stream, `{ text, meta }`).
 5. `agents/types.ts` then `agents/claude.ts` / `agents/codex.ts` — how each provider is invoked, mounted, and decoded.
