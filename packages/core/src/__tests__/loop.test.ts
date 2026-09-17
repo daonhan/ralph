@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -58,6 +57,7 @@ vi.mock("../stream-render.js", () => ({
 }));
 
 import { deriveStatus, hasSentinel, runLoop } from "../loop.js";
+import { reduceRunLog } from "../run-log.js";
 
 const stage: Stage = { name: "implementer", template: "stage.md" };
 const sentinel = "<promise>NO MORE TASKS</promise>";
@@ -129,6 +129,21 @@ function readHistory(workspaceDir: string): string {
   const dir = join(workspaceDir, ".ralph", "history");
   const md = readdirSync(dir).find((f) => f.endsWith(".md"));
   return readFileSync(join(dir, md!), "utf8");
+}
+
+/** Names in the history dir with the given extension, oldest run first. */
+function historyFiles(workspaceDir: string, ext: string): string[] {
+  return readdirSync(join(workspaceDir, ".ralph", "history"))
+    .filter((f) => f.endsWith(ext))
+    .sort();
+}
+
+/** The newest run's event log, folded. */
+function readRunLog(workspaceDir: string) {
+  const file = historyFiles(workspaceDir, ".jsonl").at(-1)!;
+  return reduceRunLog(
+    readFileSync(join(workspaceDir, ".ralph", "history", file), "utf8")
+  );
 }
 
 /**
@@ -508,6 +523,10 @@ describe("runLoop", () => {
 
     expect(capturedSignal?.aborted).toBe(true);
     await expect(loop).rejects.toThrow("image aborted");
+    expect(readRunLog(dirs.workspaceDir).view.ended).toMatchObject({
+      reason: "aborted",
+      signal: "SIGTERM",
+    });
     expect(mocks.runStage).not.toHaveBeenCalled();
     expect(mocks.release).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledWith(143);
@@ -548,8 +567,26 @@ describe("runLoop", () => {
     expect(text).toContain("Interrupted (SIGINT).");
     expect(text).not.toMatch(/--- ended/);
     expect(readStdout()).not.toContain("Ralph ended");
+    const atExit = readRunLog(dirs.workspaceDir);
+    expect(atExit.events.map((e) => e.type)).toEqual([
+      "run.started",
+      "stage.started",
+      "stage.completed",
+      "run.ended",
+    ]);
+    expect(atExit.view.entries[0]).toMatchObject({
+      status: "aborted",
+      dirty: "1 files — wip.txt",
+    });
+    expect(atExit.view.ended).toMatchObject({
+      reason: "aborted",
+      signal: "SIGINT",
+    });
 
     await loop; // let the aborted stage's rejection settle
+    // The loop kept going only because process.exit is mocked; the closed log
+    // took none of that.
+    expect(readRunLog(dirs.workspaceDir)).toEqual(atExit);
     expect(exit).toHaveBeenCalledWith(130);
     expect(mocks.release).toHaveBeenCalledTimes(1);
   });
@@ -599,7 +636,8 @@ describe("runLoop", () => {
       throw new Error(`exit ${code}`);
     }) as never);
     // Signal lands while the image is still resolving: history is not open and
-    // the `current` slot is empty, so the handler records nothing.
+    // the `current` slot is empty, so the handler records no entry — only the
+    // log's run.ended.
     mocks.ensureImage.mockImplementation((_ralphDir, options) => {
       return new Promise((_resolve, reject) => {
         options.signal.addEventListener("abort", () =>
@@ -613,7 +651,14 @@ describe("runLoop", () => {
     await Promise.resolve();
 
     expect(() => process.emit("SIGINT")).toThrow("exit 130");
-    expect(existsSync(join(dirs.workspaceDir, ".ralph"))).toBe(false);
+    expect(historyFiles(dirs.workspaceDir, ".md")).toEqual([]);
+    const log = readRunLog(dirs.workspaceDir);
+    expect(log.events.map((e) => e.type)).toEqual(["run.started", "run.ended"]);
+    expect(log.view.ended).toMatchObject({
+      reason: "aborted",
+      signal: "SIGINT",
+      completedIterations: 0,
+    });
 
     await expect(loop).rejects.toThrow("image aborted");
     expect(mocks.release).toHaveBeenCalledTimes(1);
@@ -852,7 +897,127 @@ describe("runLoop", () => {
     mocks.ensureImage.mockRejectedValue(new Error("no image"));
 
     await expect(runLoop(loopOptions(dirs))).rejects.toThrow("no image");
-    expect(existsSync(join(dirs.workspaceDir, ".ralph"))).toBe(false);
+    expect(historyFiles(dirs.workspaceDir, ".md")).toEqual([]);
+    // The event log still records the attempt and why it ended.
+    const log = readRunLog(dirs.workspaceDir);
+    expect(log.truncated).toBe(false);
+    expect(log.events.map((e) => e.type)).toEqual(["run.started", "run.ended"]);
+    expect(log.view.ended).toMatchObject({
+      reason: "error",
+      error: "no image",
+    });
+  });
+
+  it("logs run.started, each stage, and run.ended beside the history file", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+
+    await runLoop(loopOptions(dirs, { bin: "ralph-ghafk", inputs: "" }));
+
+    const log = readRunLog(dirs.workspaceDir);
+    expect(log.truncated).toBe(false);
+    expect(log.events.map((e) => e.type)).toEqual([
+      "run.started",
+      "stage.started",
+      "stage.completed",
+      "run.ended",
+    ]);
+    expect(log.view.started).toMatchObject({
+      pid: process.pid,
+      platform: process.platform,
+      bin: "ghafk",
+      agent: "claude",
+      iterations: 1,
+    });
+    expect(log.view.entries[0]).toMatchObject({
+      iteration: 1,
+      stage: "implementer",
+      status: "no-more-tasks",
+    });
+    expect(log.view.ended).toMatchObject({
+      reason: "no-more-tasks",
+      completedIterations: 1,
+    });
+    // One run, one base name for both files.
+    expect(historyFiles(dirs.workspaceDir, ".md")).toEqual([
+      `${log.view.started!.runId}.md`,
+    ]);
+  });
+
+  it("logs a skipped stage as completed without a start, then the cap", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const impl: Stage = { name: "implementer", template: "impl.md" };
+    const rev: Stage = { name: "reviewer", template: "rev.md" };
+    writeFileSync(join(dirs.packageDir, "templates", "impl.md"), "impl");
+    writeFileSync(join(dirs.packageDir, "templates", "rev.md"), "review");
+    makeCleanRepo(dirs.workspaceDir);
+    mocks.runStage.mockResolvedValue(ok("changed nothing"));
+
+    await runLoop(loopOptions(dirs, { stages: [impl, rev] as [Stage, Stage] }));
+
+    const { events, view } = readRunLog(dirs.workspaceDir);
+    expect(events.map((e) => e.type)).toEqual([
+      "run.started",
+      "stage.started",
+      "stage.completed",
+      "stage.completed",
+      "run.ended",
+    ]);
+    expect(view.entries.map((e) => e.status)).toEqual(["ok", "skipped"]);
+    expect(view.ended).toMatchObject({ reason: "cap", completedIterations: 1 });
+  });
+
+  it("logs each retry and a failed run", async () => {
+    vi.useFakeTimers();
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage
+      .mockRejectedValueOnce(new Error("first boom"))
+      .mockRejectedValue(new Error("final boom"));
+
+    const loop = runLoop(loopOptions(dirs, { maxRetries: 1 }));
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await loop;
+
+    const { events, view } = readRunLog(dirs.workspaceDir);
+    expect(events.map((e) => e.type)).toEqual([
+      "run.started",
+      "stage.started",
+      "stage.retry",
+      "stage.completed",
+      "run.ended",
+    ]);
+    expect(events[2]).toMatchObject({
+      iteration: 1,
+      stage: "implementer",
+      attempt: 1,
+      error: "first boom",
+      backoffMs: 5_000,
+    });
+    expect(view.entries[0]).toMatchObject({
+      status: "failed",
+      body: "final boom",
+      retries: 1,
+    });
+    expect(view.ended).toMatchObject({ reason: "failed" });
+    vi.useRealTimers();
+  });
+
+  it("records the sandbox-install findings on run.ended", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    makeSandboxInstall(dirs.workspaceDir);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+
+    await runLoop(loopOptions(dirs));
+
+    expect(readRunLog(dirs.workspaceDir).view.ended?.findings).toEqual([
+      "node_modules/.modules.yaml storeDir: /home/agent/workspace/.pnpm-store/v3",
+    ]);
   });
 
   it("injects the previous run's history into the next implementer prompt", async () => {

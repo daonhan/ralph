@@ -60,15 +60,25 @@ export function formatDuration(ms: number): string {
 }
 
 /**
- * The run file name: `<yyyy-MM-dd-HHmmss>-<bin>[-<branch>].md`. The branch (already
- * sanitized) is omitted with its separator when unknown (no git / detached HEAD).
+ * A run's base name: `<yyyy-MM-dd-HHmmss>-<bin>[-<branch>]`, shared by its `.md`
+ * history and its `.jsonl` event log. The branch (already sanitized) is omitted
+ * with its separator when unknown (no git / detached HEAD).
  */
+export function historyBaseName(
+  ts: string,
+  bin: string,
+  branch: string | undefined
+): string {
+  return branch ? `${ts}-${bin}-${branch}` : `${ts}-${bin}`;
+}
+
+/** The run file name: {@link historyBaseName} plus `.md`. */
 export function historyFileName(
   ts: string,
   bin: string,
   branch: string | undefined
 ): string {
-  return branch ? `${ts}-${bin}-${branch}.md` : `${ts}-${bin}.md`;
+  return `${historyBaseName(ts, bin, branch)}.md`;
 }
 
 /**
@@ -263,6 +273,8 @@ export type OpenHistoryOptions = {
   /** Rendered into an `inputs:` line when non-empty (afk); omitted for ghafk. */
   inputs: string;
   now?: Date;
+  /** The run log's base name, so both files pair up; derived from `now` when absent. */
+  baseName?: string;
 };
 
 export interface HistoryWriter {
@@ -281,7 +293,14 @@ export interface HistoryWriter {
  * count so callers pass only per-entry data.
  */
 export function openHistory(opts: OpenHistoryOptions): HistoryWriter {
-  const { workspaceDir, bin, iterations, inputs, now = new Date() } = opts;
+  const {
+    workspaceDir,
+    bin,
+    iterations,
+    inputs,
+    now = new Date(),
+    baseName,
+  } = opts;
 
   const historyDir = join(workspaceDir, ".ralph", "history");
   mkdirSync(historyDir, { recursive: true });
@@ -292,7 +311,9 @@ export function openHistory(opts: OpenHistoryOptions): HistoryWriter {
   const branch = rawBranch ? sanitizeBranch(rawBranch) : undefined;
   const filePath = join(
     historyDir,
-    historyFileName(fileTimestamp(now), bin, branch)
+    baseName
+      ? `${baseName}.md`
+      : historyFileName(fileTimestamp(now), bin, branch)
   );
 
   writeFileSync(
