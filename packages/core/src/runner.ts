@@ -604,7 +604,9 @@ export function resolveAgentVolumeArgs(adapter: AgentAdapter): string[] {
 /**
  * Name the stage container and label it `ralph.run=<runId>`. The label, not a
  * name pattern, is what to filter on: `docker ps -q --filter label=ralph.run=<runId>`
- * finds every container a run started, orphans from a killed client included.
+ * finds the stage containers a run started, orphans from a killed client
+ * included. The volume chown helper and containers the agent starts through
+ * docker.sock carry no label.
  */
 export function resolveContainerArgs(container?: StageContainer): string[] {
   if (!container) return [];
