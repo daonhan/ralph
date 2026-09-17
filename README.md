@@ -80,7 +80,7 @@ ralph/
 └── (playbooks live in packages/core/templates/ alongside the prompt templates)
 ```
 
-At runtime, the host workspace gets a `.ralph-tmp/` directory containing the per-iteration prompt files and `logs/*.ndjson`, plus a `.ralph/history/` directory holding one Markdown history file per run. Both are gitignored (`.ralph/history/` via its own `.gitignore`).
+At runtime, the host workspace gets a `.ralph-tmp/` directory containing the per-iteration prompt files and `logs/*.ndjson`, plus a `.ralph/history/` directory holding one Markdown history file and one `.jsonl` event log per run. Both are gitignored (`.ralph/history/` via its own `.gitignore`).
 
 ---
 
@@ -514,6 +514,19 @@ This forks into the background, holds an OS wake-lock so the host doesn't sleep,
 tail -f <workspace>/.ralph-tmp/logs/detached-*.log
 ```
 
+Each run also writes an append-only event log beside its Markdown history, with the same base name: `<workspace>/.ralph/history/<yyyy-MM-dd-HHmmss>-<bin>[-<branch>].jsonl`. It opens before image setup and gets a heartbeat every 30 s, so a script can tell from the file alone whether a run is still resolving its image, running, finished or dead, how long its stage and agent have been silent, and how it ended. The newest 20 logs that weren't refused are kept, plus the newest refused one. Schema, liveness rules and a PowerShell reader: [docs/ARCHITECTURE.md § Run event log](./docs/ARCHITECTURE.md#run-event-log).
+
+**One run per workspace.** A launch starts nothing and exits `75` while another run in the same workspace is live (`[refused] another ralph run is live in this workspace: …`) or a killed run's container is still running (`[refused] run <runId> still has a running container …`, followed by the `docker rm -f` command that clears it). A script should retry after a jittered wait.
+
+| Exit          | Meaning                                                                                                               |
+| ------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `0`           | `no-more-tasks` (sentinel) or the iteration cap                                                                       |
+| `1`           | The last iteration's stage failed after its retries, or an unexpected error; the log's `run.ended.reason` tells which |
+| `75`          | Refused: another run of this workspace is live, or a killed run's container is still running                          |
+| `130` / `143` | `Ctrl+C` (SIGINT) / SIGTERM                                                                                           |
+
+With `--detach` the parent exits `0` at once; the codes belong to the background process, whose refusal lands in the detached log and the `.jsonl`.
+
 Full per-OS notes (wake-lock mechanism, BurntToast install, WSL2 caveat, etc.) live in [`docs/keep-alive.md`](./docs/keep-alive.md).
 
 ---
@@ -688,7 +701,7 @@ To add another, drop a directory with a `SKILL.md` beside `ralph-tdd/`, name it 
 ## Stopping a run
 
 - **Natural stop:** implementer emits `<promise>NO MORE TASKS</promise>` on a line of its own.
-- **Manual stop:** `Ctrl+C`. `runLoop` installs `SIGINT` / `SIGTERM` handlers that abort the active stage (via `AbortController`, killing the docker child), release the OS wake-lock, fire the `--notify` toast if enabled, and exit `130` (SIGINT) / `143` (SIGTERM). Tempfiles under `.ralph-tmp/.run-*.md` and the per-stage `spill-*/` dir are removed by the `finally` block in `runner.ts`; a hard `SIGKILL` may leave them — safe to delete, gitignored.
+- **Manual stop:** `Ctrl+C`. `runLoop` installs `SIGINT` / `SIGTERM` handlers that abort the active stage (via `AbortController`, killing the docker child and removing its container), record `run.ended aborted` in the run log, release the OS wake-lock, fire the `--notify` toast if enabled, and exit `130` (SIGINT) / `143` (SIGTERM). Tempfiles under `.ralph-tmp/.run-*.md` and the per-stage `spill-*/` dir are removed by the `finally` block in `runner.ts`; a hard `SIGKILL` may leave them — safe to delete, gitignored.
 
 ---
 
@@ -740,7 +753,7 @@ To add another, drop a directory with a `SKILL.md` beside `ralph-tdd/`, name it 
   ```
 - **`docker pull failed … and no Dockerfile at …`** — the default image ref isn't reachable (offline, registry down, or you set a custom `$RALPH_IMAGE` that doesn't exist) AND no Dockerfile is at `$RALPH_DOCKER_CONTEXT`. Fix one of: connectivity, `RALPH_IMAGE`, or place a Dockerfile at `$RALPH_DOCKER_CONTEXT`.
 - **`pull access denied … repository does not exist`** — `$RALPH_IMAGE` points at a private repo or a typo. Either `docker login`, switch to a public image, or unset `RALPH_IMAGE` to use the default.
-- **Loop hangs after a stage's final assistant message (no next iteration, no error)** — the selected CLI inside the sandbox emitted its completion event but failed to exit. After `RALPH_RESULT_GRACE_MS` (default 30000ms), the runner kills the lingering docker child, keeps the captured completion, and continues the loop. Bump or disable the timer via the environment when diagnosing. To inspect or stop the container manually before the timer expires:
+- **Loop hangs after a stage's final assistant message (no next iteration, no error)** — the selected CLI inside the sandbox emitted its completion event but failed to exit. After `RALPH_RESULT_GRACE_MS` (default 30000ms), the runner kills the lingering docker child, removes its container, keeps the captured completion, and continues the loop. Bump or disable the timer via the environment when diagnosing. To inspect or stop the container manually before the timer expires:
   ```bash
   docker ps --filter ancestor=docker.io/daonhan/ralph-sandbox:latest
   docker kill <container-id>
