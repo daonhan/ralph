@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.16.0...ralph-core-v0.17.0) (2026-09-20)
+
+
+### Features
+
+* **core:** a model and an effort for each agent ([b338eac](https://github.com/daonhan/ralph/commit/b338eac9832c4802263480dd8423a8e284fe40db))
+* **core:** add --model/--effort flags and per-agent tuning env vars ([9c6693c](https://github.com/daonhan/ralph/commit/9c6693c3723348eb1c5e7d7433e386c7b2867161))
+* **core:** report the resolved model and effort ([28f692a](https://github.com/daonhan/ralph/commit/28f692aa66ead60b1b2962b5c3195b48288de1b5))
+
 ## [0.16.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.15.0...ralph-core-v0.16.0) (2026-09-17)
 
 
