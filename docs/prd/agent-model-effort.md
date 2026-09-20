@@ -129,7 +129,7 @@ A user who drives Ralph with Claude or Codex cannot say which model and which ef
 - **What makes a good test here.** The resolver, the validator and the argv builders are pure; tests pass literal flags, env objects and contexts and compare exact argv arrays, like the existing `builds isolated default args` (`agents.test.ts:448`). The loop is tested through its existing harness by reading the run log back through `reduceRunLog`. No test sets `process.env` without restoring it in `afterEach`.
 - **`agents.test.ts`.**
   - `resolveAgentTuning`: the precedence matrix for both agents (flag over per-agent over generic; the other agent's variables ignored; blank counts as unset).
-  - `validateAgentTuning`: each adapter's levels; `ultracode` rejected for Claude; `none` in `RALPH_EFFORT` rejected with the `RALPH_CODEX_EFFORT` hint, accepted in `RALPH_CODEX_EFFORT`; an empty model rejected; the message names the source.
+  - `validateAgentTuning`: each adapter's levels; `ultracode` rejected for Claude; `none` in `RALPH_EFFORT` rejected with the `RALPH_CODEX_EFFORT` hint, accepted in `RALPH_CODEX_EFFORT`; the message names the source. (The "empty model rejected" case is withdrawn — `resolveAgentTuning` trims and drops blanks, so it is unreachable without hand-constructing an `AgentTuning`. See the plan's slice-scope addendum §F.)
   - Claude argv: `--effort` right before the prompt, after `--model`; absent when unset; present under third-party routing with no `--model`; `--add-dir` still first.
   - Codex: an explicit model keeps `high` (the rewritten `:423` case); an explicit effort replaces it; `--codex-user-config` with an explicit effort sends `-c` and no model.
 - **`cli-help.test.ts`.** `--model`/`--effort` parse, reject a missing value and a `-`-prefixed value; help text lists both flags and the five variables; `describeAgentConfig` prints sources and the Claude `reasoning` line; an invalid effort is shown with `(invalid: …)`.
@@ -162,6 +162,8 @@ A user who drives Ralph with Claude or Codex cannot say which model and which ef
 3. Isolated Codex keeps `high` when only a model is given.
 4. The plugin covers BUILD, the cycle sessions and REVIEW (its own PRD).
 5. PRD and plan first; the owner decides when to implement.
+
+**Picked up for implementation 2026-09-20.** Two further plan-adversary passes ran against this committed pair; their findings, the corrections to the plan's work lists and acceptance criteria, and the sandbox line-ending prerequisite are in the plan's **Slice-scope addendum**. Where the addendum and this PRD disagree, the addendum wins.
 
 **Plan-adversary review (fix-first), folded in.**
 
