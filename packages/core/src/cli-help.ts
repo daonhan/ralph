@@ -4,8 +4,11 @@ import { fileURLToPath } from "node:url";
 
 import {
   parseAgentName,
+  resolveAgentTuning,
+  validateAgentTuning,
   type AgentName,
   type AgentSelectionSource,
+  type AgentTuning,
 } from "./agents/index.js";
 import {
   CLAUDE_HOME_VOLUME,
@@ -244,46 +247,132 @@ Build fallback runs only if pull fails AND $RALPH_DOCKER_CONTEXT/Dockerfile exis
 `);
 }
 
+/** What the run actually resolved to, recorded in `run.started`. */
+export type AgentConfigResolution = {
+  /** Absent when the container CLI resolves the model itself. */
+  model?: string;
+  modelSource: string;
+  /** Absent when the agent's own default applies. */
+  effort?: string;
+  effortSource: string;
+};
+
 export type AgentConfigDescription = {
   codexConfig?: string;
   model: string;
-  reasoning?: string;
+  reasoning: string;
+  resolved: AgentConfigResolution;
 };
+
+type EffortDescription = { display: string; value?: string; source: string };
+
+/**
+ * Describe a tuned effort, invalid levels included: `--print-config` reports a
+ * level the CLI would reject rather than throwing, since the printer is what a
+ * user reaches for to find out which variable supplied it. The allowed list is
+ * read back out of `validateAgentTuning`'s own message so the printer can never
+ * name a different list than the check that ends the run.
+ */
+function describeTunedEffort(
+  agent: AgentName,
+  tuning: AgentTuning
+): EffortDescription | undefined {
+  const tuned = tuning.effort;
+  if (!tuned) return undefined;
+  const allowed = validateAgentTuning(agent, tuning)?.match(
+    /expected one of ([^;]+)/
+  )?.[1];
+  const suffix = allowed ? `; invalid: allowed ${allowed}` : "";
+  return {
+    display: `${tuned.value} (${tuned.source}${suffix})`,
+    value: tuned.value,
+    source: tuned.source,
+  };
+}
 
 export function describeAgentConfig(
   agent: AgentName,
   codexUserConfig: boolean,
-  rawModel: string | undefined,
+  tuning: AgentTuning,
   hostClaudeModel?: HostClaudeModel
 ): AgentConfigDescription {
   if (agent === "claude") {
-    const resolution = resolveClaudeModel(rawModel, hostClaudeModel);
+    const resolution = resolveClaudeModel(tuning.model?.value, hostClaudeModel);
+    // Claude takes no effort default from Ralph: with none set, the CLI applies
+    // whatever the host settings' effortLevel says.
+    const effort = describeTunedEffort(agent, tuning) ?? {
+      display: "Claude CLI default (host settings effortLevel applies)",
+      source: "Claude CLI default",
+    };
+    // Both returns carry all four fields: a run.started with every one absent
+    // is how a consumer detects a Ralph too old to have honored the request.
     if (!resolution.model) {
       return {
         model: `container CLI default (host settings enable ${hostClaudeModel?.providerFlag})`,
+        reasoning: effort.display,
+        resolved: {
+          modelSource: resolution.modelSource,
+          effort: effort.value,
+          effortSource: effort.source,
+        },
       };
     }
-    const source =
+    const modelSource =
       resolution.modelSource === "host settings"
         ? "host ~/.claude/settings.json"
-        : resolution.modelSource;
+        : resolution.modelSource === "RALPH_MODEL"
+          ? (tuning.model?.source ?? resolution.modelSource)
+          : resolution.modelSource;
     const warning = hostClaudeModel?.unreadable
       ? `; host settings unreadable: ${hostClaudeModel.unreadable}`
       : "";
-    return { model: `${resolution.model} (${source}${warning})` };
+    return {
+      model: `${resolution.model} (${modelSource}${warning})`,
+      reasoning: effort.display,
+      resolved: {
+        model: resolution.model,
+        modelSource,
+        effort: effort.value,
+        effortSource: effort.source,
+      },
+    };
   }
 
-  const resolution = resolveCodexModel(rawModel, undefined, codexUserConfig);
+  const resolution = resolveCodexModel(
+    tuning.model?.value,
+    tuning.effort?.value,
+    codexUserConfig
+  );
+  const modelSource =
+    resolution.modelSource === "explicit"
+      ? (tuning.model?.source ?? resolution.modelSource)
+      : resolution.modelSource;
+  const effort =
+    describeTunedEffort(agent, tuning) ??
+    (resolution.reasoningEffort
+      ? {
+          display: `${resolution.reasoningEffort} (${resolution.reasoningSource})`,
+          value: resolution.reasoningEffort,
+          source: resolution.reasoningSource,
+        }
+      : {
+          display: resolution.reasoningSource,
+          source: resolution.reasoningSource,
+        });
   return {
     codexConfig: codexUserConfig
       ? "inherited (~/.codex/config.toml)"
       : "isolated (--ignore-user-config)",
     model: resolution.model
-      ? `${resolution.model} (${resolution.modelSource})`
+      ? `${resolution.model} (${modelSource})`
       : "user config (RALPH_MODEL unset)",
-    reasoning: resolution.reasoningEffort
-      ? `${resolution.reasoningEffort} (${resolution.reasoningSource})`
-      : resolution.reasoningSource,
+    reasoning: effort.display,
+    resolved: {
+      model: resolution.model,
+      modelSource,
+      effort: effort.value,
+      effortSource: effort.source,
+    },
   };
 }
 
@@ -297,6 +386,9 @@ export type PrintConfigOptions = {
   agent?: AgentName;
   agentSource?: AgentSelectionSource;
   codexUserConfig?: boolean;
+  /** `--model` / `--effort`, which outrank the env vars for this report too. */
+  model?: string;
+  effort?: string;
 };
 
 export function printConfig(
@@ -316,6 +408,8 @@ export function printConfig(
     agent = "claude",
     agentSource = "default",
     codexUserConfig = false,
+    model,
+    effort,
   } = opts;
   const dockerfile = resolveDockerfile(ralphDir);
   const dfPresent = existsSync(dockerfile);
@@ -380,7 +474,7 @@ export function printConfig(
   const provider = describeAgentConfig(
     agent,
     codexUserConfig,
-    process.env.RALPH_MODEL,
+    resolveAgentTuning(agent, { model, effort }, process.env),
     agent === "claude" ? readHostClaudeModel(resolveHostHome()) : undefined
   );
   const providerLines = [
@@ -389,9 +483,7 @@ export function printConfig(
       ? [`  codex config          ${provider.codexConfig}`]
       : []),
     `  model                 ${provider.model}`,
-    ...(provider.reasoning
-      ? [`  reasoning             ${provider.reasoning}`]
-      : []),
+    `  reasoning             ${provider.reasoning}`,
   ].join("\n");
 
   process.stdout.write(`[${bin}] resolved config

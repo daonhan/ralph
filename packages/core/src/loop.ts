@@ -9,7 +9,9 @@ import {
   type AgentName,
   type StageMeta,
 } from "./agents/index.js";
-import { readCoreVersion } from "./cli-help.js";
+import { readHostClaudeModel } from "./agents/claude.js";
+import { resolveHostHome } from "./agents/shared.js";
+import { describeAgentConfig, readCoreVersion } from "./cli-help.js";
 import {
   dirtySnapshot,
   formatDuration,
@@ -233,6 +235,14 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
       iterations,
       inputs,
       version: coreVersion,
+      // Same helper `--print-config` prints, so the log and the report can
+      // never disagree. Synchronous: the host settings read adds no await.
+      ...describeAgentConfig(
+        agent,
+        codexUserConfig,
+        tuning,
+        agent === "claude" ? readHostClaudeModel(resolveHostHome()) : undefined
+      ).resolved,
     },
   });
 

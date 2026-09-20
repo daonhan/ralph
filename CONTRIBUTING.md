@@ -208,10 +208,15 @@ See [`./docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full runtime mode
 
 A provider implements the adapter contracts in `agents/types.ts`: command construction,
 selected-provider credential mounts and environment, the named volumes it keeps across
-containers (`volumeMounts`; `[]` when it needs none), and a JSONL decoder that emits normalized
-events plus one terminal completion or failure. Register it in `agents/index.ts`; do not branch
-the loop or renderer by provider. `runLoop` remains provider-neutral and continues to gate only
-on the first stage's returned completion text.
+containers (`volumeMounts`; `[]` when it needs none), the reasoning-effort levels its CLI
+accepts (`effortLevels`, checked before any stage runs), and a JSONL decoder that emits
+normalized events plus one terminal completion or failure. Register it in `agents/index.ts`;
+do not branch the loop or renderer by provider. `RALPH_<AGENT>_MODEL` and
+`RALPH_<AGENT>_EFFORT` come for free: `resolveAgentTuning` derives both names from the agent
+name, and `SHARED_EFFORT_LEVELS` — what the agent-agnostic `RALPH_EFFORT` accepts — is the
+intersection of every registered adapter's `effortLevels`, so a narrow new list narrows it.
+`runLoop` remains provider-neutral and continues to gate only on the first stage's returned
+completion text.
 
 ## Adding a pipeline stage
 

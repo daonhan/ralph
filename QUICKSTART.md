@@ -119,9 +119,12 @@ transcripts are not persisted either.
 
 Codex ignores the rest of `~/.codex/config.toml` by default. Use
 `--codex-user-config` only when you intentionally want its model settings, MCP
-servers, and hooks inside the Linux sandbox. `RALPH_MODEL` applies to either
-provider; without it, isolated Codex uses `gpt-5.6-sol` with high reasoning.
-An explicit invalid model fails the stage rather than falling back.
+servers, and hooks inside the Linux sandbox. `--model <name>` and
+`--effort <level>` set both for the selected agent (`RALPH_CODEX_MODEL` /
+`RALPH_CODEX_EFFORT` for Codex alone, `RALPH_MODEL` / `RALPH_EFFORT` for
+whichever agent runs); without them, isolated Codex uses `gpt-5.6-sol` with
+`high` reasoning, and keeps that `high` even when you name a model. An explicit
+invalid model fails the stage rather than falling back.
 
 ### GitHub login (`ralph-ghafk` only)
 

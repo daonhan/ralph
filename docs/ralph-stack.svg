@@ -75,7 +75,7 @@
   <rect x="376" y="316" width="304" height="92" rx="10" class="card-cli"/>
   <text x="392" y="342" class="card-t">⚙ Env knobs</text>
   <text x="392" y="362" class="card-d">RALPH_AGENT · RALPH_WORKSPACE ·</text>
-  <text x="392" y="378" class="card-d">RALPH_IMAGE · RALPH_MODEL</text>
+  <text x="392" y="378" class="card-d">RALPH_IMAGE · RALPH_MODEL · RALPH_EFFORT</text>
 
   <!-- Template Layer -->
   <rect x="736" y="160" width="672" height="270" rx="16" class="layer"/>

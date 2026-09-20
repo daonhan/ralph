@@ -90,6 +90,8 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
       agent: selection.agent,
       agentSource: selection.source,
       codexUserConfig: flags.codexUserConfig,
+      model: flags.model,
+      effort: flags.effort,
     });
     return;
   }
