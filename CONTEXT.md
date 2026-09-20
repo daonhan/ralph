@@ -56,7 +56,8 @@ Deeper: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the end-to-end data flo
 | Knob                                    | Purpose                                                  |
 | --------------------------------------- | -------------------------------------------------------- |
 | `--agent claude\|codex` / `RALPH_AGENT` | Provider selection                                       |
-| `RALPH_MODEL`                           | Model override for the selected provider                 |
+| `--model` / `RALPH_MODEL`               | Model for the selected agent; also `RALPH_<AGENT>_MODEL` |
+| `--effort` / `RALPH_EFFORT`             | Reasoning effort; also `RALPH_<AGENT>_EFFORT`            |
 | `RALPH_WORKSPACE`                       | Target repo (default cwd)                                |
 | `RALPH_IMAGE` / `RALPH_DOCKER_CONTEXT`  | Sandbox image ref / build-fallback context               |
 | `RALPH_DOCKER_SOCK=0`                   | Disable host Docker socket mount                         |

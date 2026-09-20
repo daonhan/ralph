@@ -39,77 +39,209 @@ describe("parseFlags agent options", () => {
       'Unsupported agent "gemini"; expected "claude" or "codex"'
     );
   });
+
+  it("parses --model and --effort", () => {
+    expect(
+      parseFlags(["--model", "gpt-custom", "--effort", "xhigh", "2"])
+    ).toMatchObject({
+      model: "gpt-custom",
+      effort: "xhigh",
+      rest: ["2"],
+    });
+  });
+
+  it("rejects a missing --model value", () => {
+    expect(() => parseFlags(["--model"])).toThrow("--model requires a value");
+    expect(() => parseFlags(["--model", "--notify"])).toThrow(
+      "--model requires a value"
+    );
+  });
+
+  it("rejects a missing --effort value", () => {
+    expect(() => parseFlags(["--effort"])).toThrow("--effort requires a value");
+    expect(() => parseFlags(["--effort", "--notify"])).toThrow(
+      "--effort requires a value"
+    );
+  });
+
+  // parseFlags cannot check the level: the agent may still come from
+  // RALPH_AGENT, and each agent takes a different set. runLoop checks it.
+  it("leaves an unknown effort level for the loop to reject", () => {
+    expect(parseFlags(["--effort", "turbo", "2"])).toMatchObject({
+      effort: "turbo",
+    });
+  });
 });
 
 describe("describeAgentConfig", () => {
-  it("describes the Ralph Claude default when no model is set anywhere", () => {
-    expect(describeAgentConfig("claude", false, undefined)).toEqual({
+  it("describes the Ralph Claude default when nothing is tuned anywhere", () => {
+    expect(describeAgentConfig("claude", false, {})).toEqual({
       model: `${DEFAULT_CLAUDE_MODEL} (Ralph default)`,
+      reasoning: "Claude CLI default (host settings effortLevel applies)",
+      resolved: {
+        model: DEFAULT_CLAUDE_MODEL,
+        modelSource: "Ralph default",
+        effortSource: "Claude CLI default",
+      },
     });
   });
 
   it("describes the host-settings Claude model", () => {
     expect(
-      describeAgentConfig("claude", false, undefined, {
-        model: "claude-opus-5[1m]",
-      })
-    ).toEqual({
+      describeAgentConfig("claude", false, {}, { model: "claude-opus-5[1m]" })
+    ).toMatchObject({
       model: "claude-opus-5[1m] (host ~/.claude/settings.json)",
+      resolved: {
+        model: "claude-opus-5[1m]",
+        modelSource: "host ~/.claude/settings.json",
+      },
     });
   });
 
-  it("lets RALPH_MODEL win over the host-settings Claude model", () => {
+  it("lets a tuned model win over the host-settings Claude model, named by its source", () => {
     expect(
-      describeAgentConfig("claude", false, " claude-opus-5 ", {
-        model: "claude-fable-5[1m]",
+      describeAgentConfig(
+        "claude",
+        false,
+        { model: { value: "claude-opus-5", source: "RALPH_CLAUDE_MODEL" } },
+        { model: "claude-fable-5[1m]" }
+      )
+    ).toMatchObject({
+      model: "claude-opus-5 (RALPH_CLAUDE_MODEL)",
+      resolved: {
+        model: "claude-opus-5",
+        modelSource: "RALPH_CLAUDE_MODEL",
+      },
+    });
+  });
+
+  it("names --effort as the Claude reasoning source", () => {
+    expect(
+      describeAgentConfig("claude", false, {
+        effort: { value: "xhigh", source: "--effort" },
       })
-    ).toEqual({
-      model: "claude-opus-5 (RALPH_MODEL)",
+    ).toMatchObject({
+      reasoning: "xhigh (--effort)",
+      resolved: { effort: "xhigh", effortSource: "--effort" },
+    });
+  });
+
+  it("flags a Claude effort level the CLI does not take", () => {
+    expect(
+      describeAgentConfig("claude", false, {
+        effort: { value: "none", source: "RALPH_EFFORT" },
+      })
+    ).toMatchObject({
+      reasoning:
+        "none (RALPH_EFFORT; invalid: allowed low|medium|high|xhigh|max)",
+      resolved: { effort: "none", effortSource: "RALPH_EFFORT" },
     });
   });
 
   it("reports that third-party routing leaves the model to the container", () => {
     expect(
-      describeAgentConfig("claude", false, undefined, {
-        providerFlag: "CLAUDE_CODE_USE_BEDROCK",
-      })
+      describeAgentConfig(
+        "claude",
+        false,
+        {},
+        { providerFlag: "CLAUDE_CODE_USE_BEDROCK" }
+      )
     ).toEqual({
       model:
         "container CLI default (host settings enable CLAUDE_CODE_USE_BEDROCK)",
+      reasoning: "Claude CLI default (host settings effortLevel applies)",
+      resolved: {
+        modelSource: "host provider config",
+        effortSource: "Claude CLI default",
+      },
+    });
+  });
+
+  // The run log's consumers read all four fields absent as "an older Ralph
+  // ignored the request", so this branch has to carry both sources too.
+  it("keeps both sources on the third-party branch when an effort is tuned", () => {
+    expect(
+      describeAgentConfig(
+        "claude",
+        false,
+        { effort: { value: "max", source: "--effort" } },
+        { providerFlag: "CLAUDE_CODE_USE_VERTEX" }
+      )
+    ).toEqual({
+      model:
+        "container CLI default (host settings enable CLAUDE_CODE_USE_VERTEX)",
+      reasoning: "max (--effort)",
+      resolved: {
+        modelSource: "host provider config",
+        effort: "max",
+        effortSource: "--effort",
+      },
     });
   });
 
   it("flags an unreadable host settings file next to the fallback model", () => {
     expect(
-      describeAgentConfig("claude", false, undefined, {
-        unreadable: "/home/me/.claude/settings.json (invalid JSON)",
-      })
-    ).toEqual({
+      describeAgentConfig(
+        "claude",
+        false,
+        {},
+        { unreadable: "/home/me/.claude/settings.json (invalid JSON)" }
+      )
+    ).toMatchObject({
       model: `${DEFAULT_CLAUDE_MODEL} (Ralph default; host settings unreadable: /home/me/.claude/settings.json (invalid JSON))`,
+      resolved: { modelSource: "Ralph default" },
     });
   });
 
   it("describes isolated Codex defaults", () => {
-    expect(describeAgentConfig("codex", false, undefined)).toEqual({
+    expect(describeAgentConfig("codex", false, {})).toEqual({
       codexConfig: "isolated (--ignore-user-config)",
       model: "gpt-5.6-sol (Ralph default)",
       reasoning: "high (Ralph default)",
+      resolved: {
+        model: "gpt-5.6-sol",
+        modelSource: "Ralph default",
+        effort: "high",
+        effortSource: "Ralph default",
+      },
     });
   });
 
   it("describes inherited Codex config", () => {
-    expect(describeAgentConfig("codex", true, undefined)).toEqual({
+    expect(describeAgentConfig("codex", true, {})).toEqual({
       codexConfig: "inherited (~/.codex/config.toml)",
       model: "user config (RALPH_MODEL unset)",
       reasoning: "user config",
+      resolved: { modelSource: "user config", effortSource: "user config" },
     });
   });
 
-  it("describes an explicit Codex model", () => {
-    expect(describeAgentConfig("codex", false, " gpt-custom ")).toEqual({
+  it("describes an explicit Codex model with the Ralph effort default", () => {
+    expect(
+      describeAgentConfig("codex", false, {
+        model: { value: "gpt-custom", source: "RALPH_CODEX_MODEL" },
+      })
+    ).toEqual({
       codexConfig: "isolated (--ignore-user-config)",
-      model: "gpt-custom (RALPH_MODEL)",
-      reasoning: "Codex CLI default",
+      model: "gpt-custom (RALPH_CODEX_MODEL)",
+      reasoning: "high (Ralph default)",
+      resolved: {
+        model: "gpt-custom",
+        modelSource: "RALPH_CODEX_MODEL",
+        effort: "high",
+        effortSource: "Ralph default",
+      },
+    });
+  });
+
+  it("names a Codex-only effort level by its own variable", () => {
+    expect(
+      describeAgentConfig("codex", false, {
+        effort: { value: "none", source: "RALPH_CODEX_EFFORT" },
+      })
+    ).toMatchObject({
+      reasoning: "none (RALPH_CODEX_EFFORT)",
+      resolved: { effort: "none", effortSource: "RALPH_CODEX_EFFORT" },
     });
   });
 });
@@ -124,6 +256,11 @@ it("documents both new flags and RALPH_AGENT", () => {
   expect(output).toContain("--codex-user-config");
   expect(output).toContain("RALPH_AGENT");
   expect(output).toContain("gpt-5.6-sol");
+  expect(output).toContain("--model <name>");
+  expect(output).toContain("--effort <level>");
+  expect(output).toContain("RALPH_CLAUDE_MODEL");
+  expect(output).toContain("RALPH_CODEX_EFFORT");
+  expect(output).toContain("RALPH_EFFORT");
 });
 
 it("prints the history dir under the resolved workspace", () => {
@@ -278,5 +415,57 @@ describe("printConfig node_modules isolation", () => {
       "node_modules          isolation on, but this workspace has no package.json — nothing mounted"
     );
     expect(output).not.toContain("isolated in");
+  });
+});
+
+describe("printConfig model and effort", () => {
+  const KNOBS = ["RALPH_EFFORT", "RALPH_MODEL"] as const;
+  const original = KNOBS.map((knob) => [knob, process.env[knob]] as const);
+
+  function capture(opts = {}): string {
+    const write = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    printConfig("ralph-afk", "/repo", "/ctx", "/pkg", opts);
+    return write.mock.calls.map((call) => String(call[0])).join("");
+  }
+
+  afterEach(() => {
+    for (const [knob, value] of original) {
+      if (value === undefined) delete process.env[knob];
+      else process.env[knob] = value;
+    }
+  });
+
+  it("names --effort as the Codex reasoning source", () => {
+    for (const knob of KNOBS) delete process.env[knob];
+    expect(capture({ agent: "codex", effort: "max" })).toContain(
+      "  reasoning             max (--effort)\n"
+    );
+  });
+
+  it("prints a reasoning line for Claude too", () => {
+    for (const knob of KNOBS) delete process.env[knob];
+    expect(capture()).toContain(
+      "  reasoning             Claude CLI default (host settings effortLevel applies)\n"
+    );
+  });
+
+  // A bad level ends a run, but never --print-config: the printer is what a
+  // user reaches for to see which variable supplied it.
+  it("reports an unusable RALPH_EFFORT without throwing", () => {
+    delete process.env.RALPH_MODEL;
+    process.env.RALPH_EFFORT = "none";
+    expect(capture()).toContain(
+      "  reasoning             none (RALPH_EFFORT; invalid: allowed low|medium|high|xhigh|max)\n"
+    );
+  });
+
+  it("names the variable a Codex model came from", () => {
+    delete process.env.RALPH_EFFORT;
+    process.env.RALPH_MODEL = "gpt-custom";
+    expect(capture({ agent: "codex" })).toContain(
+      "  model                 gpt-custom (RALPH_MODEL)\n"
+    );
   });
 });

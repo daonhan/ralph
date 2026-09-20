@@ -8,6 +8,9 @@ import {
   getAgentAdapter,
   parseAgentName,
   resolveAgentSelection,
+  resolveAgentTuning,
+  SHARED_EFFORT_LEVELS,
+  validateAgentTuning,
 } from "../agents/index.js";
 import {
   buildClaudeArgs,
@@ -156,6 +159,7 @@ describe("Claude adapter", () => {
       stage,
       promptInstruction,
       rawModel: "opus",
+      rawEffort: undefined,
       codexUserConfig: false,
       home: "",
       skillsMounted: true,
@@ -174,6 +178,7 @@ describe("Claude adapter", () => {
       stage,
       promptInstruction,
       rawModel: "opus",
+      rawEffort: undefined,
       codexUserConfig: false,
       home: "",
     };
@@ -344,6 +349,7 @@ describe("Claude host model resolution", () => {
       stage,
       promptInstruction,
       rawModel: undefined,
+      rawEffort: undefined,
       codexUserConfig: false,
       home,
     });
@@ -361,6 +367,7 @@ describe("Claude host model resolution", () => {
       stage,
       promptInstruction,
       rawModel: " claude-opus-5 ",
+      rawEffort: undefined,
       codexUserConfig: false,
       home,
     });
@@ -383,6 +390,7 @@ describe("Claude host model resolution", () => {
         stage,
         promptInstruction,
         rawModel: undefined,
+        rawEffort: undefined,
         codexUserConfig: false,
         home,
       });
@@ -396,16 +404,209 @@ describe("Claude host model resolution", () => {
       stage,
       promptInstruction,
       rawModel: undefined,
+      rawEffort: undefined,
       codexUserConfig: false,
       home: makeHome('{ "env": { "CLAUDE_CODE_USE_BEDROCK": "1" } }'),
     });
     expect(args).not.toContain("--model");
   });
+
+  it("sends --effort after --model and right before the prompt", () => {
+    const args = getAgentAdapter("claude").buildCommand({
+      stage,
+      promptInstruction,
+      rawModel: "claude-opus-5",
+      rawEffort: "xhigh",
+      codexUserConfig: false,
+      home: makeHome(),
+    });
+    expect(args.slice(-5)).toEqual([
+      "--model",
+      "claude-opus-5",
+      "--effort",
+      "xhigh",
+      promptInstruction,
+    ]);
+  });
+
+  it("sends no --effort when none was tuned", () => {
+    const args = getAgentAdapter("claude").buildCommand({
+      stage,
+      promptInstruction,
+      rawModel: "claude-opus-5",
+      rawEffort: undefined,
+      codexUserConfig: false,
+      home: makeHome(),
+    });
+    expect(args).not.toContain("--effort");
+  });
+
+  // Third-party routing drops --model, so --effort becomes the last flag
+  // before the prompt positional — and --add-dir, being variadic, must still
+  // lead or it would swallow that prompt.
+  it("sends --effort with no --model under third-party routing", () => {
+    const args = getAgentAdapter("claude").buildCommand({
+      stage,
+      promptInstruction,
+      rawModel: undefined,
+      rawEffort: "max",
+      codexUserConfig: false,
+      home: makeHome('{ "env": { "CLAUDE_CODE_USE_BEDROCK": "1" } }'),
+      skillsMounted: true,
+    });
+    expect(args).not.toContain("--model");
+    expect(args.slice(-3)).toEqual(["--effort", "max", promptInstruction]);
+    expect(args.indexOf("--add-dir")).toBe(args.indexOf("claude") + 1);
+  });
+});
+
+describe("agent tuning", () => {
+  const env = (extra: Record<string, string>): NodeJS.ProcessEnv => extra;
+
+  it("prefers the flag, then the agent's variable, then the generic one", () => {
+    expect(
+      resolveAgentTuning(
+        "codex",
+        { effort: "low" },
+        env({ RALPH_CODEX_EFFORT: "high", RALPH_EFFORT: "max" })
+      ).effort
+    ).toEqual({ value: "low", source: "--effort" });
+    expect(
+      resolveAgentTuning(
+        "codex",
+        {},
+        env({ RALPH_CODEX_EFFORT: "high", RALPH_EFFORT: "max" })
+      ).effort
+    ).toEqual({ value: "high", source: "RALPH_CODEX_EFFORT" });
+    expect(
+      resolveAgentTuning("codex", {}, env({ RALPH_EFFORT: "max" })).effort
+    ).toEqual({ value: "max", source: "RALPH_EFFORT" });
+  });
+
+  it("ignores the other agent's variables", () => {
+    expect(
+      resolveAgentTuning(
+        "codex",
+        {},
+        env({ RALPH_CLAUDE_MODEL: "claude-opus-5", RALPH_CLAUDE_EFFORT: "max" })
+      )
+    ).toEqual({});
+    expect(
+      resolveAgentTuning(
+        "claude",
+        {},
+        env({ RALPH_CODEX_MODEL: "gpt-5.6-sol", RALPH_CODEX_EFFORT: "none" })
+      )
+    ).toEqual({});
+  });
+
+  it("trims values and counts a blank one as unset", () => {
+    expect(
+      resolveAgentTuning(
+        "claude",
+        { model: "  " },
+        env({ RALPH_CLAUDE_MODEL: "\t\n", RALPH_MODEL: "  claude-opus-5  " })
+      ).model
+    ).toEqual({ value: "claude-opus-5", source: "RALPH_MODEL" });
+  });
+
+  it("resolves model and effort independently", () => {
+    expect(
+      resolveAgentTuning(
+        "claude",
+        { effort: "max" },
+        env({ RALPH_MODEL: "claude-opus-5" })
+      )
+    ).toEqual({
+      model: { value: "claude-opus-5", source: "RALPH_MODEL" },
+      effort: { value: "max", source: "--effort" },
+    });
+  });
+});
+
+describe("agent tuning validation", () => {
+  const fromFlag = (value: string) => ({
+    effort: { value, source: "--effort" },
+  });
+
+  it("accepts every level each adapter declares", () => {
+    for (const agent of ["claude", "codex"] as const) {
+      for (const level of getAgentAdapter(agent).effortLevels) {
+        expect(validateAgentTuning(agent, fromFlag(level))).toBeUndefined();
+      }
+    }
+  });
+
+  it("accepts a tuning with no effort, and never checks the model", () => {
+    expect(validateAgentTuning("claude", {})).toBeUndefined();
+    expect(
+      validateAgentTuning("claude", {
+        model: { value: "no-such-model", source: "--model" },
+      })
+    ).toBeUndefined();
+  });
+
+  // ultracode starts workflow orchestration, which an unattended stage cannot
+  // steer — so it is deliberately absent from the Claude list.
+  it("rejects ultracode for Claude, naming the flag and the levels", () => {
+    expect(validateAgentTuning("claude", fromFlag("ultracode"))).toBe(
+      "--effort=ultracode is not a claude effort level; expected one of low|medium|high|xhigh|max"
+    );
+  });
+
+  it("checks a per-agent variable against that agent's own levels (B)", () => {
+    expect(
+      validateAgentTuning("codex", {
+        effort: { value: "ultracode", source: "RALPH_CODEX_EFFORT" },
+      })
+    ).toBe(
+      "RALPH_CODEX_EFFORT=ultracode is not a codex effort level; expected one of none|minimal|low|medium|high|xhigh|max"
+    );
+    expect(
+      validateAgentTuning("codex", {
+        effort: { value: "none", source: "RALPH_CODEX_EFFORT" },
+      })
+    ).toBeUndefined();
+  });
+
+  // The gate on SHARED_EFFORT_LEVELS: Claude's five levels are a strict subset
+  // of Codex's seven, so every Claude-side assertion here reads the same if the
+  // intersection were never computed. Mutation: replace the intersection with
+  // `getAgentAdapter(agent).effortLevels` — this case must go red.
+  it("rejects a Codex-only level from the generic variable, with the hint (A1)", () => {
+    expect(
+      validateAgentTuning("codex", {
+        effort: { value: "none", source: "RALPH_EFFORT" },
+      })
+    ).toBe(
+      "RALPH_EFFORT=none is not an effort level every agent accepts; expected one of low|medium|high|xhigh|max; set RALPH_CODEX_EFFORT=none for a codex effort level"
+    );
+  });
+
+  it("drops the hint when no adapter accepts the level (A2)", () => {
+    expect(
+      validateAgentTuning("codex", {
+        effort: { value: "turbo", source: "RALPH_EFFORT" },
+      })
+    ).toBe(
+      "RALPH_EFFORT=turbo is not an effort level every agent accepts; expected one of low|medium|high|xhigh|max"
+    );
+  });
+
+  it("shares only the levels every adapter declares", () => {
+    expect([...SHARED_EFFORT_LEVELS]).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+  });
 });
 
 describe("Codex adapter", () => {
   it("resolves the isolated Sol/high default", () => {
-    expect(resolveCodexModel(undefined, false)).toEqual({
+    expect(resolveCodexModel(undefined, undefined, false)).toEqual({
       model: DEFAULT_CODEX_MODEL,
       modelSource: "Ralph default",
       reasoningEffort: DEFAULT_CODEX_REASONING_EFFORT,
@@ -414,22 +615,37 @@ describe("Codex adapter", () => {
   });
 
   it("leaves model and effort to inherited user config", () => {
-    expect(resolveCodexModel(undefined, true)).toEqual({
+    expect(resolveCodexModel(undefined, undefined, true)).toEqual({
       modelSource: "user config",
       reasoningSource: "user config",
     });
   });
 
-  it("uses an explicit model without adding the Ralph effort default", () => {
-    expect(resolveCodexModel(" gpt-custom ", false)).toEqual({
+  it("resolves an explicit model with the Ralph high default", () => {
+    expect(resolveCodexModel(" gpt-custom ", undefined, false)).toEqual({
       model: "gpt-custom",
-      modelSource: "RALPH_MODEL",
-      reasoningSource: "Codex CLI default",
+      modelSource: "explicit",
+      reasoningEffort: DEFAULT_CODEX_REASONING_EFFORT,
+      reasoningSource: "Ralph default",
     });
-    expect(resolveCodexModel(" gpt-custom ", true)).toEqual({
+    expect(resolveCodexModel(" gpt-custom ", undefined, true)).toEqual({
       model: "gpt-custom",
-      modelSource: "RALPH_MODEL",
+      modelSource: "explicit",
       reasoningSource: "user config",
+    });
+  });
+
+  it("resolves an explicit effort over both defaults", () => {
+    expect(resolveCodexModel(undefined, " minimal ", false)).toEqual({
+      model: DEFAULT_CODEX_MODEL,
+      modelSource: "Ralph default",
+      reasoningEffort: "minimal",
+      reasoningSource: "explicit",
+    });
+    expect(resolveCodexModel(undefined, "minimal", true)).toEqual({
+      modelSource: "user config",
+      reasoningEffort: "minimal",
+      reasoningSource: "explicit",
     });
   });
 
@@ -451,6 +667,7 @@ describe("Codex adapter", () => {
         stage,
         promptInstruction,
         rawModel: undefined,
+        rawEffort: undefined,
         codexUserConfig: false,
         home: "",
       })
@@ -478,6 +695,7 @@ describe("Codex adapter", () => {
         stage,
         promptInstruction,
         rawModel: undefined,
+        rawEffort: undefined,
         codexUserConfig: true,
         home: "",
       })
@@ -494,12 +712,13 @@ describe("Codex adapter", () => {
     ]);
   });
 
-  it("builds explicit-model args without a fallback effort", () => {
+  it("builds explicit-model args with the high default", () => {
     expect(
       buildCodexArgs({
         stage,
         promptInstruction,
         rawModel: " gpt-custom ",
+        rawEffort: undefined,
         codexUserConfig: false,
         home: "",
       })
@@ -515,6 +734,61 @@ describe("Codex adapter", () => {
       "--ignore-user-config",
       "--model",
       "gpt-custom",
+      "-c",
+      'model_reasoning_effort="high"',
+      promptInstruction,
+    ]);
+  });
+
+  it("builds explicit-effort args", () => {
+    expect(
+      buildCodexArgs({
+        stage,
+        promptInstruction,
+        rawModel: undefined,
+        rawEffort: "xhigh",
+        codexUserConfig: false,
+        home: "",
+      })
+    ).toEqual([
+      "bash",
+      "-c",
+      setupScript,
+      "codex",
+      "exec",
+      "--json",
+      "--ephemeral",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--ignore-user-config",
+      "--model",
+      DEFAULT_CODEX_MODEL,
+      "-c",
+      'model_reasoning_effort="xhigh"',
+      promptInstruction,
+    ]);
+  });
+
+  it("sends an explicit effort and no model under --codex-user-config", () => {
+    expect(
+      buildCodexArgs({
+        stage,
+        promptInstruction,
+        rawModel: undefined,
+        rawEffort: "low",
+        codexUserConfig: true,
+        home: "",
+      })
+    ).toEqual([
+      "bash",
+      "-c",
+      setupScript,
+      "codex",
+      "exec",
+      "--json",
+      "--ephemeral",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "-c",
+      'model_reasoning_effort="low"',
       promptInstruction,
     ]);
   });
@@ -544,6 +818,7 @@ describe("Codex adapter", () => {
         stage,
         promptInstruction,
         rawModel: undefined,
+        rawEffort: undefined,
         codexUserConfig: false,
         home: "",
       });
@@ -583,6 +858,7 @@ describe("Codex adapter", () => {
       stage,
       promptInstruction,
       rawModel: undefined,
+      rawEffort: undefined,
       codexUserConfig: false,
       home: "",
     };

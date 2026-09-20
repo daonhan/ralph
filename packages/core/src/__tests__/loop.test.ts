@@ -315,6 +315,8 @@ describe("runLoop", () => {
       loopOptions(dirs, {
         agent: "codex",
         codexUserConfig: true,
+        model: "gpt-custom",
+        effort: "xhigh",
       })
     );
 
@@ -330,8 +332,62 @@ describe("runLoop", () => {
         codexUserConfig: true,
         skillsHostDir: join(dirs.packageDir, "templates", "skills"),
         signal: expect.any(AbortSignal),
+        tuning: {
+          model: { value: "gpt-custom", source: "--model" },
+          effort: { value: "xhigh", source: "--effort" },
+        },
       })
     );
+  });
+
+  it("forwards env-sourced tuning to every stage", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+    const original = process.env.RALPH_CODEX_EFFORT;
+    process.env.RALPH_CODEX_EFFORT = "max";
+
+    try {
+      await runLoop(loopOptions(dirs, { agent: "codex" }));
+    } finally {
+      if (original === undefined) delete process.env.RALPH_CODEX_EFFORT;
+      else process.env.RALPH_CODEX_EFFORT = original;
+    }
+
+    expect(mocks.runStage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      dirs.workspaceDir,
+      1,
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({
+        tuning: {
+          effort: { value: "max", source: "RALPH_CODEX_EFFORT" },
+        },
+      })
+    );
+  });
+
+  // The check sits at the head of the try, so the failure is on disk as
+  // run.ended error — a supervisor that never sees Ralph's stderr still
+  // learns why — and no image is pulled and no container starts.
+  it("rejects an invalid effort after run.started", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+
+    await expect(
+      runLoop(loopOptions(dirs, { effort: "turbo" }))
+    ).rejects.toThrow(/turbo/);
+
+    const log = readRunLog(dirs.workspaceDir);
+    expect(log.events.map((e) => e.type)).toEqual(["run.started", "run.ended"]);
+    expect(log.view.ended).toMatchObject({
+      reason: "error",
+      error: expect.stringContaining("turbo"),
+    });
+    expect(mocks.ensureImage).not.toHaveBeenCalled();
+    expect(historyFiles(dirs.workspaceDir, ".md")).toEqual([]);
   });
 
   it("rejects Codex user config with Claude before image setup", async () => {
@@ -967,6 +1023,11 @@ describe("runLoop", () => {
       bin: "ghafk",
       agent: "claude",
       iterations: 1,
+      // Source presence only: readHostClaudeModel reads the real
+      // ~/.claude/settings.json here (node:fs is mocked over the actual), so a
+      // pinned model would be green on one machine and red on another.
+      modelSource: expect.any(String),
+      effortSource: expect.any(String),
     });
     expect(log.view.entries[0]).toMatchObject({
       iteration: 1,
@@ -981,6 +1042,57 @@ describe("runLoop", () => {
     expect(historyFiles(dirs.workspaceDir, ".md")).toEqual([
       `${log.view.started!.runId}.md`,
     ]);
+  });
+
+  it("records the resolved Codex model and effort in run.started", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+
+    await runLoop(loopOptions(dirs, { agent: "codex" }));
+
+    expect(readRunLog(dirs.workspaceDir).view.started).toMatchObject({
+      agent: "codex",
+      model: "gpt-5.6-sol",
+      modelSource: "Ralph default",
+      effort: "high",
+      effortSource: "Ralph default",
+    });
+  });
+
+  // Third-party routing leaves the model to the container CLI. All four fields
+  // absent is the signal that an older Ralph ignored the request, so this
+  // branch still records its sources.
+  it("records both sources when host settings route Claude elsewhere", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mkdirSync(join(dirs.root, "home", ".claude"), { recursive: true });
+    writeFileSync(
+      join(dirs.root, "home", ".claude", "settings.json"),
+      JSON.stringify({ env: { CLAUDE_CODE_USE_BEDROCK: "1" } }),
+      "utf8"
+    );
+    const home = process.env.HOME;
+    const userProfile = process.env.USERPROFILE;
+    process.env.HOME = join(dirs.root, "home");
+    delete process.env.USERPROFILE;
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+
+    try {
+      await runLoop(loopOptions(dirs, { effort: "max" }));
+    } finally {
+      if (home === undefined) delete process.env.HOME;
+      else process.env.HOME = home;
+      if (userProfile !== undefined) process.env.USERPROFILE = userProfile;
+    }
+
+    const started = readRunLog(dirs.workspaceDir).view.started!;
+    expect(started).toMatchObject({
+      modelSource: "host provider config",
+      effort: "max",
+      effortSource: "--effort",
+    });
+    expect(started.model).toBeUndefined();
   });
 
   it("logs a skipped stage as completed without a start, then the cap", async () => {

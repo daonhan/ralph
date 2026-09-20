@@ -50,6 +50,20 @@ describe("stripDetachFlags", () => {
       ])
     ).toEqual(["--agent", "codex", "--codex-user-config", "plan.md", "3"]);
   });
+
+  it("preserves --model and --effort with their values", () => {
+    expect(
+      stripDetachFlags([
+        "--model",
+        "m",
+        "--effort",
+        "high",
+        "--detach",
+        "plan.md",
+        "3",
+      ])
+    ).toEqual(["--model", "m", "--effort", "high", "plan.md", "3"]);
+  });
 });
 
 type SpawnCall = {

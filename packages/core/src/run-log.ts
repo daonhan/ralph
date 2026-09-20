@@ -52,6 +52,16 @@ export type RunStarted = {
   branch?: string;
   /** `@daonhan/ralph-core` version. */
   version: string;
+  /**
+   * What the run resolved its model and effort to, and the literal flag or
+   * variable each came from. Optional and additive within v1: a log written
+   * before they existed still folds, and all four absent is how a consumer
+   * tells a Ralph too old to honor a requested model or effort.
+   */
+  model?: string;
+  modelSource?: string;
+  effort?: string;
+  effortSource?: string;
 };
 
 export type StageStarted = {

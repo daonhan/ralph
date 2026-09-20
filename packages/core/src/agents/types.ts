@@ -19,6 +19,7 @@ export type AgentCommandContext = {
   stage: Stage;
   promptInstruction: string;
   rawModel: string | undefined;
+  rawEffort: string | undefined;
   codexUserConfig: boolean;
   /** Host home dir (HOME || USERPROFILE); "" when neither is set. */
   home: string;
@@ -75,6 +76,8 @@ export interface AgentStreamDecoder {
 export interface AgentAdapter {
   readonly name: AgentName;
   readonly containerEnv: Readonly<Record<string, string>>;
+  /** Effort levels this agent's CLI accepts; checked before any stage runs. */
+  readonly effortLevels: readonly string[];
   credentialMounts(home: string): AgentMount[];
   /** Read-only mount of the shipped skills directory where this provider discovers skills. */
   skillsMount(hostDir: string): AgentMount;

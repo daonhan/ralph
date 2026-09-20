@@ -254,6 +254,31 @@ describe("reduceRunLog", () => {
     });
   });
 
+  // The four tuning fields are additive within v1: a log that carries them
+  // folds them through, and one written before they existed still folds.
+  it("folds the resolved model and effort a run.started carries", () => {
+    const tuned = line(1, "run.started", {
+      runId: "r",
+      bin: "afk",
+      ...started,
+      model: "gpt-5.6-sol",
+      modelSource: "Ralph default",
+      effort: "high",
+      effortSource: "--effort",
+    });
+    const { view, truncated } = reduceRunLog(tuned);
+    expect(truncated).toBe(false);
+    expect(view.started).toMatchObject({
+      model: "gpt-5.6-sol",
+      modelSource: "Ralph default",
+      effort: "high",
+      effortSource: "--effort",
+    });
+    const older = reduceRunLog(startedLine);
+    expect(older.truncated).toBe(false);
+    expect(Object.keys(older.view.started!)).not.toContain("modelSource");
+  });
+
   it("stops at a torn final record and keeps everything before it", () => {
     const torn = line(2, "stage.started", stageStarted).slice(0, 30);
     const { events, truncated } = reduceRunLog(startedLine + torn);

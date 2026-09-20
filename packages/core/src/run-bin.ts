@@ -90,6 +90,8 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
       agent: selection.agent,
       agentSource: selection.source,
       codexUserConfig: flags.codexUserConfig,
+      model: flags.model,
+      effort: flags.effort,
     });
     return;
   }
@@ -129,6 +131,8 @@ export async function runBin(argv: string[], cfg: RunBinConfig): Promise<void> {
     cliVersion: cfg.cliVersion,
     agent: selection.agent,
     codexUserConfig: flags.codexUserConfig,
+    model: flags.model,
+    effort: flags.effort,
   });
   const exitCode = EXIT_CODES[reason];
   if (exitCode !== undefined) process.exitCode = exitCode;

@@ -250,35 +250,45 @@ export const DEFAULT_CODEX_REASONING_EFFORT = "high";
 
 export type CodexModelResolution = {
   model?: string;
-  modelSource: "RALPH_MODEL" | "user config" | "Ralph default";
+  modelSource: "explicit" | "user config" | "Ralph default";
   reasoningEffort?: string;
-  reasoningSource: "user config" | "Codex CLI default" | "Ralph default";
+  reasoningSource: "explicit" | "user config" | "Ralph default";
 };
 
+/**
+ * Resolve model and effort independently: each is the explicit value when one
+ * was tuned, else the Ralph default for an isolated run, else whatever the
+ * inherited user config holds. Isolated Codex now always sends an effort,
+ * whatever the model — an explicitly pinned model used to leave the effort to
+ * the Codex CLI's own default.
+ */
 export function resolveCodexModel(
   rawModel: string | undefined,
+  rawEffort: string | undefined,
   codexUserConfig: boolean
 ): CodexModelResolution {
-  const explicit = rawModel?.trim();
-  if (explicit) {
-    return {
-      model: explicit,
-      modelSource: "RALPH_MODEL",
-      reasoningSource: codexUserConfig ? "user config" : "Codex CLI default",
-    };
-  }
-  if (codexUserConfig) {
-    return {
-      modelSource: "user config",
-      reasoningSource: "user config",
-    };
-  }
-  return {
-    model: DEFAULT_CODEX_MODEL,
-    modelSource: "Ralph default",
-    reasoningEffort: DEFAULT_CODEX_REASONING_EFFORT,
-    reasoningSource: "Ralph default",
+  const model = rawModel?.trim();
+  const effort = rawEffort?.trim();
+
+  const resolution: CodexModelResolution = {
+    modelSource: "user config",
+    reasoningSource: "user config",
   };
+  if (model) {
+    resolution.model = model;
+    resolution.modelSource = "explicit";
+  } else if (!codexUserConfig) {
+    resolution.model = DEFAULT_CODEX_MODEL;
+    resolution.modelSource = "Ralph default";
+  }
+  if (effort) {
+    resolution.reasoningEffort = effort;
+    resolution.reasoningSource = "explicit";
+  } else if (!codexUserConfig) {
+    resolution.reasoningEffort = DEFAULT_CODEX_REASONING_EFFORT;
+    resolution.reasoningSource = "Ralph default";
+  }
+  return resolution;
 }
 
 // CODEX_HOME must stay off the credential bind mount: Codex creates a unix
@@ -345,6 +355,7 @@ export function buildCodexArgs(context: AgentCommandContext): string[] {
   }
   const resolution = resolveCodexModel(
     context.rawModel,
+    context.rawEffort,
     context.codexUserConfig
   );
   if (resolution.model) {
@@ -359,6 +370,7 @@ export function buildCodexArgs(context: AgentCommandContext): string[] {
 
 export const codexAdapter = {
   name: "codex",
+  effortLevels: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
   containerEnv: {
     CODEX_HOME: "/home/agent/.codex",
   },

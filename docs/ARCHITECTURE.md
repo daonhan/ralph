@@ -40,6 +40,7 @@ runLoop (loop.ts)
    acquire() wake-lock (keepalive.ts)         once, unless --no-keep-alive
    install SIGINT/SIGTERM handlers + AbortController
    start heartbeat timer                      HEARTBEAT_MS = 30 s, appends to the run log
+   validateAgentTuning (agents/index.ts)      a bad effort → run.ended error, exit 1, no container
    ensureImage(ralphDir, {signal})            ONCE before the loop
    for i in 1..iterations:
      for s in 0..stages.length-1:
@@ -286,7 +287,8 @@ bash -c 'claude update 1>&2 || true; exec "$0" "$@"' \
   claude --add-dir /home/agent/ralph-skills \
   --verbose --print --output-format stream-json \
   --permission-mode bypassPermissions \
-  [--model "${RALPH_MODEL:-<host ~/.claude/settings.json model, else claude-opus-5[1m]>}"] \
+  [--model "<tuned model, else host ~/.claude/settings.json model, else claude-opus-5[1m]>"] \
+  [--effort "<tuned effort, else none — the container CLI applies the host effortLevel>"] \
   "Read the full instructions from the file ./.ralph-tmp/<run-file> in the current workspace and execute them."
 
 # Codex (isolated configuration by default) — the setup script's `codex update`
@@ -295,8 +297,8 @@ bash -c 'mkdir -p "$CODEX_HOME"; codex update 1>&2 || true; <copy creds into $CO
   codex exec --json --ephemeral \
   --dangerously-bypass-approvals-and-sandbox \
   --ignore-user-config \
-  --model "${RALPH_MODEL:-gpt-5.6-sol}" \
-  [-c 'model_reasoning_effort="high"'] \
+  --model "<tuned model, else gpt-5.6-sol>" \
+  -c 'model_reasoning_effort="<tuned effort, else high>"' \
   "Read the full instructions from the file ./.ralph-tmp/<run-file> in the current workspace and execute them."
 ```
 
@@ -322,7 +324,34 @@ the image installs `@openai/codex` into, so `npm` can replace it without root.
 that runs.
 `RALPH_CODEX_UPDATE=0` drops the update and the mount together.
 
-For Claude, the `--model` value resolves as `RALPH_MODEL` → the model pinned by the
+Model and reasoning effort are resolved once per run by `resolveAgentTuning`
+(`agents/index.ts`) and handed to every stage, so both are settled before the first
+container starts. Each field takes the first source that is set, blank and whitespace-only
+counting as unset: `--model` / `--effort`, then `RALPH_<AGENT>_MODEL` /
+`RALPH_<AGENT>_EFFORT`, then `RALPH_MODEL` / `RALPH_EFFORT`, then the adapter's own
+default. The per-agent names are built from the agent name
+(`RALPH_${agent.toUpperCase()}_MODEL`), so a new provider gets its pair without a table
+edit. Model and effort resolve independently: setting one never moves the other off its
+default. Each resolved value carries the literal flag or variable name it came from, which
+`--print-config` prints and `run.started` records.
+
+`validateAgentTuning` checks the effort against the selected adapter's `effortLevels` —
+Claude `low|medium|high|xhigh|max` (`ultracode` is left out deliberately: it starts
+workflow orchestration an unattended stage cannot steer), Codex
+`none|minimal|low|medium|high|xhigh|max`. An effort that came from the agent-agnostic
+`RALPH_EFFORT` is checked against `SHARED_EFFORT_LEVELS`, the intersection of every
+adapter's list, so a value that works today keeps working after an agent switch; the
+message names the provider's own variable when only that provider knows the level.
+`runLoop` runs the check as the first statement of its `try`, after `run.started` is
+fsynced and before `ensureImage`, so a bad level ends the run with `run.ended`
+`reason: "error"` and exit 1 without starting a container — and a supervisor that cannot
+read Ralph's stderr still finds the reason in the log. `runStage` repeats the check on every
+stage — it is the guard for a direct library caller that passes no tuning, and one site covers
+both providers, since the level is interpolated into Claude's argv and into Codex's TOML
+string. `--print-config` never throws: it shows a rejected level with an
+`invalid: allowed …` suffix and exits 0.
+
+For Claude, the `--model` value resolves as the tuned model → the model pinned by the
 host's `~/.claude/settings.json` (`env.ANTHROPIC_MODEL`, else the `model` key `/model`
 stored; its "(default)" entry stores no model) → `DEFAULT_CLAUDE_MODEL`
 (`claude-opus-5[1m]`). Ralph sends the flag rather than deferring to the container: the
@@ -338,13 +367,19 @@ providers use their own model identifiers (Bedrock inference-profile IDs such as
 `us.anthropic.claude-opus-4-8`), so a first-party default would be rejected and the
 container CLI resolves the model as it did before. A settings file that exists but
 cannot be read or parsed is reported on stderr and in `--print-config` instead of being
-treated as "no model chosen".
+treated as "no model chosen". `--effort` is not omitted there: it is a CLI setting rather
+than a model ID. Ralph has no effort default for Claude, so with none tuned no `--effort`
+is sent and the container CLI applies whatever the host settings' `effortLevel` says —
+reported as `Claude CLI default`.
 
-For isolated Codex, `-c 'model_reasoning_effort="high"'` is supplied with Ralph's
-`gpt-5.6-sol` default when `RALPH_MODEL` is unset. With an explicit `RALPH_MODEL`, Codex
-owns validation and a failure is terminal for that stage attempt—Ralph never retries with
-another model. `--codex-user-config` removes `--ignore-user-config`; when `RALPH_MODEL` is
-also unset, both model and reasoning effort come from `~/.codex/config.toml`.
+For isolated Codex, `--model` defaults to `DEFAULT_CODEX_MODEL` (`gpt-5.6-sol`) and
+`-c 'model_reasoning_effort="<level>"'` to `DEFAULT_CODEX_REASONING_EFFORT` (`high`),
+independently of one another: a tuned model no longer drops the effort to the Codex CLI's
+own default, as it did before this behavior change. With an explicit model, Codex owns
+validation and a failure is terminal for that stage attempt—Ralph never retries with
+another model. `--codex-user-config` removes `--ignore-user-config`; there an untuned model
+and an untuned effort both come from `~/.codex/config.toml`, while a tuned one is still
+sent as `--model` / `-c`.
 
 - **Workspace mount + `-w`:** the host workspace is mounted read-write and set as the container's working directory.
 - **Container-local `node_modules`:** [`sandbox-volumes.ts`](../packages/core/src/sandbox-volumes.ts) decides one docker volume per package directory of the workspace (root plus each nested `package.json`, walked four levels deep, skipping `node_modules/` and dot dirs) plus the shared `ralph-pm-store` store volume, so an install inside the sandbox writes a Linux tree into a volume instead of the bind mount (#128). Volume names are `ralph-nm-<sha256 prefix>` of workspace + relative path; provenance lives in the labels `ralph.kind=node-modules`, `ralph.workspace=<host dir>`, `ralph.path=<rel dir>` (the store volume carries `ralph.kind=pm-store`). `runStage` lists, creates and — because a fresh volume mounts `root:root` while the sandbox runs as UID 1000 — hands them to the sandbox user with one `docker run --rm --user 0:0 --entrypoint chown` container, once per process, failing the stage with a message naming `RALPH_ISOLATE_NODE_MODULES=0` if any step fails. Off on Linux by default; see the environment-variable table.
@@ -451,24 +486,25 @@ A failed open therefore leaks no wake-lock or handler, and a hung `docker pull` 
 
 Every line is `{"v":1,"seq":<n>,"at":"<ISO time>","type":"<type>", …fields}`. `seq` starts at 1 with `run.started` and grows by one per record.
 
-| `type`            | Fields                                                                                                                                         | Written                                                            |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `run.started`     | `runId, pid, hostname, platform, wslDistro?, bin` (`afk` / `ghafk`), `agent, iterations, inputs, branch?, version` (core)                      | once, on open                                                      |
-| `stage.started`   | `iteration, stageIndex, stage, logPath, container` (the first attempt's name)                                                                  | before a stage's first attempt; never for a `skipped` stage        |
-| `stage.retry`     | `iteration, stage, attempt` (the failed one, 1-based), `error, backoffMs, container` (the **next** attempt's name)                             | after each failed attempt that will be retried, before its backoff |
-| `stage.completed` | the `StageEntry`: `iteration, stage, status, durationMs, head, logPath, body, meta?, retries?, attempts?, dirty?`                              | once per stage, `skipped` and `aborted` included                   |
-| `heartbeat`       | `lastOutputAt`: when the agent last wrote a JSON line to stdout (ISO), or `null` before its first                                              | every `HEARTBEAT_MS` (30 s) while the run is open                  |
-| `run.ended`       | `reason` (`no-more-tasks` / `cap` / `failed` / `aborted` / `error` / `refused`), `completedIterations, signal?, blockedBy?, findings?, error?` | once; closes the file                                              |
+| `type`            | Fields                                                                                                                                                                    | Written                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `run.started`     | `runId, pid, hostname, platform, wslDistro?, bin` (`afk` / `ghafk`), `agent, iterations, inputs, branch?, version` (core), `model?, modelSource?, effort?, effortSource?` | once, on open                                                      |
+| `stage.started`   | `iteration, stageIndex, stage, logPath, container` (the first attempt's name)                                                                                             | before a stage's first attempt; never for a `skipped` stage        |
+| `stage.retry`     | `iteration, stage, attempt` (the failed one, 1-based), `error, backoffMs, container` (the **next** attempt's name)                                                        | after each failed attempt that will be retried, before its backoff |
+| `stage.completed` | the `StageEntry`: `iteration, stage, status, durationMs, head, logPath, body, meta?, retries?, attempts?, dirty?`                                                         | once per stage, `skipped` and `aborted` included                   |
+| `heartbeat`       | `lastOutputAt`: when the agent last wrote a JSON line to stdout (ISO), or `null` before its first                                                                         | every `HEARTBEAT_MS` (30 s) while the run is open                  |
+| `run.ended`       | `reason` (`no-more-tasks` / `cap` / `failed` / `aborted` / `error` / `refused`), `completedIterations, signal?, blockedBy?, findings?, error?`                            | once; closes the file                                              |
 
 - `stage.completed.status` is one of `ok`, `no-more-tasks`, `review-ok`, `review-skip`, `review-fix`, `error`, `failed`, `skipped` or `aborted`.
 - On `run.ended`: `signal` (`SIGINT` / `SIGTERM`) comes with `aborted`; `blockedBy` with `refused`; `findings` are the sandbox-install findings, present only when there are some; `error` is the thrown message behind `reason: "error"`.
 - `stage.retry` duplicates what `stage.completed.attempts` records later, but it is the only in-flight sign that a silent stage is waiting out a backoff.
 - A container name in a record may never have started, for example when rendering fails before `docker run`.
+- `run.started`'s `model`, `modelSource`, `effort`, `effortSource` are optional: they are not in the required-field list below, so a log written before they existed still folds, and all four absent is how a consumer detects a Ralph too old to have honored a requested model or effort. `model` / `effort` are absent when the container CLI supplies that value (Claude under third-party routing, Codex under `--codex-user-config`); the two `*Source` fields carry either the literal flag or variable the value came from (`--effort`, `RALPH_CODEX_EFFORT`, `RALPH_MODEL`) or a default label (`Ralph default`, `host ~/.claude/settings.json`, `host provider config`, `Claude CLI default`, `user config`).
 
 An abridged log:
 
 ```jsonl
-{"v":1,"seq":1,"at":"2026-09-17T10:15:00.120Z","type":"run.started","runId":"2026-09-17-101500-ghafk-feat-x","pid":18244,"hostname":"DESKTOP-1","platform":"win32","bin":"ghafk","agent":"claude","iterations":5,"inputs":"","branch":"feat-x","version":"0.16.0"}
+{"v":1,"seq":1,"at":"2026-09-17T10:15:00.120Z","type":"run.started","runId":"2026-09-17-101500-ghafk-feat-x","pid":18244,"hostname":"DESKTOP-1","platform":"win32","bin":"ghafk","agent":"claude","iterations":5,"inputs":"","branch":"feat-x","version":"0.16.0","model":"claude-opus-5[1m]","modelSource":"Ralph default","effortSource":"Claude CLI default"}
 {"v":1,"seq":2,"at":"2026-09-17T10:15:30.121Z","type":"heartbeat","lastOutputAt":null}
 {"v":1,"seq":3,"at":"2026-09-17T10:15:41.803Z","type":"stage.started","iteration":1,"stageIndex":0,"stage":"ghafk-implementer","logPath":".ralph-tmp/logs/2026-09-17T10-15-41-800Z-iter1-ghafk-implementer.ndjson","container":"ralph-2026-09-17-101500-ghafk-feat-x-i1-s0-a1"}
 {"v":1,"seq":4,"at":"2026-09-17T10:16:11.804Z","type":"heartbeat","lastOutputAt":"2026-09-17T10:16:09.310Z"}
@@ -785,20 +821,25 @@ Release/publishing (release-please → tag-driven npm + image workflows) is the 
 
 ## Environment variables
 
-| Variable                     | Default                                                       | Effect                                                                                                                                                                                                                                                                           |
-| ---------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RALPH_WORKSPACE`            | `process.cwd()`                                               | Host dir bind-mounted at `/home/agent/workspace`; root for `.ralph-tmp/`.                                                                                                                                                                                                        |
-| `RALPH_AGENT`                | `claude`                                                      | Provider fallback when `--agent` is absent: `claude` or `codex`.                                                                                                                                                                                                                 |
-| `RALPH_DOCKER_CONTEXT`       | bundled core dir                                              | `docker build` fallback context (must contain a Dockerfile).                                                                                                                                                                                                                     |
-| `RALPH_IMAGE`                | `docker.io/daonhan/ralph-sandbox:latest`                      | Sandbox image ref.                                                                                                                                                                                                                                                               |
-| `RALPH_IMAGE_TAG`            | —                                                             | Legacy alias for `RALPH_IMAGE`.                                                                                                                                                                                                                                                  |
-| `RALPH_MODEL`                | Claude `claude-opus-5[1m]`; isolated Codex `gpt-5.6-sol`/high | Model override for the selected provider. Claude falls back to the model pinned in host `~/.claude/settings.json`, then Ralph's default; under `CLAUDE_CODE_USE_BEDROCK`/`_VERTEX`/`_FOUNDRY` the container CLI resolves instead. Explicit invalid models fail without fallback. |
-| `RALPH_RESULT_GRACE_MS`      | `30000`                                                       | Post-completion kill timer; `0` disables. Invalid/negative → default.                                                                                                                                                                                                            |
-| `RALPH_DOCKER_SOCK`          | on                                                            | `0` disables the host `docker.sock` bind-mount.                                                                                                                                                                                                                                  |
-| `RALPH_DOCKER_SOCK_PATH`     | auto-detect                                                   | Explicit host socket path.                                                                                                                                                                                                                                                       |
-| `RALPH_ISOLATE_NODE_MODULES` | on except Linux                                               | `0` shares the bind-mounted host `node_modules/`; `1` isolates on Linux too.                                                                                                                                                                                                     |
-| `RALPH_CLAUDE_UPDATE`        | on                                                            | `0` skips the per-stage `claude update` and the `ralph-claude-home` volume mount together, so Claude stages run the image's baked CLI. Ignored for Codex.                                                                                                                        |
-| `RALPH_CODEX_UPDATE`         | on                                                            | `0` skips the per-stage `codex update` and the `ralph-codex-cli` volume mount together, so Codex stages run the image's pinned CLI. Ignored for Claude.                                                                                                                          |
-| `DOCKER_HOST`                | —                                                             | `unix://…` parsed as a socket candidate.                                                                                                                                                                                                                                         |
-| `XDG_RUNTIME_DIR`            | —                                                             | Rootless Docker/Podman socket candidates.                                                                                                                                                                                                                                        |
-| `NO_COLOR` / `TERM=dumb`     | —                                                             | Disable ANSI on both streams.                                                                                                                                                                                                                                                    |
+| Variable                     | Default                                                  | Effect                                                                                                                                                                                                                                                                     |
+| ---------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RALPH_WORKSPACE`            | `process.cwd()`                                          | Host dir bind-mounted at `/home/agent/workspace`; root for `.ralph-tmp/`.                                                                                                                                                                                                  |
+| `RALPH_AGENT`                | `claude`                                                 | Provider fallback when `--agent` is absent: `claude` or `codex`.                                                                                                                                                                                                           |
+| `RALPH_DOCKER_CONTEXT`       | bundled core dir                                         | `docker build` fallback context (must contain a Dockerfile).                                                                                                                                                                                                               |
+| `RALPH_IMAGE`                | `docker.io/daonhan/ralph-sandbox:latest`                 | Sandbox image ref.                                                                                                                                                                                                                                                         |
+| `RALPH_IMAGE_TAG`            | —                                                        | Legacy alias for `RALPH_IMAGE`.                                                                                                                                                                                                                                            |
+| `RALPH_MODEL`                | Claude `claude-opus-5[1m]`; isolated Codex `gpt-5.6-sol` | Model for the selected provider, outranked by `--model` and `RALPH_<AGENT>_MODEL`. Claude falls back to the model pinned in host `~/.claude/settings.json`, then Ralph's default; under `CLAUDE_CODE_USE_BEDROCK`/`_VERTEX`/`_FOUNDRY` the container CLI resolves instead. |
+| `RALPH_EFFORT`               | Claude: the container CLI's own; isolated Codex `high`   | Reasoning effort for the selected provider, outranked by `--effort` and `RALPH_<AGENT>_EFFORT`. Agent-agnostic, so only a level in `SHARED_EFFORT_LEVELS` is accepted; an unknown level ends the run with `run.ended` `reason: "error"` before any container starts.       |
+| `RALPH_CLAUDE_MODEL`         | _(unset)_                                                | Model for Claude runs; outranks `RALPH_MODEL`. Names are derived from the agent, so a new adapter gets its pair for free.                                                                                                                                                  |
+| `RALPH_CODEX_MODEL`          | _(unset)_                                                | Model for Codex runs; outranks `RALPH_MODEL`. Explicit invalid models fail without fallback.                                                                                                                                                                               |
+| `RALPH_CLAUDE_EFFORT`        | _(unset)_                                                | Claude reasoning effort (`low\|medium\|high\|xhigh\|max`); outranks `RALPH_EFFORT`. Unset sends no `--effort`.                                                                                                                                                             |
+| `RALPH_CODEX_EFFORT`         | _(unset)_                                                | Codex reasoning effort (`none\|minimal\|low\|medium\|high\|xhigh\|max`); outranks `RALPH_EFFORT`, and is the only route to a Codex-only level.                                                                                                                             |
+| `RALPH_RESULT_GRACE_MS`      | `30000`                                                  | Post-completion kill timer; `0` disables. Invalid/negative → default.                                                                                                                                                                                                      |
+| `RALPH_DOCKER_SOCK`          | on                                                       | `0` disables the host `docker.sock` bind-mount.                                                                                                                                                                                                                            |
+| `RALPH_DOCKER_SOCK_PATH`     | auto-detect                                              | Explicit host socket path.                                                                                                                                                                                                                                                 |
+| `RALPH_ISOLATE_NODE_MODULES` | on except Linux                                          | `0` shares the bind-mounted host `node_modules/`; `1` isolates on Linux too.                                                                                                                                                                                               |
+| `RALPH_CLAUDE_UPDATE`        | on                                                       | `0` skips the per-stage `claude update` and the `ralph-claude-home` volume mount together, so Claude stages run the image's baked CLI. Ignored for Codex.                                                                                                                  |
+| `RALPH_CODEX_UPDATE`         | on                                                       | `0` skips the per-stage `codex update` and the `ralph-codex-cli` volume mount together, so Codex stages run the image's pinned CLI. Ignored for Claude.                                                                                                                    |
+| `DOCKER_HOST`                | —                                                        | `unix://…` parsed as a socket candidate.                                                                                                                                                                                                                                   |
+| `XDG_RUNTIME_DIR`            | —                                                        | Rootless Docker/Podman socket candidates.                                                                                                                                                                                                                                  |
+| `NO_COLOR` / `TERM=dumb`     | —                                                        | Disable ANSI on both streams.                                                                                                                                                                                                                                              |

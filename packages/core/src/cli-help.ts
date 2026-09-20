@@ -4,8 +4,11 @@ import { fileURLToPath } from "node:url";
 
 import {
   parseAgentName,
+  resolveAgentTuning,
+  validateAgentTuning,
   type AgentName,
   type AgentSelectionSource,
+  type AgentTuning,
 } from "./agents/index.js";
 import {
   CLAUDE_HOME_VOLUME,
@@ -40,6 +43,8 @@ export type CliFlags = {
   notify: boolean;
   agent?: AgentName;
   codexUserConfig: boolean;
+  model?: string;
+  effort?: string;
   rest: string[];
 };
 
@@ -57,12 +62,28 @@ export function parseFlags(argv: string[]): CliFlags {
   let agent: AgentName | undefined;
   let expectingAgent = false;
   let codexUserConfig = false;
+  let model: string | undefined;
+  let expectingModel = false;
+  let effort: string | undefined;
+  let expectingEffort = false;
   const rest: string[] = [];
   for (const a of argv) {
     if (expectingAgent) {
       if (a.startsWith("-")) throw new Error("--agent requires a value");
       agent = parseAgentName(a);
       expectingAgent = false;
+      continue;
+    }
+    if (expectingModel) {
+      if (a.startsWith("-")) throw new Error("--model requires a value");
+      model = a;
+      expectingModel = false;
+      continue;
+    }
+    if (expectingEffort) {
+      if (a.startsWith("-")) throw new Error("--effort requires a value");
+      effort = a;
+      expectingEffort = false;
       continue;
     }
     if (expectingMaxRetries) {
@@ -89,11 +110,19 @@ export function parseFlags(argv: string[]): CliFlags {
     else if (a === "--log") expectingLog = true;
     else if (a === "--notify") notify = true;
     else if (a === "--agent") expectingAgent = true;
+    else if (a === "--model") expectingModel = true;
+    else if (a === "--effort") expectingEffort = true;
     else if (a === "--codex-user-config") codexUserConfig = true;
     else rest.push(a);
   }
   if (expectingAgent) {
     throw new Error("--agent requires a value");
+  }
+  if (expectingModel) {
+    throw new Error("--model requires a value");
+  }
+  if (expectingEffort) {
+    throw new Error("--effort requires a value");
   }
   if (expectingMaxRetries) {
     throw new Error("--max-retries requires a value");
@@ -115,6 +144,8 @@ export function parseFlags(argv: string[]): CliFlags {
     notify,
     agent,
     codexUserConfig,
+    model,
+    effort,
     rest,
   };
 }
@@ -168,6 +199,8 @@ Flags:
   --notify            emit OS notification + terminal bell on loop completion or unrecoverable failure (default: off)
   --agent <claude|codex> select the in-container coding agent (default: claude; overrides RALPH_AGENT)
   --codex-user-config    load ~/.codex/config.toml for Codex (default: isolated; requires Codex)
+  --model <name>      model for the selected agent (overrides RALPH_<AGENT>_MODEL and RALPH_MODEL)
+  --effort <level>    reasoning effort for the selected agent (Claude: low|medium|high|xhigh|max; Codex adds none|minimal)
 
 Environment variables:
   RALPH_WORKSPACE       host dir bind-mounted at /home/agent/workspace (default: cwd)
@@ -179,16 +212,27 @@ Environment variables:
                         sandbox spawn sibling containers on the host daemon. Grants
                         root-equivalent host access.
   RALPH_AGENT           fallback agent selection when --agent is absent
-  RALPH_MODEL           model override for the selected agent. Claude resolves
-                        RALPH_MODEL, then the model pinned by host
+  RALPH_CLAUDE_MODEL    model for Claude runs; outranks RALPH_MODEL
+  RALPH_CODEX_MODEL     model for Codex runs; outranks RALPH_MODEL
+  RALPH_CLAUDE_EFFORT   reasoning effort for Claude runs; outranks RALPH_EFFORT
+  RALPH_CODEX_EFFORT    reasoning effort for Codex runs; outranks RALPH_EFFORT
+  RALPH_EFFORT          reasoning effort for whichever agent runs, so only a
+                        level both accept is allowed; a provider-only level goes
+                        in that provider's variable. An unknown level ends the
+                        run before any container starts.
+  RALPH_MODEL           model for whichever agent runs. Precedence for both
+                        model and effort: --model / --effort, then
+                        RALPH_<AGENT>_MODEL / _EFFORT, then RALPH_MODEL /
+                        RALPH_EFFORT, then the agent default. Claude resolves
+                        its model from that tuning, then the model pinned by host
                         ~/.claude/settings.json (env.ANTHROPIC_MODEL, else the
                         model key /model stored; its "(default)" entry stores
                         none), then claude-opus-5[1m] (Ralph default). Host
                         settings that enable CLAUDE_CODE_USE_BEDROCK / _VERTEX
                         / _FOUNDRY keep the container CLI's own resolution,
                         since those providers use their own model IDs. Isolated
-                        Codex defaults to gpt-5.6-sol with high reasoning when
-                        this variable is unset.
+                        Codex defaults to gpt-5.6-sol, and to high reasoning
+                        whatever the model.
   RALPH_DOCKER_SOCK_PATH explicit docker.sock host path. When unset, auto-detected via
                         DOCKER_HOST (unix:// only), then a candidate list:
                           /var/run/docker.sock
@@ -203,46 +247,132 @@ Build fallback runs only if pull fails AND $RALPH_DOCKER_CONTEXT/Dockerfile exis
 `);
 }
 
+/** What the run actually resolved to, recorded in `run.started`. */
+export type AgentConfigResolution = {
+  /** Absent when the container CLI resolves the model itself. */
+  model?: string;
+  modelSource: string;
+  /** Absent when the agent's own default applies. */
+  effort?: string;
+  effortSource: string;
+};
+
 export type AgentConfigDescription = {
   codexConfig?: string;
   model: string;
-  reasoning?: string;
+  reasoning: string;
+  resolved: AgentConfigResolution;
 };
+
+type EffortDescription = { display: string; value?: string; source: string };
+
+/**
+ * Describe a tuned effort, invalid levels included: `--print-config` reports a
+ * level the CLI would reject rather than throwing, since the printer is what a
+ * user reaches for to find out which variable supplied it. The allowed list is
+ * read back out of `validateAgentTuning`'s own message so the printer can never
+ * name a different list than the check that ends the run.
+ */
+function describeTunedEffort(
+  agent: AgentName,
+  tuning: AgentTuning
+): EffortDescription | undefined {
+  const tuned = tuning.effort;
+  if (!tuned) return undefined;
+  const allowed = validateAgentTuning(agent, tuning)?.match(
+    /expected one of ([^;]+)/
+  )?.[1];
+  const suffix = allowed ? `; invalid: allowed ${allowed}` : "";
+  return {
+    display: `${tuned.value} (${tuned.source}${suffix})`,
+    value: tuned.value,
+    source: tuned.source,
+  };
+}
 
 export function describeAgentConfig(
   agent: AgentName,
   codexUserConfig: boolean,
-  rawModel: string | undefined,
+  tuning: AgentTuning,
   hostClaudeModel?: HostClaudeModel
 ): AgentConfigDescription {
   if (agent === "claude") {
-    const resolution = resolveClaudeModel(rawModel, hostClaudeModel);
+    const resolution = resolveClaudeModel(tuning.model?.value, hostClaudeModel);
+    // Claude takes no effort default from Ralph: with none set, the CLI applies
+    // whatever the host settings' effortLevel says.
+    const effort = describeTunedEffort(agent, tuning) ?? {
+      display: "Claude CLI default (host settings effortLevel applies)",
+      source: "Claude CLI default",
+    };
+    // Both returns carry all four fields: a run.started with every one absent
+    // is how a consumer detects a Ralph too old to have honored the request.
     if (!resolution.model) {
       return {
         model: `container CLI default (host settings enable ${hostClaudeModel?.providerFlag})`,
+        reasoning: effort.display,
+        resolved: {
+          modelSource: resolution.modelSource,
+          effort: effort.value,
+          effortSource: effort.source,
+        },
       };
     }
-    const source =
+    const modelSource =
       resolution.modelSource === "host settings"
         ? "host ~/.claude/settings.json"
-        : resolution.modelSource;
+        : resolution.modelSource === "RALPH_MODEL"
+          ? (tuning.model?.source ?? resolution.modelSource)
+          : resolution.modelSource;
     const warning = hostClaudeModel?.unreadable
       ? `; host settings unreadable: ${hostClaudeModel.unreadable}`
       : "";
-    return { model: `${resolution.model} (${source}${warning})` };
+    return {
+      model: `${resolution.model} (${modelSource}${warning})`,
+      reasoning: effort.display,
+      resolved: {
+        model: resolution.model,
+        modelSource,
+        effort: effort.value,
+        effortSource: effort.source,
+      },
+    };
   }
 
-  const resolution = resolveCodexModel(rawModel, codexUserConfig);
+  const resolution = resolveCodexModel(
+    tuning.model?.value,
+    tuning.effort?.value,
+    codexUserConfig
+  );
+  const modelSource =
+    resolution.modelSource === "explicit"
+      ? (tuning.model?.source ?? resolution.modelSource)
+      : resolution.modelSource;
+  const effort =
+    describeTunedEffort(agent, tuning) ??
+    (resolution.reasoningEffort
+      ? {
+          display: `${resolution.reasoningEffort} (${resolution.reasoningSource})`,
+          value: resolution.reasoningEffort,
+          source: resolution.reasoningSource,
+        }
+      : {
+          display: resolution.reasoningSource,
+          source: resolution.reasoningSource,
+        });
   return {
     codexConfig: codexUserConfig
       ? "inherited (~/.codex/config.toml)"
       : "isolated (--ignore-user-config)",
     model: resolution.model
-      ? `${resolution.model} (${resolution.modelSource})`
+      ? `${resolution.model} (${modelSource})`
       : "user config (RALPH_MODEL unset)",
-    reasoning: resolution.reasoningEffort
-      ? `${resolution.reasoningEffort} (${resolution.reasoningSource})`
-      : resolution.reasoningSource,
+    reasoning: effort.display,
+    resolved: {
+      model: resolution.model,
+      modelSource,
+      effort: effort.value,
+      effortSource: effort.source,
+    },
   };
 }
 
@@ -256,6 +386,9 @@ export type PrintConfigOptions = {
   agent?: AgentName;
   agentSource?: AgentSelectionSource;
   codexUserConfig?: boolean;
+  /** `--model` / `--effort`, which outrank the env vars for this report too. */
+  model?: string;
+  effort?: string;
 };
 
 export function printConfig(
@@ -275,6 +408,8 @@ export function printConfig(
     agent = "claude",
     agentSource = "default",
     codexUserConfig = false,
+    model,
+    effort,
   } = opts;
   const dockerfile = resolveDockerfile(ralphDir);
   const dfPresent = existsSync(dockerfile);
@@ -339,7 +474,7 @@ export function printConfig(
   const provider = describeAgentConfig(
     agent,
     codexUserConfig,
-    process.env.RALPH_MODEL,
+    resolveAgentTuning(agent, { model, effort }, process.env),
     agent === "claude" ? readHostClaudeModel(resolveHostHome()) : undefined
   );
   const providerLines = [
@@ -348,9 +483,7 @@ export function printConfig(
       ? [`  codex config          ${provider.codexConfig}`]
       : []),
     `  model                 ${provider.model}`,
-    ...(provider.reasoning
-      ? [`  reasoning             ${provider.reasoning}`]
-      : []),
+    `  reasoning             ${provider.reasoning}`,
   ].join("\n");
 
   process.stdout.write(`[${bin}] resolved config
