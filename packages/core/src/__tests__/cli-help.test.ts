@@ -39,6 +39,38 @@ describe("parseFlags agent options", () => {
       'Unsupported agent "gemini"; expected "claude" or "codex"'
     );
   });
+
+  it("parses --model and --effort", () => {
+    expect(
+      parseFlags(["--model", "gpt-custom", "--effort", "xhigh", "2"])
+    ).toMatchObject({
+      model: "gpt-custom",
+      effort: "xhigh",
+      rest: ["2"],
+    });
+  });
+
+  it("rejects a missing --model value", () => {
+    expect(() => parseFlags(["--model"])).toThrow("--model requires a value");
+    expect(() => parseFlags(["--model", "--notify"])).toThrow(
+      "--model requires a value"
+    );
+  });
+
+  it("rejects a missing --effort value", () => {
+    expect(() => parseFlags(["--effort"])).toThrow("--effort requires a value");
+    expect(() => parseFlags(["--effort", "--notify"])).toThrow(
+      "--effort requires a value"
+    );
+  });
+
+  // parseFlags cannot check the level: the agent may still come from
+  // RALPH_AGENT, and each agent takes a different set. runLoop checks it.
+  it("leaves an unknown effort level for the loop to reject", () => {
+    expect(parseFlags(["--effort", "turbo", "2"])).toMatchObject({
+      effort: "turbo",
+    });
+  });
 });
 
 describe("describeAgentConfig", () => {
@@ -108,8 +140,8 @@ describe("describeAgentConfig", () => {
   it("describes an explicit Codex model", () => {
     expect(describeAgentConfig("codex", false, " gpt-custom ")).toEqual({
       codexConfig: "isolated (--ignore-user-config)",
-      model: "gpt-custom (RALPH_MODEL)",
-      reasoning: "Codex CLI default",
+      model: "gpt-custom (explicit)",
+      reasoning: "high (Ralph default)",
     });
   });
 });
@@ -124,6 +156,11 @@ it("documents both new flags and RALPH_AGENT", () => {
   expect(output).toContain("--codex-user-config");
   expect(output).toContain("RALPH_AGENT");
   expect(output).toContain("gpt-5.6-sol");
+  expect(output).toContain("--model <name>");
+  expect(output).toContain("--effort <level>");
+  expect(output).toContain("RALPH_CLAUDE_MODEL");
+  expect(output).toContain("RALPH_CODEX_EFFORT");
+  expect(output).toContain("RALPH_EFFORT");
 });
 
 it("prints the history dir under the resolved workspace", () => {

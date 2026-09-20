@@ -315,6 +315,8 @@ describe("runLoop", () => {
       loopOptions(dirs, {
         agent: "codex",
         codexUserConfig: true,
+        model: "gpt-custom",
+        effort: "xhigh",
       })
     );
 
@@ -330,8 +332,62 @@ describe("runLoop", () => {
         codexUserConfig: true,
         skillsHostDir: join(dirs.packageDir, "templates", "skills"),
         signal: expect.any(AbortSignal),
+        tuning: {
+          model: { value: "gpt-custom", source: "--model" },
+          effort: { value: "xhigh", source: "--effort" },
+        },
       })
     );
+  });
+
+  it("forwards env-sourced tuning to every stage", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    mocks.runStage.mockResolvedValue(ok(sentinel));
+    const original = process.env.RALPH_CODEX_EFFORT;
+    process.env.RALPH_CODEX_EFFORT = "max";
+
+    try {
+      await runLoop(loopOptions(dirs, { agent: "codex" }));
+    } finally {
+      if (original === undefined) delete process.env.RALPH_CODEX_EFFORT;
+      else process.env.RALPH_CODEX_EFFORT = original;
+    }
+
+    expect(mocks.runStage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      dirs.workspaceDir,
+      1,
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({
+        tuning: {
+          effort: { value: "max", source: "RALPH_CODEX_EFFORT" },
+        },
+      })
+    );
+  });
+
+  // The check sits at the head of the try, so the failure is on disk as
+  // run.ended error — a supervisor that never sees Ralph's stderr still
+  // learns why — and no image is pulled and no container starts.
+  it("rejects an invalid effort after run.started", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+
+    await expect(
+      runLoop(loopOptions(dirs, { effort: "turbo" }))
+    ).rejects.toThrow(/turbo/);
+
+    const log = readRunLog(dirs.workspaceDir);
+    expect(log.events.map((e) => e.type)).toEqual(["run.started", "run.ended"]);
+    expect(log.view.ended).toMatchObject({
+      reason: "error",
+      error: expect.stringContaining("turbo"),
+    });
+    expect(mocks.ensureImage).not.toHaveBeenCalled();
+    expect(historyFiles(dirs.workspaceDir, ".md")).toEqual([]);
   });
 
   it("rejects Codex user config with Claude before image setup", async () => {

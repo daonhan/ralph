@@ -288,7 +288,8 @@ function buildClaudeCommand(
   stage: Stage,
   promptInstruction: string,
   modelArgs: string[],
-  skillsMounted = false
+  skillsMounted = false,
+  effortArgs: string[] = []
 ): string[] {
   const args = claudeUpdateEnabled()
     ? ["bash", "-c", CLAUDE_UPDATE_SCRIPT, "claude"]
@@ -301,7 +302,7 @@ function buildClaudeCommand(
   if (stage.permissionMode) {
     args.push("--permission-mode", stage.permissionMode);
   }
-  args.push(...modelArgs, promptInstruction);
+  args.push(...modelArgs, ...effortArgs, promptInstruction);
   return args;
 }
 
@@ -334,13 +335,17 @@ function buildFromContext(context: AgentCommandContext): string[] {
     context.stage,
     context.promptInstruction,
     resolution.model ? ["--model", resolution.model] : [],
-    context.skillsMounted === true
+    context.skillsMounted === true,
+    context.rawEffort ? ["--effort", context.rawEffort] : []
   );
 }
 
 export const claudeAdapter = {
   name: "claude",
   containerEnv: {},
+  // `ultracode` is left out deliberately: it starts workflow orchestration,
+  // which an unattended stage has no way to steer.
+  effortLevels: ["low", "medium", "high", "xhigh", "max"],
   credentialMounts(home) {
     const joinHome = home.startsWith("/") ? posix.join : join;
     return [

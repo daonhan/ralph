@@ -4,6 +4,8 @@ import { basename, dirname, join, posix } from "node:path";
 
 import {
   CODEX_USER_CONFIG_REQUIRES_CODEX,
+  resolveAgentTuning,
+  validateAgentTuning,
   type AgentName,
   type StageMeta,
 } from "./agents/index.js";
@@ -169,6 +171,10 @@ export type LoopOptions = {
   agent?: AgentName;
   /** When true, Codex loads ~/.codex/config.toml. Default: false. */
   codexUserConfig?: boolean;
+  /** Model for the selected agent; outranks RALPH_<AGENT>_MODEL and RALPH_MODEL. */
+  model?: string;
+  /** Reasoning effort for the selected agent; outranks the env vars. */
+  effort?: string;
 };
 
 /**
@@ -191,11 +197,18 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
     cliVersion = "?",
     agent = "claude",
     codexUserConfig = false,
+    model,
+    effort,
   } = opts;
 
   if (codexUserConfig && agent !== "codex") {
     throw new Error(CODEX_USER_CONFIG_REQUIRES_CODEX);
   }
+
+  // Synchronous, and resolved once for the whole run: every stage gets the
+  // same tuning. The level is checked inside the try below, so the failure
+  // reaches the run log.
+  const tuning = resolveAgentTuning(agent, { model, effort }, process.env);
 
   const coreVersion = readCoreVersion();
   const versionLine = `${bin} ${cliVersion} (core ${coreVersion})`;
@@ -389,6 +402,11 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
   let heartbeat: ReturnType<typeof setInterval> | undefined;
 
   try {
+    // First statement in the try, so a bad level is written to the run log as
+    // run.ended error and exits 1 — before the image, and before any container.
+    const tuningProblem = validateAgentTuning(agent, tuning);
+    if (tuningProblem) throw new Error(tuningProblem);
+
     heartbeat = setInterval(() => {
       try {
         runLog.append({
@@ -516,6 +534,7 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
                   signal: stageAbort.signal,
                   agent,
                   codexUserConfig,
+                  tuning,
                   skillsHostDir: join(packageDir, "templates", "skills"),
                   container: {
                     name: containerName(i, s, attempt),

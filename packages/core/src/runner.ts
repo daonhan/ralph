@@ -14,9 +14,12 @@ import { join, posix } from "node:path";
 
 import {
   getAgentAdapter,
+  resolveAgentTuning,
+  validateAgentTuning,
   type AgentAdapter,
   type AgentName,
   type AgentStreamDecoder,
+  type AgentTuning,
   type StageMeta,
 } from "./agents/index.js";
 import { resolveHostHome } from "./agents/shared.js";
@@ -49,6 +52,8 @@ export type RunStageOptions = {
   onOutput?: () => void;
   /** Name the container and label it with its run, so a supervisor can stop it. */
   container?: StageContainer;
+  /** Model/effort the loop resolved once; re-resolved from the env when absent. */
+  tuning?: AgentTuning;
 };
 
 export type StageContainer = {
@@ -681,7 +686,16 @@ export async function runStage(
   logPathOverride?: string,
   options: RunStageOptions = {}
 ): Promise<{ text: string; meta: StageMeta }> {
-  const adapter = getAgentAdapter(options.agent ?? "claude");
+  const agentName = options.agent ?? "claude";
+  const adapter = getAgentAdapter(agentName);
+  // runStage is public, so a direct caller reaches the adapters without
+  // runLoop's check. Validate here rather than in buildCommand: a throw from
+  // buildCommand lands inside withRetries, which would back off and retry a
+  // deterministic config error three times.
+  const tuning =
+    options.tuning ?? resolveAgentTuning(agentName, {}, process.env);
+  const tuningProblem = validateAgentTuning(agentName, tuning);
+  if (tuningProblem) throw new Error(tuningProblem);
   const tmpHostDir = join(workspaceDir, ".ralph-tmp");
   mkdirSync(tmpHostDir, { recursive: true });
 
@@ -744,7 +758,8 @@ export async function runStage(
       ...adapter.buildCommand({
         stage,
         promptInstruction,
-        rawModel: process.env.RALPH_MODEL,
+        rawModel: tuning.model?.value,
+        rawEffort: tuning.effort?.value,
         codexUserConfig: options.codexUserConfig ?? false,
         home,
         skillsMounted: skillsArgs.length > 0,

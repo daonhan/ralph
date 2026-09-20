@@ -68,6 +68,13 @@ describe("runBin agent forwarding", () => {
     );
   });
 
+  it("forwards --model and --effort", async () => {
+    await runBin(["--model", "m", "--effort", "high", "2"], config(false));
+    expect(runLoopMock).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "m", effort: "high" })
+    );
+  });
+
   it("keeps Claude as the default", async () => {
     await runBin(["plan.md", "1"], config(true));
     expect(runLoopMock).toHaveBeenCalledWith(
