@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.19.0](https://github.com/daonhan/ralph/compare/ralph-core-v0.18.1...ralph-core-v0.19.0) (2026-09-22)
+
+
+### Features
+
+* **core:** show config for every stage attempt ([24ecb42](https://github.com/daonhan/ralph/commit/24ecb426723725ec7d8ff4dd6e6a4eab059c9805))
+* **core:** show model and effort for every stage attempt ([dc38758](https://github.com/daonhan/ralph/commit/dc38758ae0b89f5d608287f45ab2bbfb1007d19c))
+
 ## [0.18.1](https://github.com/daonhan/ralph/compare/ralph-core-v0.18.0...ralph-core-v0.18.1) (2026-09-22)
 
 
