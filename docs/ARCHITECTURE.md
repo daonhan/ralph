@@ -205,6 +205,8 @@ Every record in a handler is wrapped: a failed append never blocks the release o
 | 5   | `{{ INPUTS }}`                             | Replaced with `vars.INPUTS` (the `inputs` string passed to `runLoop`).                                                                                                                                                                            |
 | 6   | `{{ HISTORY }}`                            | Replaced with `vars.HISTORY` — the last ten `.ralph/history/` stage entries (non-empty only for the implementer stage), substituted after the shell tags alongside `{{ INPUTS }}`.                                                                |
 
+After `@include` expands trusted playbooks, the renderer keeps trusted source chunks separate from expanded data. Each shell/spill pass scans only source chunks. Command output, fallback strings, and inserted spill paths skip all later shell and variable passes, so tag-looking text in issue titles or commit messages stays verbatim after newline trimming. Only tags authored in the trusted template source can execute host commands.
+
 `resolveShell()`: `/bin/bash` on Linux/macOS; on Windows it walks `PATH` (`;`-split) for the first `bash.exe` (Git for Windows / WSL passthrough), falling back to `cmd.exe`. **Templates should prefer `!?` over `!`** for any command that may be unavailable on `cmd.exe`. Shell tags cap output at `maxBuffer = 64 MiB`.
 
 **`@spill` security check:** the `<name>` must be a plain filename — any `/`, `\`, `.`, `..`, embedded `..`, or absolute path throws. Templates are trusted (shipped in the tarball) but this is defense-in-depth to keep writes confined to the per-iteration spill dir. `runLoop` supplies a fresh per-stage `spillHostDir` (`<workspace>/.ralph-tmp/spill-<pid>-<iter>-<stageIdx>-<ts>/`) and `spillRefPath` (`.ralph-tmp/spill-…`, POSIX) on every render; using `@spill` without them throws.
@@ -224,17 +226,19 @@ Every record in a handler is wrapped: a failed append never blocks the release o
 
 ```
 <issues-summary>
-!?`gh issue list --state open --limit 50 --json number,title,labels|||[]`
+!?`gh issue list --state open --limit 50 --json number,title,labels|||{"error":"GitHub issue query failed"}`
 </issues-summary>
 
 <issues-full-file>
 Full issue bodies + comments spilled to:
-@spill?:issues.json=`gh issue list --state open --limit 50 --json number,title,body,labels,comments|||[]`
+@spill?:issues.json=`gh issue list --state open --limit 50 --json number,title,body,labels,comments|||{"error":"GitHub issue query failed"}`
 </issues-full-file>
 @include:ghprompt.md
 ```
 
-The agent triages from the inline `<issues-summary>`, then `Read`s the spilled `issues.json` (with `offset`/`limit`) for bodies/comments before picking a task — so large issue bodies never bloat the prompt token count.
+The agent triages from the inline `<issues-summary>`, then `Read`s the spilled `issues.json` (with `offset`/`limit`) for bodies/comments before picking a task or deciding a candidate is completed or ineligible — so large issue bodies never bloat the prompt token count. Current labels, body, and comments take precedence over injected history, and eligibility follows the target repository's label conventions, including `ready-for-agent` where used. Issue closure requires evidence against the current acceptance criteria, including required platform verification; history alone is insufficient.
+
+Both queries use an explicit error object on failure. The playbook requires a fresh `gh` lookup for missing, malformed, failed, or disagreeing views; if the current queue cannot be established, the agent reports **Blocked** without the no-more-tasks sentinel. The initial 50-issue limit is not evidence that the full queue is exhausted: the agent must check remaining issues before declaring no more tasks. These are agent playbook requirements; the loop still gates on the sentinel text rather than independently verifying GitHub state.
 
 **[`review.md`](../packages/core/templates/review.md)** — `HEAD`, recent commits, `git show --stat HEAD` inline, and the **full HEAD patch spilled** to `head.diff`:
 

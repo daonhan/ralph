@@ -5,8 +5,9 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 // SECURITY INVARIANT: the command bodies of the !`cmd`, !?`cmd`, and @spill tags
 // are executed on the HOST shell (see execSync calls below). Templates are trusted
 // (shipped in the npm tarball) and only ever embed STATIC command strings; {{ INPUTS }}
-// and {{ HISTORY }} are substituted LAST, into the already-expanded text, and are
-// never re-shelled. HISTORY is agent-produced text (prior final messages) and so is
+// and {{ HISTORY }} are substituted LAST and are never re-shelled. Command output
+// is also untrusted (e.g. issue titles): expanded chunks are never scanned again.
+// HISTORY is agent-produced text (prior final messages) and so is
 // especially untrusted — it is inserted verbatim via a function replacer (no re-scan,
 // no `$` backreference interpretation). Never author a tag whose command body
 // interpolates runtime or untrusted data (issue bodies, commit messages, INPUTS,
@@ -66,80 +67,98 @@ export function renderTemplate(
     return readFileSync(target, "utf8").replace(/\r?\n$/, "");
   });
 
-  const afterSpill = afterInclude.replace(
-    SPILL_TAG,
-    (_match, q: string, name: string, body: string) => {
-      if (!opts.spillHostDir || !opts.spillRefPath) {
-        throw new Error(
-          `@spill:${name} used but spillHostDir/spillRefPath not provided to renderTemplate`
-        );
-      }
-      // Reject any name that could escape spillHostDir. Templates are trusted
-      // (shipped in the npm tarball) but defense-in-depth — keep file writes
-      // confined to the per-iteration spill dir.
-      if (
-        name.includes("/") ||
-        name.includes("\\") ||
-        name === "." ||
-        name === ".." ||
-        name.includes("..") ||
-        isAbsolute(name)
-      ) {
-        throw new Error(
-          `@spill:${name} — name must be a plain filename (no path separators, no ..)`
-        );
-      }
-      const tryMode = q === "?";
-      let cmd = body;
-      let fallback = "";
-      if (tryMode) {
-        const sep = body.lastIndexOf(TRY_SEP);
-        if (sep >= 0) {
-          cmd = body.slice(0, sep);
-          fallback = body.slice(sep + TRY_SEP.length);
-        }
-      }
-      let out: string;
-      try {
-        out = execSync(cmd, {
-          shell,
-          encoding: "utf8",
-          maxBuffer: SPILL_MAX_BUFFER,
-          cwd: opts.cwd,
-          stdio: ["ignore", "pipe", tryMode ? "ignore" : "pipe"],
+  // Keep trusted source separate from expanded data across all later passes.
+  // A command's stdout may itself contain any of the template tag syntaxes.
+  let chunks = [{ text: afterInclude, expanded: false }];
+  function expandTags(
+    pattern: RegExp,
+    replace: (...match: string[]) => string
+  ): void {
+    chunks = chunks.flatMap((chunk) => {
+      if (chunk.expanded) return [chunk];
+      const parts: typeof chunks = [];
+      let offset = 0;
+      for (const match of chunk.text.matchAll(pattern)) {
+        parts.push({
+          text: chunk.text.slice(offset, match.index),
+          expanded: false,
         });
-      } catch (err) {
-        if (!tryMode) throw err;
-        out = fallback;
+        parts.push({ text: replace(...match), expanded: true });
+        offset = match.index + match[0].length;
       }
-      mkdirSync(opts.spillHostDir, { recursive: true });
-      writeFileSync(join(opts.spillHostDir, name), out, "utf8");
-      return `./${opts.spillRefPath}/${name}`;
-    }
-  );
+      parts.push({ text: chunk.text.slice(offset), expanded: false });
+      return parts;
+    });
+  }
 
-  const afterShellTry = afterSpill.replace(
-    SHELL_TRY_TAG,
-    (_match, body: string) => {
+  expandTags(SPILL_TAG, (_match, q: string, name: string, body: string) => {
+    if (!opts.spillHostDir || !opts.spillRefPath) {
+      throw new Error(
+        `@spill:${name} used but spillHostDir/spillRefPath not provided to renderTemplate`
+      );
+    }
+    // Reject any name that could escape spillHostDir. Templates are trusted
+    // (shipped in the npm tarball) but defense-in-depth — keep file writes
+    // confined to the per-iteration spill dir.
+    if (
+      name.includes("/") ||
+      name.includes("\\") ||
+      name === "." ||
+      name === ".." ||
+      name.includes("..") ||
+      isAbsolute(name)
+    ) {
+      throw new Error(
+        `@spill:${name} — name must be a plain filename (no path separators, no ..)`
+      );
+    }
+    const tryMode = q === "?";
+    let cmd = body;
+    let fallback = "";
+    if (tryMode) {
       const sep = body.lastIndexOf(TRY_SEP);
-      const cmd = sep >= 0 ? body.slice(0, sep) : body;
-      const fallback = sep >= 0 ? body.slice(sep + TRY_SEP.length) : "";
-      try {
-        const out = execSync(cmd, {
-          shell,
-          encoding: "utf8",
-          maxBuffer: SPILL_MAX_BUFFER,
-          cwd: opts.cwd,
-          stdio: ["ignore", "pipe", "ignore"],
-        });
-        return out.replace(/\r?\n$/, "");
-      } catch {
-        return fallback;
+      if (sep >= 0) {
+        cmd = body.slice(0, sep);
+        fallback = body.slice(sep + TRY_SEP.length);
       }
     }
-  );
+    let out: string;
+    try {
+      out = execSync(cmd, {
+        shell,
+        encoding: "utf8",
+        maxBuffer: SPILL_MAX_BUFFER,
+        cwd: opts.cwd,
+        stdio: ["ignore", "pipe", tryMode ? "ignore" : "pipe"],
+      });
+    } catch (err) {
+      if (!tryMode) throw err;
+      out = fallback;
+    }
+    mkdirSync(opts.spillHostDir, { recursive: true });
+    writeFileSync(join(opts.spillHostDir, name), out, "utf8");
+    return `./${opts.spillRefPath}/${name}`;
+  });
 
-  const afterShell = afterShellTry.replace(SHELL_TAG, (_match, cmd: string) => {
+  expandTags(SHELL_TRY_TAG, (_match, body: string) => {
+    const sep = body.lastIndexOf(TRY_SEP);
+    const cmd = sep >= 0 ? body.slice(0, sep) : body;
+    const fallback = sep >= 0 ? body.slice(sep + TRY_SEP.length) : "";
+    try {
+      const out = execSync(cmd, {
+        shell,
+        encoding: "utf8",
+        maxBuffer: SPILL_MAX_BUFFER,
+        cwd: opts.cwd,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      return out.replace(/\r?\n$/, "");
+    } catch {
+      return fallback;
+    }
+  });
+
+  expandTags(SHELL_TAG, (_match, cmd: string) => {
     const out = execSync(cmd, {
       shell,
       encoding: "utf8",
@@ -150,7 +169,13 @@ export function renderTemplate(
   });
   // Final pass, after every shell/@spill tag: substitute the untrusted values.
   // HISTORY uses a function replacer so `$`-sequences in agent text stay verbatim.
-  return afterShell
-    .replace(INPUTS_TAG, vars.INPUTS)
-    .replace(HISTORY_TAG, () => vars.HISTORY);
+  return chunks
+    .map((chunk) =>
+      chunk.expanded
+        ? chunk.text
+        : chunk.text
+            .replace(INPUTS_TAG, vars.INPUTS)
+            .replace(HISTORY_TAG, () => vars.HISTORY)
+    )
+    .join("");
 }

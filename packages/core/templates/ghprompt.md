@@ -2,16 +2,22 @@
 
 Two views of open GitHub issues are provided at the start of context:
 
-- `<issues-summary>` — inline lean index (number, title, labels). Use this to triage and pick a task.
-- `<issues-full-file>` — path to a spilled JSON file containing bodies + comments. `Read` that file (with `offset`/`limit` if it is large) once you have picked an issue you want to act on.
+- `<issues-summary>` — inline lean JSON index (number, title, labels). Use this to identify candidates.
+- `<issues-full-file>` — path to a spilled JSON file containing bodies + comments. `Read` the candidate's current body and comments before deciding to implement it, dismiss it as ineligible, or treat it as completed. Use `offset`/`limit` if the file is large.
 
-You will work on the AFK issues only, not the HITL ones. Label filtering uses the `labels` field in the summary.
+You will work on the AFK issues only, not the HITL ones. Interpret the `labels` field using the repository's documented eligibility rules (for example, `ready-for-agent` can mark AFK work; a literal `AFK` label is not required).
+
+If either issue view is missing, malformed, contains an `error` object or an unexpanded command, or disagrees with the other view, refresh the queue with `gh issue list` and fetch candidate details with `gh issue view <number> --json number,title,state,labels,body,comments`. A failed lookup is not an empty queue. If you cannot establish the current queue, report **Blocked** without the no-more-tasks sentinel.
+
+The supplied views are capped at 50 issues. If that limit is reached, check the remaining open queue (increase the limit or paginate) before concluding no eligible task remains.
 
 You've also been passed a file containing the last few commits. Review these to understand what work has been done.
 
 The `<history>` block holds the last few stage outcomes from earlier iterations and runs — each a **Done / Blocked / Next** summary plus its status (`ok`, `failed`, `aborted`, …). Read it before task selection: do not retry an approach a prior entry reports as failed unless you have a new reason.
 
-When no AFK task is left to pick up, do no other work on that iteration and end the final message with <promise>NO MORE TASKS</promise> on a line of its own. Anywhere else, never mention it in prose and never in a message that reports completed work — a mention does not end the run, and the next iteration will emit it.
+Current issue labels, bodies, and comments take precedence over `<history>`. A prior closure, passing review, or no-ready conclusion does not resolve a reopened issue or supersede newer acceptance failures. Reconcile that evidence before task selection.
+
+Only after checking the current queue and establishing that no AFK task is left to pick up, do no other work on that iteration and end the final message with <promise>NO MORE TASKS</promise> on a line of its own. Anywhere else, never mention it in prose and never in a message that reports completed work — a mention does not end the run, and the next iteration will emit it.
 
 # TASK SELECTION
 
@@ -77,7 +83,7 @@ Make a single `git commit -am` with a short message:
 
 # THE ISSUE
 
-If the task is complete, close the original GitHub issue.
+Before closing the original GitHub issue, re-read its current body and comments and verify its current acceptance requirements, including any required platform checks. Prior history or a passing internal review alone is not completion evidence. If required verification cannot run in this environment, leave the issue open and report that blocker.
 
 If the task is not complete, leave a comment on the GitHub issue with what was done.
 
