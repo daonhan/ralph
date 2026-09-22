@@ -55,7 +55,7 @@ describe("shipped skills", () => {
   const skill = template("skills/ralph-tdd/SKILL.md");
 
   it("ralph-tdd names itself after its directory", () => {
-    expect(skill).toMatch(/^---\nname: ralph-tdd\n/);
+    expect(skill).toMatch(/^---\r?\nname: ralph-tdd\r?\n/);
   });
 
   it("ralph-tdd has a description under Codex's 1024-character cap", () => {

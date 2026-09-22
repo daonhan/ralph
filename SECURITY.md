@@ -91,8 +91,15 @@ The trust boundary is:
 ## Template authoring (contributors)
 
 The prompt-template renderer (`render.ts`) executes the **command bodies** of the `` !`cmd` ``,
-`` !?`cmd` ``, and `@spill` tags on the **host shell**. The shipped templates only ever use
-**static** command strings, and `{{ INPUTS }}` is substituted last (written to a file the agent
-reads inside the container, never re-shelled on the host) — so there is no host command-injection
-vector today. **This invariant must be preserved:** never interpolate runtime or untrusted data
-into a tag command body. Doing so would create direct host RCE.
+`` !?`cmd` ``, and `@spill` tags on the **host shell**. Only trusted template source, including
+files loaded by `@include`, supplies executable tags. The shipped templates use **static**
+command strings. Command output (including issue titles and commit messages), fallback strings,
+and inserted spill paths are kept separate from source and never scanned for later tags or
+variable substitutions. Output therefore stays verbatim after newline trimming, even when it
+contains shell-tag syntax. `{{ INPUTS }}` and `{{ HISTORY }}` are substituted after the shell
+passes and are never re-shelled on the host.
+
+**These invariants must be preserved:** never re-scan expanded data as template source, and
+never interpolate runtime or untrusted data into a tag command body. Either would create a
+host command-injection path. This renderer boundary does not prevent prompt injection into the
+coding agent; the trust requirements above still apply.
