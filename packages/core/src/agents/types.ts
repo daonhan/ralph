@@ -9,6 +9,18 @@ export type AgentSelection = {
   source: AgentSelectionSource;
 };
 
+/** Provider configuration resolved once for one stage attempt. */
+export type AgentConfigSnapshot = {
+  /** Absent when the provider resolves the model itself. */
+  model?: string;
+  modelSource: string;
+  /** Absent when the provider resolves the effort itself. */
+  effort?: string;
+  effortSource: string;
+  /** Claude settings read failure already observed while taking the snapshot. */
+  unreadableSettings?: string;
+};
+
 export type AgentMount = {
   hostPath: string;
   containerPath: string;
@@ -25,6 +37,8 @@ export type AgentCommandContext = {
   home: string;
   /** True when runStage mounted the shipped skills directory into the container. */
   skillsMounted?: boolean;
+  /** Pre-resolved per-attempt config; direct callers may omit it. */
+  configSnapshot?: AgentConfigSnapshot;
 };
 
 export type AgentRenderEvent =

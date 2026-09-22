@@ -321,22 +321,31 @@ export function buildClaudeArgs(
 let unreadableSettingsWarned = false;
 
 function buildFromContext(context: AgentCommandContext): string[] {
-  const host = readHostClaudeModel(context.home);
-  if (host.unreadable && !unreadableSettingsWarned) {
+  const host = context.configSnapshot
+    ? undefined
+    : readHostClaudeModel(context.home);
+  const unreadable =
+    context.configSnapshot?.unreadableSettings ?? host?.unreadable;
+  if (unreadable && !unreadableSettingsWarned) {
     unreadableSettingsWarned = true;
     process.stderr.write(
       `${red(SYM.bullet)} ${bold("host claude settings unreadable")} ${dim(
-        `(${host.unreadable}) — any model set there is being ignored; pin one with RALPH_MODEL.`
+        `(${unreadable}) — any model set there is being ignored; pin one with RALPH_MODEL.`
       )}\n`
     );
   }
-  const resolution = resolveClaudeModel(context.rawModel, host);
+  const model = context.configSnapshot
+    ? context.configSnapshot.model
+    : resolveClaudeModel(context.rawModel, host).model;
+  const effort = context.configSnapshot
+    ? context.configSnapshot.effort
+    : context.rawEffort;
   return buildClaudeCommand(
     context.stage,
     context.promptInstruction,
-    resolution.model ? ["--model", resolution.model] : [],
+    model ? ["--model", model] : [],
     context.skillsMounted === true,
-    context.rawEffort ? ["--effort", context.rawEffort] : []
+    effort ? ["--effort", effort] : []
   );
 }
 

@@ -11,7 +11,12 @@ import {
 } from "./agents/index.js";
 import { readHostClaudeModel } from "./agents/claude.js";
 import { resolveHostHome } from "./agents/shared.js";
-import { describeAgentConfig, readCoreVersion } from "./cli-help.js";
+import {
+  describeAgentConfig,
+  formatAttemptConfig,
+  readCoreVersion,
+  resolveAgentConfigSnapshot,
+} from "./cli-help.js";
 import {
   dirtySnapshot,
   formatDuration,
@@ -518,6 +523,14 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
           result = await withRetries(
             () => {
               attempt++;
+              const configSnapshot = resolveAgentConfigSnapshot(
+                agent,
+                codexUserConfig,
+                tuning
+              );
+              process.stderr.write(
+                `${formatAttemptConfig(attempt, agent, configSnapshot)}\n`
+              );
               // Render inside the retry: a failing template shell/@spill tag
               // (e.g. a flaky `gh issue list`) is retried with backoff instead
               // of crashing the loop — and a hard failure surfaces as a terminal
@@ -545,6 +558,7 @@ export async function runLoop(opts: LoopOptions): Promise<RunEndReason> {
                   agent,
                   codexUserConfig,
                   tuning,
+                  configSnapshot,
                   skillsHostDir: join(packageDir, "templates", "skills"),
                   container: {
                     name: containerName(i, s, attempt),

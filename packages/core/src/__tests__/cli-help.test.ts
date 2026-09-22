@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_CLAUDE_MODEL } from "../agents/claude.js";
 import {
   describeAgentConfig,
+  formatAttemptConfig,
   parseFlags,
   printConfig,
   printHelp,
@@ -273,6 +274,47 @@ describe("describeAgentConfig", () => {
         effort: { value: "ultra", source: "RALPH_EFFORT" },
       }).reasoning
     ).toBe("ultra (RALPH_EFFORT; invalid: allowed low|medium|high|xhigh|max)");
+  });
+});
+
+describe("formatAttemptConfig", () => {
+  it("labels inherited provider settings without inventing values", () => {
+    expect(
+      formatAttemptConfig(2, "codex", {
+        modelSource: "user config",
+        effortSource: "user config",
+      })
+    ).toBe(
+      "attempt 2 · codex · configured model=provider-managed (user config) · effort=provider-managed (user config)"
+    );
+  });
+
+  it("sanitizes display controls without changing the snapshot", () => {
+    const snapshot = {
+      model: "gpt\nunsafe\u001b[31m",
+      modelSource: "--model",
+      effort: "high\rnext",
+      effortSource: "--effort",
+    };
+
+    const line = formatAttemptConfig(1, "codex", snapshot);
+
+    expect(line).toContain("gpt\\nunsafe\\u001b[31m");
+    expect(line).toContain("high\\rnext");
+    expect(line).not.toMatch(/[\r\n\u001b]/);
+    expect(snapshot.model).toBe("gpt\nunsafe\u001b[31m");
+    expect(snapshot.effort).toBe("high\rnext");
+  });
+
+  it("labels Claude-owned omitted fields as provider-managed", () => {
+    expect(
+      formatAttemptConfig(1, "claude", {
+        modelSource: "host provider config",
+        effortSource: "Claude CLI default",
+      })
+    ).toBe(
+      "attempt 1 · claude · configured model=provider-managed (host provider config) · effort=provider-managed (Claude CLI default)"
+    );
   });
 });
 
