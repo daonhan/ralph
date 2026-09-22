@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.1](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.8.0...ralph-sandbox-v0.8.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **core:** render current GitHub issue context safely ([210d0bb](https://github.com/daonhan/ralph/commit/210d0bbf162d96d94e4bac98cc4c4bfb32fb96f5))
+* **core:** render current GitHub issue context safely ([67b01ff](https://github.com/daonhan/ralph/commit/67b01ff60663037476e41c0552da1ca6a322c992))
+
 ## [0.8.0](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.7.1...ralph-sandbox-v0.8.0) (2026-09-12)
 
 
