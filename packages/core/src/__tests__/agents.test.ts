@@ -495,7 +495,7 @@ describe("agent tuning", () => {
       resolveAgentTuning(
         "claude",
         {},
-        env({ RALPH_CODEX_MODEL: "gpt-5.6-sol", RALPH_CODEX_EFFORT: "none" })
+        env({ RALPH_CODEX_MODEL: "gpt-5.6-sol", RALPH_CODEX_EFFORT: "ultra" })
       )
     ).toEqual({});
   });
@@ -522,6 +522,23 @@ describe("agent tuning", () => {
       effort: { value: "max", source: "--effort" },
     });
   });
+
+  it("resolves Codex Ultra with trimming, precedence, and blank fallthrough", () => {
+    expect(
+      resolveAgentTuning(
+        "codex",
+        { effort: "low" },
+        env({ RALPH_CODEX_EFFORT: " ultra " })
+      ).effort
+    ).toEqual({ value: "low", source: "--effort" });
+    expect(
+      resolveAgentTuning(
+        "codex",
+        { effort: "  " },
+        env({ RALPH_CODEX_EFFORT: " ultra " })
+      ).effort
+    ).toEqual({ value: "ultra", source: "RALPH_CODEX_EFFORT" });
+  });
 });
 
 describe("agent tuning validation", () => {
@@ -534,6 +551,25 @@ describe("agent tuning validation", () => {
       for (const level of getAgentAdapter(agent).effortLevels) {
         expect(validateAgentTuning(agent, fromFlag(level))).toBeUndefined();
       }
+    }
+  });
+
+  it("accepts explicit Ultra for Codex", () => {
+    expect(validateAgentTuning("codex", fromFlag("ultra"))).toBeUndefined();
+  });
+
+  it("keeps Ultra Codex-specific", () => {
+    expect(validateAgentTuning("claude", fromFlag("ultra"))).toBe(
+      "--effort=ultra is not a claude effort level; expected one of low|medium|high|xhigh|max"
+    );
+    for (const agent of ["claude", "codex"] as const) {
+      expect(
+        validateAgentTuning(agent, {
+          effort: { value: "ultra", source: "RALPH_EFFORT" },
+        })
+      ).toBe(
+        "RALPH_EFFORT=ultra is not an effort level every agent accepts; expected one of low|medium|high|xhigh|max; set RALPH_CODEX_EFFORT=ultra for a codex effort level"
+      );
     }
   });
 
@@ -560,7 +596,7 @@ describe("agent tuning validation", () => {
         effort: { value: "ultracode", source: "RALPH_CODEX_EFFORT" },
       })
     ).toBe(
-      "RALPH_CODEX_EFFORT=ultracode is not a codex effort level; expected one of none|minimal|low|medium|high|xhigh|max"
+      "RALPH_CODEX_EFFORT=ultracode is not a codex effort level; expected one of none|minimal|low|medium|high|xhigh|max|ultra"
     );
     expect(
       validateAgentTuning("codex", {
@@ -768,6 +804,24 @@ describe("Codex adapter", () => {
     ]);
   });
 
+  it("passes Ultra through exactly in isolated mode", () => {
+    const args = buildCodexArgs({
+      stage,
+      promptInstruction,
+      rawModel: "gpt-future",
+      rawEffort: "ultra",
+      codexUserConfig: false,
+      home: "",
+    });
+    expect(args).toContain("--ignore-user-config");
+    expect(args.slice(args.indexOf("--model"), -1)).toEqual([
+      "--model",
+      "gpt-future",
+      "-c",
+      'model_reasoning_effort="ultra"',
+    ]);
+  });
+
   it("sends an explicit effort and no model under --codex-user-config", () => {
     expect(
       buildCodexArgs({
@@ -789,6 +843,24 @@ describe("Codex adapter", () => {
       "--dangerously-bypass-approvals-and-sandbox",
       "-c",
       'model_reasoning_effort="low"',
+      promptInstruction,
+    ]);
+  });
+
+  it("passes Ultra through without a model under --codex-user-config", () => {
+    const args = buildCodexArgs({
+      stage,
+      promptInstruction,
+      rawModel: undefined,
+      rawEffort: "ultra",
+      codexUserConfig: true,
+      home: "",
+    });
+    expect(args).not.toContain("--ignore-user-config");
+    expect(args).not.toContain("--model");
+    expect(args.slice(-3)).toEqual([
+      "-c",
+      'model_reasoning_effort="ultra"',
       promptInstruction,
     ]);
   });

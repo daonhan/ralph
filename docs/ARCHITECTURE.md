@@ -338,7 +338,11 @@ default. Each resolved value carries the literal flag or variable name it came f
 `validateAgentTuning` checks the effort against the selected adapter's `effortLevels` —
 Claude `low|medium|high|xhigh|max` (`ultracode` is left out deliberately: it starts
 workflow orchestration an unattended stage cannot steer), Codex
-`none|minimal|low|medium|high|xhigh|max`. An effort that came from the agent-agnostic
+`none|minimal|low|medium|high|xhigh|max|ultra`. Ultra is a provider-wide input here,
+not a model compatibility claim: Ralph forwards it unchanged as
+`-c 'model_reasoning_effort="ultra"'`, and Codex owns model, client, and account
+validation. Ralph adds no model discovery, fallback, effort downgrade, or delegation
+switch. An effort that came from the agent-agnostic
 `RALPH_EFFORT` is checked against `SHARED_EFFORT_LEVELS`, the intersection of every
 adapter's list, so a value that works today keeps working after an agent switch; the
 message names the provider's own variable when only that provider knows the level.
@@ -833,7 +837,7 @@ Release/publishing (release-please → tag-driven npm + image workflows) is the 
 | `RALPH_CLAUDE_MODEL`         | _(unset)_                                                | Model for Claude runs; outranks `RALPH_MODEL`. Names are derived from the agent, so a new adapter gets its pair for free.                                                                                                                                                  |
 | `RALPH_CODEX_MODEL`          | _(unset)_                                                | Model for Codex runs; outranks `RALPH_MODEL`. Explicit invalid models fail without fallback.                                                                                                                                                                               |
 | `RALPH_CLAUDE_EFFORT`        | _(unset)_                                                | Claude reasoning effort (`low\|medium\|high\|xhigh\|max`); outranks `RALPH_EFFORT`. Unset sends no `--effort`.                                                                                                                                                             |
-| `RALPH_CODEX_EFFORT`         | _(unset)_                                                | Codex reasoning effort (`none\|minimal\|low\|medium\|high\|xhigh\|max`); outranks `RALPH_EFFORT`, and is the only route to a Codex-only level.                                                                                                                             |
+| `RALPH_CODEX_EFFORT`         | _(unset)_                                                | Codex reasoning effort (`none\|minimal\|low\|medium\|high\|xhigh\|max\|ultra`); outranks `RALPH_EFFORT`, and is the only environment-variable route to a Codex-only level. Model/client/account compatibility remains Codex-owned.                                         |
 | `RALPH_RESULT_GRACE_MS`      | `30000`                                                  | Post-completion kill timer; `0` disables. Invalid/negative → default.                                                                                                                                                                                                      |
 | `RALPH_DOCKER_SOCK`          | on                                                       | `0` disables the host `docker.sock` bind-mount.                                                                                                                                                                                                                            |
 | `RALPH_DOCKER_SOCK_PATH`     | auto-detect                                              | Explicit host socket path.                                                                                                                                                                                                                                                 |

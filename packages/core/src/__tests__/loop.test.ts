@@ -340,12 +340,55 @@ describe("runLoop", () => {
     );
   });
 
+  it("records and forwards one Ultra tuning to both stages", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const reviewer: Stage = { name: "reviewer", template: "review.md" };
+    writeFileSync(
+      join(dirs.packageDir, "templates", reviewer.template),
+      "review"
+    );
+    makeCleanRepo(dirs.workspaceDir);
+    mocks.runStage
+      .mockImplementationOnce(async () => {
+        commitInWorkspace(dirs.workspaceDir, "implemented.txt");
+        return ok("implemented");
+      })
+      .mockResolvedValueOnce(ok("reviewed"));
+
+    await runLoop(
+      loopOptions(dirs, {
+        agent: "codex",
+        model: "gpt-future",
+        effort: "ultra",
+        stages: [stage, reviewer] as [Stage, Stage],
+      })
+    );
+
+    expect(mocks.runStage).toHaveBeenCalledTimes(2);
+    for (const call of mocks.runStage.mock.calls) {
+      expect(call[6]).toMatchObject({
+        agent: "codex",
+        tuning: {
+          model: { value: "gpt-future", source: "--model" },
+          effort: { value: "ultra", source: "--effort" },
+        },
+      });
+    }
+    expect(readRunLog(dirs.workspaceDir).view.started).toMatchObject({
+      model: "gpt-future",
+      modelSource: "--model",
+      effort: "ultra",
+      effortSource: "--effort",
+    });
+  });
+
   it("forwards env-sourced tuning to every stage", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
     mocks.runStage.mockResolvedValue(ok(sentinel));
     const original = process.env.RALPH_CODEX_EFFORT;
-    process.env.RALPH_CODEX_EFFORT = "max";
+    process.env.RALPH_CODEX_EFFORT = "ultra";
 
     try {
       await runLoop(loopOptions(dirs, { agent: "codex" }));
@@ -363,10 +406,14 @@ describe("runLoop", () => {
       expect.any(String),
       expect.objectContaining({
         tuning: {
-          effort: { value: "max", source: "RALPH_CODEX_EFFORT" },
+          effort: { value: "ultra", source: "RALPH_CODEX_EFFORT" },
         },
       })
     );
+    expect(readRunLog(dirs.workspaceDir).view.started).toMatchObject({
+      effort: "ultra",
+      effortSource: "RALPH_CODEX_EFFORT",
+    });
   });
 
   // The check sits at the head of the try, so the failure is on disk as
@@ -388,6 +435,28 @@ describe("runLoop", () => {
     });
     expect(mocks.ensureImage).not.toHaveBeenCalled();
     expect(historyFiles(dirs.workspaceDir, ".md")).toEqual([]);
+  });
+
+  it("rejects generic Ultra durably before image setup", async () => {
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const original = process.env.RALPH_EFFORT;
+    process.env.RALPH_EFFORT = "ultra";
+
+    try {
+      await expect(
+        runLoop(loopOptions(dirs, { agent: "codex" }))
+      ).rejects.toThrow(/RALPH_CODEX_EFFORT=ultra/);
+    } finally {
+      if (original === undefined) delete process.env.RALPH_EFFORT;
+      else process.env.RALPH_EFFORT = original;
+    }
+
+    expect(
+      readRunLog(dirs.workspaceDir).events.map((event) => event.type)
+    ).toEqual(["run.started", "run.ended"]);
+    expect(mocks.ensureImage).not.toHaveBeenCalled();
+    expect(mocks.runStage).not.toHaveBeenCalled();
   });
 
   it("rejects Codex user config with Claude before image setup", async () => {

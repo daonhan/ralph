@@ -205,18 +205,55 @@ Codex sends its effort as `-c model_reasoning_effort="<level>"`. Isolated Codex
 keeps Ralph's `high` default even when a model is named — naming a model no
 longer silently drops the effort to the Codex CLI's own (a behavior change; see
 "Troubleshooting"). With `--codex-user-config` the file supplies both unless a
-flag or variable overrides it. An explicit invalid model fails; Ralph never
-reruns the stage with another model.
+flag or variable overrides it. An explicit invalid model or incompatible effort
+fails in Codex; Ralph never retries with another model or a lower effort.
 
 Effort levels are allowlisted per agent: Claude takes
 `low|medium|high|xhigh|max` — `ultracode` is left out deliberately, since it
 starts workflow orchestration an unattended stage cannot steer — and Codex adds
-`none` and `minimal`. `RALPH_EFFORT` is agent-agnostic, so it accepts only a
+`none`, `minimal`, and `ultra`. `RALPH_EFFORT` is agent-agnostic, so it accepts only a
 level every agent accepts (currently `low|medium|high|xhigh|max`); a
-provider-only level goes in that provider's own variable. An unknown level ends
+provider-only level such as `ultra` goes in `RALPH_CODEX_EFFORT`. An unknown level ends
 the run before any container starts, with `run.ended` `reason: "error"` in the
 event log and exit `1`. `--print-config` never fails on one: it prints the level
 with an `invalid: allowed …` suffix.
+
+Ultra is model-, client-, and account-dependent. Ralph selects the mode but does
+not treat allowlist acceptance or `--print-config` output as proof that a chosen
+model is entitled to run it. The Codex 0.154.0 bundled catalog reported this
+snapshot on 2026-09-22:
+
+| Model ID        | Advertised effort values                         |
+| --------------- | ------------------------------------------------ |
+| `gpt-6-astra`   | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
+| `gpt-5.6-sol`   | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
+| `gpt-5.6-terra` | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
+| `gpt-5.6-luna`  | `low`, `medium`, `high`, `xhigh`, `max`          |
+
+This table is informational, not a permanent registry or an access guarantee;
+newer clients may change it, and custom or stale images may need a newer Codex
+version. Ralph still accepts `none` and `minimal` for compatible models even
+though those values were absent from this modern-model snapshot. Codex owns the
+current compatibility error.
+
+[OpenAI's model guide](https://learn.chatgpt.com/docs/models) describes Ultra as
+maximum reasoning with automatic delegation, which can increase time and token
+usage. For the local CLI, the
+[subagent guide](https://learn.chatgpt.com/docs/agent-configuration/subagents#reasoning-effort-model_reasoning_effort)
+qualifies delegation: current clients delegate after a direct request or an
+applicable project or skill instruction. Selecting Ultra through Ralph does not
+promise proactive delegation, and Ralph neither requires nor counts child
+agents; its outer implementer/reviewer stages stay unchanged.
+
+PowerShell examples for a one-run selection and a Codex-only environment pin:
+
+```powershell
+ralph-afk --agent codex --model gpt-5.6-sol --effort ultra --print-config
+ralph-afk --agent codex --model gpt-5.6-sol --effort ultra "docs/plan.md" 3
+$env:RALPH_CODEX_EFFORT = "ultra"
+ralph-ghafk --agent codex --print-config
+Remove-Item Env:RALPH_CODEX_EFFORT
+```
 
 `ralph-afk --print-config` shows the `model` and `reasoning` it resolved and
 names the flag or variable each came from; `run.started` in the run event log
@@ -623,7 +660,7 @@ npx -y @daonhan/ralph ralph-afk "<plan-and-prd>" 5
 | `RALPH_CLAUDE_MODEL`         | _(unset)_                                                | Model for Claude runs. Outranks `RALPH_MODEL`, so both agents can be pinned at once and switching agents never sends one the other's model.                                                                                                                                                                |
 | `RALPH_CODEX_MODEL`          | _(unset)_                                                | Model for Codex runs. Outranks `RALPH_MODEL`.                                                                                                                                                                                                                                                              |
 | `RALPH_CLAUDE_EFFORT`        | _(unset)_                                                | Reasoning effort for Claude runs: `low\|medium\|high\|xhigh\|max`. Outranks `RALPH_EFFORT`. With none set Ralph sends no `--effort` and the container CLI applies the host settings' `effortLevel`.                                                                                                        |
-| `RALPH_CODEX_EFFORT`         | _(unset)_                                                | Reasoning effort for Codex runs: `none\|minimal\|low\|medium\|high\|xhigh\|max`. Outranks `RALPH_EFFORT`, and is the only route to a Codex-only level.                                                                                                                                                     |
+| `RALPH_CODEX_EFFORT`         | _(unset)_                                                | Reasoning effort for Codex runs: `none\|minimal\|low\|medium\|high\|xhigh\|max\|ultra`. Outranks `RALPH_EFFORT`, and is the only environment-variable route to a Codex-only level; actual support depends on the model, client, and account.                                                               |
 | `DOCKER_HOST`                | _(unset)_                                                | A `unix:///…` value is parsed for the docker-socket bind-mount; `tcp://` / `npipe://` / `ssh://` are not bind-mountable.                                                                                                                                                                                   |
 | `XDG_RUNTIME_DIR`            | _(unset)_                                                | Searched for rootless Docker/Podman sockets during auto-detection.                                                                                                                                                                                                                                         |
 | `NO_COLOR` / `TERM=dumb`     | _(unset)_                                                | Disable ANSI color in Ralph's own output. Color is also auto-disabled when stdout/stderr is not a TTY, so piping to a file stays clean.                                                                                                                                                                    |
@@ -780,10 +817,10 @@ To add another, drop a directory with a `SKILL.md` beside `ralph-tdd/`, name it 
 - **Codex reports that login is missing** — ensure `cli_auth_credentials_store = "file"`, run `codex login` from the same shell environment as Ralph (per the same-shell rule), and confirm `codex login status` succeeds and `~/.codex/auth.json` exists in that environment's home.
 - **Codex fails with `Operation not permitted (os error 1)` / `EPERM` at startup** — the container's `CODEX_HOME` is sitting on a Windows bind mount, which cannot host the unix socket and symlinks Codex creates at startup. Current Ralph avoids this by copying credentials into a container-local `CODEX_HOME`; upgrade `@daonhan/ralph` if you see this.
 - **Codex config, MCP servers, or hooks are missing** — isolated Codex intentionally ignores `~/.codex/config.toml`; opt in with `--codex-user-config` and ensure configured commands and paths work inside Linux Docker.
-- **An explicit Codex model fails** — fix or remove the model you set (`--model`, `RALPH_CODEX_MODEL` or `RALPH_MODEL`). Ralph does not silently fall back to `gpt-5.6-sol` or another model after an explicit model failure.
+- **An explicit Codex model or effort fails** — fix or remove the model/effort you set (`--model`, `--effort`, or their Codex/generic environment variables). Ralph does not silently fall back to `gpt-5.6-sol`, another model, or a lower effort after Codex rejects a model/effort combination. Ultra can require a newer client in a stale/custom image even when Ralph accepts the token.
 - **A pinned Codex model now runs at `high` reasoning** — behavior change. Isolated Codex used to drop to the Codex CLI's own reasoning effort as soon as a model was named; it now keeps Ralph's `high` default, because model and effort resolve independently. That can make a run more expensive than the same command used to be. Pick the level explicitly with `--effort <level>` or `RALPH_CODEX_EFFORT=<level>`.
 - **The Claude stage fails on the model itself** (unknown model, or one your plan cannot use) — Ralph sent its own default because no model was set (`--model`, `RALPH_CLAUDE_MODEL`, `RALPH_MODEL`) and your host `~/.claude/settings.json` pinned none. Run `ralph-afk --print-config` to see the model and where it came from, then set `--model <model you have access to>` or pick an explicit (non-"(default)") entry in `/model`.
-- **`RALPH_EFFORT=… is not an effort level every agent accepts`** — the run ended before any container started, with `run.ended` `reason: "error"` in the event log and exit `1`. `RALPH_EFFORT` is agent-agnostic, so it takes only a level every agent accepts (`low|medium|high|xhigh|max`); a provider-only level such as Codex's `none` or `minimal` goes in `RALPH_CODEX_EFFORT`. `ralph-afk --print-config` shows a rejected level with an `invalid: allowed …` suffix instead of failing.
+- **`RALPH_EFFORT=… is not an effort level every agent accepts`** — the run ended before any container started, with `run.ended` `reason: "error"` in the event log and exit `1`. `RALPH_EFFORT` is agent-agnostic, so it takes only a level every agent accepts (`low|medium|high|xhigh|max`); a provider-only level such as Codex's `none`, `minimal`, or `ultra` goes in `RALPH_CODEX_EFFORT`. `ralph-afk --print-config` shows a rejected level with an `invalid: allowed …` suffix instead of failing.
 - **`gh issue list` fails with `not a git repository`** — the workspace has no `.git`. The `ghafk.md` template uses `|| echo "[]"` fallback so the iteration still proceeds, but `gh` cannot detect the target repo. Initialize the repo, or push first.
 - **`MSB3248` during `dotnet build` / `dotnet test`** — virtiofs/9p quirk on Windows-mounted source. The agent retries automatically per the recipe in `packages/core/templates/prompt.md`; manual repro:
   ```bash

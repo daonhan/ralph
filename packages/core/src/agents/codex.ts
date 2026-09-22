@@ -370,7 +370,17 @@ export function buildCodexArgs(context: AgentCommandContext): string[] {
 
 export const codexAdapter = {
   name: "codex",
-  effortLevels: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+  // Ultra is a Codex mode whose availability depends on the selected model.
+  effortLevels: [
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+    "ultra",
+  ],
   containerEnv: {
     CODEX_HOME: "/home/agent/.codex",
   },
