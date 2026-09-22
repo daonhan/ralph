@@ -17,6 +17,7 @@ import {
   resolveAgentTuning,
   validateAgentTuning,
   type AgentAdapter,
+  type AgentConfigSnapshot,
   type AgentName,
   type AgentStreamDecoder,
   type AgentTuning,
@@ -54,6 +55,8 @@ export type RunStageOptions = {
   container?: StageContainer;
   /** Model/effort the loop resolved once; re-resolved from the env when absent. */
   tuning?: AgentTuning;
+  /** Provider config resolved for this attempt; direct callers may omit it. */
+  configSnapshot?: AgentConfigSnapshot;
 };
 
 export type StageContainer = {
@@ -763,6 +766,7 @@ export async function runStage(
         codexUserConfig: options.codexUserConfig ?? false,
         home,
         skillsMounted: skillsArgs.length > 0,
+        configSnapshot: options.configSnapshot,
       })
     );
 

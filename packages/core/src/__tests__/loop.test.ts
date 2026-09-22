@@ -338,6 +338,9 @@ describe("runLoop", () => {
         },
       })
     );
+    expect(readStderr()).toContain(
+      "attempt 1 · codex · configured model=gpt-custom (--model) · effort=xhigh (--effort)"
+    );
   });
 
   it("records and forwards one Ultra tuning to both stages", async () => {
@@ -520,6 +523,50 @@ describe("runLoop", () => {
     expect(firstLog).toContain("[retry] attempt 1 of 1 after 5000 ms");
   });
 
+  it("takes a fresh Claude snapshot for each retry", async () => {
+    vi.useFakeTimers();
+    const dirs = makeDirs();
+    roots.push(dirs.root);
+    const home = join(dirs.root, "home");
+    const settings = join(home, ".claude", "settings.json");
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(settings, '{ "model": "claude-first" }');
+    const originalHome = process.env.HOME;
+    process.env.HOME = home;
+    mocks.runStage
+      .mockImplementationOnce(async () => {
+        writeFileSync(settings, '{ "model": "claude-second" }');
+        throw new Error("retry me");
+      })
+      .mockResolvedValueOnce(ok(sentinel));
+
+    try {
+      const loop = runLoop(loopOptions(dirs, { maxRetries: 1 }));
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(5_000);
+      await loop;
+    } finally {
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+    }
+
+    expect(mocks.runStage.mock.calls[0]![6].configSnapshot).toMatchObject({
+      model: "claude-first",
+      modelSource: "host ~/.claude/settings.json",
+    });
+    expect(mocks.runStage.mock.calls[1]![6].configSnapshot).toMatchObject({
+      model: "claude-second",
+      modelSource: "host ~/.claude/settings.json",
+    });
+    expect(readStderr()).toContain(
+      "attempt 1 · claude · configured model=claude-first (host ~/.claude/settings.json)"
+    );
+    expect(readStderr()).toContain(
+      "attempt 2 · claude · configured model=claude-second (host ~/.claude/settings.json)"
+    );
+  });
+
   it("retries a failing render and surfaces it as a terminal failure (no false completion)", async () => {
     const dirs = makeDirs();
     roots.push(dirs.root);
@@ -534,7 +581,11 @@ describe("runLoop", () => {
     );
 
     await runLoop(
-      loopOptions(dirs, { stages: [failStage] as [Stage], maxRetries: 0 })
+      loopOptions(dirs, {
+        stages: [failStage] as [Stage],
+        maxRetries: 0,
+        agent: "codex",
+      })
     );
 
     // Render threw before the stage ran: runStage never invoked, loop did not
@@ -545,6 +596,9 @@ describe("runLoop", () => {
       "utf8"
     );
     expect(log).toContain("[failure] iteration 1 stage implementer failed");
+    expect(readStderr()).toContain(
+      "attempt 1 · codex · configured model=gpt-5.6-sol (Ralph default) · effort=high (Ralph default)"
+    );
   });
 
   it("records retries and attempt bullets on a stage that recovers", async () => {
@@ -1854,6 +1908,7 @@ describe("runLoop", () => {
       .map((c) => String(c[0]))
       .join("");
     expect(stderr).toContain(`skipped · HEAD unchanged (${head})`);
+    expect(stderr.match(/^attempt /gm)).toHaveLength(1);
   });
 
   it("runs the reviewer when the implementer moved HEAD", async () => {
@@ -1887,6 +1942,7 @@ describe("runLoop", () => {
     );
 
     expect(mocks.runStage).toHaveBeenCalledTimes(2);
+    expect(readStderr().match(/^attempt 1 /gm)).toHaveLength(2);
     const text = readHistory(dirs.workspaceDir);
     expect(text).toContain("## iter 1/1 · reviewer · review-ok · ");
     expect(text).not.toContain("· skipped ·");

@@ -411,6 +411,25 @@ describe("Claude host model resolution", () => {
     expect(args).not.toContain("--model");
   });
 
+  it("honors a provider-managed attempt snapshot without rereading host settings", () => {
+    const home = makeHome('{ "model": "changed-after-snapshot" }');
+    const args = getAgentAdapter("claude").buildCommand({
+      stage,
+      promptInstruction,
+      rawModel: undefined,
+      rawEffort: undefined,
+      codexUserConfig: false,
+      home,
+      configSnapshot: {
+        modelSource: "host provider config",
+        effortSource: "Claude CLI default",
+      },
+    });
+
+    expect(args).not.toContain("--model");
+    expect(args).not.toContain("changed-after-snapshot");
+  });
+
   it("sends --effort after --model and right before the prompt", () => {
     const args = getAgentAdapter("claude").buildCommand({
       stage,

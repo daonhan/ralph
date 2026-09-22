@@ -44,9 +44,12 @@ runLoop (loop.ts)
    ensureImage(ralphDir, {signal})            ONCE before the loop
    for i in 1..iterations:
      for s in 0..stages.length-1:
-        renderTemplate(...)  (render.ts)       expand tags → prompt string
-        runStage(...)  (runner.ts)             wrapped in withRetries (retry.ts)
-           writeFileSync(.run-*.md)
+        withRetries(...)                       attempt numbers restart per stage
+          resolveAgentConfigSnapshot(...)      fresh synchronous provider snapshot
+          print attempt config to stderr       same snapshot that argv will use
+          renderTemplate(...)  (render.ts)     expand tags → prompt string
+          runStage(...)  (runner.ts)
+            writeFileSync(.run-*.md)
             select agents/{claude,codex} adapter
             spawn docker run … <provider command> …
             streamDocker: provider JSONL → normalized events → live print
@@ -89,7 +92,17 @@ ralph-ghafk → [STAGES.ghafkImplementer, STAGES.reviewer]   inputs = ""
 
 On a hit the loop prints the `Ralph ended · no-more-tasks · …` summary line and returns immediately — subsequent stages do **not** run. The sentinel string is hardcoded as `SENTINEL` in [`../packages/core/src/loop.ts`](../packages/core/src/loop.ts) and matched by the exported `hasSentinel` predicate — surrounding whitespace and a wrapping pair of backticks are allowed, nothing else on the line — and the agent is told to emit it (see [`../packages/core/templates/prompt.md`](../packages/core/templates/prompt.md)) when no AFK tasks remain. A mention inside prose does not gate: the loop writes one `[warning] iteration <i>: the gate mentioned … without emitting it on a line of its own; the loop continues` line to stderr and keeps going. The **reviewer never gates** — only `s === 0` is sentinel-checked.
 
-**Failure handling within an iteration:** each stage is wrapped in `withRetries`. If a stage exhausts its retry budget, `loop.ts` writes a `[failure]` marker to the stage log, prints a failure line, and `break`s out of the stage loop — abandoning the rest of _that_ iteration. The outer iteration loop then proceeds to the next iteration (`i + 1`). A stage failure does **not** abort the whole run.
+**Failure handling within an iteration:** each stage is wrapped in `withRetries`.
+The attempt counter increments and its configuration line is written before
+template rendering, so a render failure consumes and reports an attempt just
+like a runner failure. Each retry resolves and prints a fresh configuration
+snapshot; numbering restarts at 1 for the next stage. A later stage skipped
+because the gate left HEAD unchanged does not enter `withRetries`, resolve a
+snapshot, or print an attempt line. If a stage exhausts its retry budget,
+`loop.ts` writes a `[failure]` marker to the stage log, prints a failure line,
+and `break`s out of the stage loop — abandoning the rest of _that_ iteration.
+The outer iteration loop then proceeds to the next iteration (`i + 1`). A stage
+failure does **not** abort the whole run.
 
 ---
 
@@ -328,16 +341,52 @@ the image installs `@openai/codex` into, so `npm` can replace it without root.
 that runs.
 `RALPH_CODEX_UPDATE=0` drops the update and the mount together.
 
-Model and reasoning effort are resolved once per run by `resolveAgentTuning`
-(`agents/index.ts`) and handed to every stage, so both are settled before the first
-container starts. Each field takes the first source that is set, blank and whitespace-only
-counting as unset: `--model` / `--effort`, then `RALPH_<AGENT>_MODEL` /
-`RALPH_<AGENT>_EFFORT`, then `RALPH_MODEL` / `RALPH_EFFORT`, then the adapter's own
-default. The per-agent names are built from the agent name
-(`RALPH_${agent.toUpperCase()}_MODEL`), so a new provider gets its pair without a table
-edit. Model and effort resolve independently: setting one never moves the other off its
-default. Each resolved value carries the literal flag or variable name it came from, which
-`--print-config` prints and `run.started` records.
+Flag/environment tuning is resolved once per run by `resolveAgentTuning`
+(`agents/index.ts`) and handed to every stage. Each field takes the first source
+that is set, blank and whitespace-only counting as unset: `--model` / `--effort`,
+then `RALPH_<AGENT>_MODEL` / `RALPH_<AGENT>_EFFORT`, then `RALPH_MODEL` /
+`RALPH_EFFORT`. The per-agent names are built from the agent name
+(`RALPH_${agent.toUpperCase()}_MODEL`), so a new provider gets its pair without a
+table edit. Model and effort resolve independently: setting one never moves the
+other off its default. Each tuned value carries the literal flag or variable
+name it came from, which `--print-config` prints and `run.started` records.
+
+Provider-owned resolution happens later, once per attempted stage. Inside the
+`withRetries` closure and before `renderTemplate`, `loop.ts` synchronously calls
+`resolveAgentConfigSnapshot` to combine the run-level tuning with the selected
+adapter's current defaults or host configuration. It immediately writes one
+plain stderr line:
+
+```text
+attempt 1 · codex · configured model=gpt-5.6-sol (Ralph default) · effort=high (Ralph default)
+```
+
+The same `AgentConfigSnapshot` is passed through `RunStageOptions` and
+`AgentCommandContext` to command construction. This ownership boundary matters:
+`runStage` can await volume preparation, but the adapter must not reread mutable
+host settings afterward and make argv disagree with the displayed line. A retry
+takes a new snapshot, so a changed host Claude setting applies to the next
+attempt. Rendering failures still have a line because snapshotting and display
+happen first; skipped stages never enter the closure and have none. Direct
+`runStage` and adapter callers may omit the optional snapshot, preserving their
+existing on-demand resolution behavior.
+
+The word `configured` describes Ralph's request, not the backend's verified
+execution model or reasoning mode. An absent snapshot value is rendered as
+`provider-managed (<source>)` and omitted from argv: this covers Claude effort
+without an explicit tuning value, Claude model selection under Bedrock, Vertex,
+or Foundry routing, and untuned Codex fields inherited from user config. Ralph
+does not inspect the provider afterward, discover aliases, or infer Codex TOML
+values. C0/C1 control characters in displayed values and sources are escaped to
+visible text (`\\n`, `\\r`, `\\t`, or `\\uNNNN`) so redirected stderr and
+detached logs remain one record per attempt. Sanitization is display-only; the
+snapshot's original value is passed unchanged in argv. The attempt line itself
+contains no ANSI styling.
+
+`--print-config` and `run.started` remain run-start descriptions and the event
+schema is unchanged. For mutable provider settings, an attempt line can
+legitimately differ from `run.started`; it is the authoritative attempt-time
+description for that attempt.
 
 `validateAgentTuning` checks the effort against the selected adapter's `effortLevels` —
 Claude `low|medium|high|xhigh|max` (`ultracode` is left out deliberately: it starts

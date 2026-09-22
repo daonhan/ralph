@@ -169,9 +169,10 @@ inside the Linux sandbox.
 
 ### Model and effort
 
-A run resolves a model and a reasoning effort for the selected agent. The two
-resolve independently, and for each the first source that is set wins (blank or
-whitespace-only counts as unset):
+Ralph resolves a model and a reasoning effort independently for each attempt.
+Flag and environment precedence is fixed for the run; provider defaults and
+host configuration are read when the attempt begins. For each field the first
+source that is set wins (blank or whitespace-only counts as unset):
 
 1. `--model <name>` / `--effort <level>`
 2. `RALPH_CLAUDE_MODEL` / `RALPH_CLAUDE_EFFORT`, or `RALPH_CODEX_MODEL` /
@@ -188,6 +189,31 @@ model.
 | Claude                       | the model pinned by host `~/.claude/settings.json`, then `claude-opus-5[1m]` | none: no `--effort` is sent, so the container CLI applies the host settings' `effortLevel` |
 | Codex, isolated              | `gpt-5.6-sol`                                                                | `high`, whatever the model                                                                 |
 | Codex, `--codex-user-config` | `~/.codex/config.toml`                                                       | `~/.codex/config.toml`                                                                     |
+
+Before every implementer or reviewer attempt, Ralph writes the configuration
+for that attempt to stderr. The first line appears immediately after the stage
+banner:
+
+```text
+== iteration 2/5 · reviewer (stage 2/2) ==
+attempt 1 · codex · configured model=gpt-5.6-sol (Ralph default) · effort=high (Ralph default)
+```
+
+Retries print another line (`attempt 2`, and so on), with numbering restarting
+at 1 for each stage. The line is emitted before template rendering, so a render
+failure that consumes an attempt is still visible. A stage skipped because the
+gate did not move HEAD keeps its existing skip message and prints no attempt
+configuration. Because the line goes to stderr it is also captured by
+`--detach` logs. It is always plain text (no ANSI, including on a TTY), with
+control characters escaped for display so a configured value cannot inject
+another terminal line or escape sequence. The escaping is display-only and
+does not change the value passed to the provider.
+
+`configured` is deliberate: this is the value Ralph requested, not proof of
+the model or reasoning mode the backend actually used. When Ralph intentionally
+omits a switch, the line says `provider-managed` rather than guessing a value;
+examples are untuned Claude effort, Claude model selection under third-party
+routing, and untuned Codex fields inherited with `--codex-user-config`.
 
 For Claude the host settings are read as `env.ANTHROPIC_MODEL`, else the `model`
 key `/model` stored (its "(default)" entry stores no model). Ralph passes
@@ -255,9 +281,13 @@ ralph-ghafk --agent codex --print-config
 Remove-Item Env:RALPH_CODEX_EFFORT
 ```
 
-`ralph-afk --print-config` shows the `model` and `reasoning` it resolved and
-names the flag or variable each came from; `run.started` in the run event log
-records the same four values.
+`ralph-afk --print-config` shows the initial `model` and `reasoning` resolution
+and names the flag or variable each came from; `run.started` in the run event
+log records that same run-start description. The attempt line is the record to
+consult for a particular stage attempt: Ralph takes a fresh provider
+snapshot for each one, so a host Claude setting changed between retries is
+observed by the next attempt. Display and provider arguments use the same
+snapshot within an attempt.
 
 ## First-run setup
 

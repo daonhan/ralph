@@ -7,6 +7,7 @@ import {
   resolveAgentTuning,
   validateAgentTuning,
   type AgentName,
+  type AgentConfigSnapshot,
   type AgentSelectionSource,
   type AgentTuning,
 } from "./agents/index.js";
@@ -375,6 +376,59 @@ export function describeAgentConfig(
       effortSource: effort.source,
     },
   };
+}
+
+/**
+ * Resolve the provider-owned part of one stage attempt synchronously. The loop
+ * passes this same snapshot to the attempt banner and command construction so
+ * mutable host settings cannot make the two disagree.
+ */
+export function resolveAgentConfigSnapshot(
+  agent: AgentName,
+  codexUserConfig: boolean,
+  tuning: AgentTuning,
+  home: string = resolveHostHome()
+): AgentConfigSnapshot {
+  const host = agent === "claude" ? readHostClaudeModel(home) : undefined;
+  return {
+    ...describeAgentConfig(agent, codexUserConfig, tuning, host).resolved,
+    unreadableSettings: host?.unreadable,
+  };
+}
+
+/** Escape terminal controls for display without changing the command value. */
+function sanitizeConfigDisplay(value: string): string {
+  return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, (character) => {
+    switch (character) {
+      case "\n":
+        return "\\n";
+      case "\r":
+        return "\\r";
+      case "\t":
+        return "\\t";
+      default:
+        return `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`;
+    }
+  });
+}
+
+function formatAttemptSetting(
+  value: string | undefined,
+  source: string
+): string {
+  const safeSource = sanitizeConfigDisplay(source);
+  return value === undefined
+    ? `provider-managed (${safeSource})`
+    : `${sanitizeConfigDisplay(value)} (${safeSource})`;
+}
+
+/** One plain-text line that stays readable in terminals and redirected logs. */
+export function formatAttemptConfig(
+  attempt: number,
+  agent: AgentName,
+  snapshot: AgentConfigSnapshot
+): string {
+  return `attempt ${attempt} · ${agent} · configured model=${formatAttemptSetting(snapshot.model, snapshot.modelSource)} · effort=${formatAttemptSetting(snapshot.effort, snapshot.effortSource)}`;
 }
 
 export type PrintConfigOptions = {

@@ -5,6 +5,7 @@ import type { AgentAdapter, AgentName, AgentSelection } from "./types.js";
 export type {
   AgentAdapter,
   AgentCommandContext,
+  AgentConfigSnapshot,
   AgentDecodeResult,
   AgentMount,
   AgentName,

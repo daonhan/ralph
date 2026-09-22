@@ -353,11 +353,16 @@ export function buildCodexArgs(context: AgentCommandContext): string[] {
   if (!context.codexUserConfig) {
     args.push("--ignore-user-config");
   }
-  const resolution = resolveCodexModel(
-    context.rawModel,
-    context.rawEffort,
-    context.codexUserConfig
-  );
+  const resolution = context.configSnapshot
+    ? {
+        model: context.configSnapshot.model,
+        reasoningEffort: context.configSnapshot.effort,
+      }
+    : resolveCodexModel(
+        context.rawModel,
+        context.rawEffort,
+        context.codexUserConfig
+      );
   if (resolution.model) {
     args.push("--model", resolution.model);
   }

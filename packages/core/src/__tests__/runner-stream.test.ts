@@ -1,23 +1,38 @@
 import { EventEmitter } from "node:events";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const spawnMock = vi.hoisted(() => vi.fn());
+const childProcessMocks = vi.hoisted(() => ({
+  spawn: vi.fn(),
+  spawnSync: vi.fn(),
+}));
 
 vi.mock("node:child_process", async () => {
   const actual =
     await vi.importActual<typeof import("node:child_process")>(
       "node:child_process"
     );
-  return { ...actual, spawn: spawnMock };
+  return {
+    ...actual,
+    spawn: childProcessMocks.spawn,
+    spawnSync: childProcessMocks.spawnSync,
+  };
 });
 
 import { createCodexDecoder } from "../agents/codex.js";
-import { streamDocker } from "../runner.js";
+import { runStage, streamDocker } from "../runner.js";
+
+const spawnMock = childProcessMocks.spawn;
 
 type FakeChild = EventEmitter & {
   stdout: PassThrough;
@@ -58,6 +73,8 @@ describe("streamDocker", () => {
     child = fakeChild();
     spawnMock.mockReset();
     spawnMock.mockReturnValue(child as never);
+    childProcessMocks.spawnSync.mockReset();
+    childProcessMocks.spawnSync.mockReturnValue({ status: 1, stdout: "" });
     originalGrace = process.env.RALPH_RESULT_GRACE_MS;
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
@@ -86,6 +103,122 @@ describe("streamDocker", () => {
 
     await expect(run).resolves.toEqual({ text: "finished", meta: {} });
     expect(readFileSync(logPath, "utf8")).toContain('"turn.completed"');
+  });
+
+  it("uses the supplied snapshot after asynchronous runner preparation", async () => {
+    const chownChild = fakeChild();
+    const stageChild = fakeChild();
+    spawnMock
+      .mockReturnValueOnce(chownChild as never)
+      .mockReturnValueOnce(stageChild as never);
+    childProcessMocks.spawnSync.mockImplementation((command, args) => {
+      if (command === "docker" && Array.isArray(args) && args[0] === "volume") {
+        return { status: 0, stdout: "" };
+      }
+      return { status: 1, stdout: "" };
+    });
+
+    const home = join(root, "home");
+    const settings = join(home, ".claude", "settings.json");
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(settings, '{ "model": "claude-first" }');
+    writeFileSync(join(root, "package.json"), "{}\n");
+    const saved = {
+      home: process.env.HOME,
+      isolate: process.env.RALPH_ISOLATE_NODE_MODULES,
+      socket: process.env.RALPH_DOCKER_SOCK,
+    };
+    process.env.HOME = home;
+    process.env.RALPH_ISOLATE_NODE_MODULES = "1";
+    process.env.RALPH_DOCKER_SOCK = "0";
+
+    try {
+      const run = runStage(
+        {
+          name: "implementer",
+          template: "afk.md",
+          permissionMode: "bypassPermissions",
+        },
+        "prompt",
+        root,
+        1,
+        undefined,
+        join(root, "stage.ndjson"),
+        {
+          agent: "claude",
+          configSnapshot: {
+            model: "claude-first",
+            modelSource: "host ~/.claude/settings.json",
+            effortSource: "Claude CLI default",
+          },
+        }
+      );
+
+      expect(spawnMock).toHaveBeenCalledTimes(1);
+      writeFileSync(settings, '{ "model": "claude-second" }');
+      chownChild.emit("close", 0);
+      await vi.waitFor(() => expect(spawnMock).toHaveBeenCalledTimes(2));
+
+      const dockerArgs = spawnMock.mock.calls[1]![1] as string[];
+      expect(dockerArgs).toContain("claude-first");
+      expect(dockerArgs).not.toContain("claude-second");
+
+      writeJson(stageChild, { type: "result", result: "done" });
+      stageChild.emit("close", 0);
+      await expect(run).resolves.toEqual({ text: "done", meta: {} });
+    } finally {
+      for (const [key, value] of [
+        ["HOME", saved.home],
+        ["RALPH_ISOLATE_NODE_MODULES", saved.isolate],
+        ["RALPH_DOCKER_SOCK", saved.socket],
+      ] as const) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
+  it("keeps direct runStage calls resolving provider config when no snapshot is supplied", async () => {
+    const home = join(root, "direct-home");
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(
+      join(home, ".claude", "settings.json"),
+      '{ "model": "claude-direct" }'
+    );
+    const saved = {
+      home: process.env.HOME,
+      isolate: process.env.RALPH_ISOLATE_NODE_MODULES,
+      socket: process.env.RALPH_DOCKER_SOCK,
+    };
+    process.env.HOME = home;
+    process.env.RALPH_ISOLATE_NODE_MODULES = "0";
+    process.env.RALPH_DOCKER_SOCK = "0";
+
+    try {
+      const run = runStage(
+        { name: "implementer", template: "afk.md" },
+        "prompt",
+        root,
+        1,
+        undefined,
+        join(root, "direct.ndjson"),
+        { agent: "claude" }
+      );
+      const dockerArgs = spawnMock.mock.calls[0]![1] as string[];
+      expect(dockerArgs).toContain("claude-direct");
+      writeJson(child, { type: "result", result: "done" });
+      child.emit("close", 0);
+      await expect(run).resolves.toEqual({ text: "done", meta: {} });
+    } finally {
+      for (const [key, value] of [
+        ["HOME", saved.home],
+        ["RALPH_ISOLATE_NODE_MODULES", saved.isolate],
+        ["RALPH_DOCKER_SOCK", saved.socket],
+      ] as const) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
   });
 
   it("reports each JSON record the agent writes, and nothing else", async () => {
