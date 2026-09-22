@@ -1,0 +1,2 @@
+# Docker preserves heredoc line endings in the Linux entrypoint.
+images/pg17/Dockerfile text eol=lf

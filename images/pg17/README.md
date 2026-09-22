@@ -20,6 +20,27 @@ A repo that always wants this image (its tests need a database) pins the same tw
 lines in a versioned `<repo>/.ralph/host.env`; the slice-cycle skill's handoff block
 loads that file, and repos without it run on ralph's default image.
 
+## Refreshing an existing image
+
+Ralph reuses an existing local `ralph-sandbox:pg17` tag. Updating the Ralph npm
+packages or pulling `daonhan/ralph-sandbox:latest` does not rebuild this derived
+image. Run the build command above again with `--pull` after a base-image update.
+The build checks the inherited npm prefix as `agent` and rejects an outdated,
+non-writable base with a reminder to rebuild using `--pull`.
+
+If `codex update` reports `EACCES` under `/usr/local/lib/node_modules/@openai/codex`,
+the image still has the old root-owned Codex installation. The current base
+installs Codex in the agent-owned `/home/agent/.npm-global` prefix. The failed
+update is best-effort, so the stage continues with the old CLI; setting
+`RALPH_CODEX_UPDATE=0` only skips the update and does not upgrade that CLI.
+
+After rebuilding, verify the npm package directory is writable and the update
+succeeds as the image's default `agent` user:
+
+```powershell
+docker run --rm --entrypoint bash ralph-sandbox:pg17 -c 'test -w "$(npm root -g)/@openai" && codex update'
+```
+
 ## Isolation model
 
 Each Ralph stage is `docker run --rm` → its own copy of `PGDATA` → an empty

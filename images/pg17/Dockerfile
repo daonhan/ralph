@@ -7,6 +7,13 @@
 # (`<workspace>/.ralph/db.env`: PGDATABASE, DB_URL_VARS, DB_INIT_SQL).
 FROM docker.io/daonhan/ralph-sandbox:latest
 
+# Reject cached bases that predate the writable Codex install. A derived image
+# keeps its base's npm prefix even after the host pulls a newer base image.
+USER agent
+RUN { test "$(npm config get prefix)" = /home/agent/.npm-global \
+      && test -w "$(npm root -g)"; } \
+  || { echo 'Codex needs an agent-writable npm prefix. Rebuild with docker build --pull.' >&2; exit 1; }
+
 USER root
 
 RUN curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
