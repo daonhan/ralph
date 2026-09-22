@@ -200,7 +200,8 @@ Flags:
   --agent <claude|codex> select the in-container coding agent (default: claude; overrides RALPH_AGENT)
   --codex-user-config    load ~/.codex/config.toml for Codex (default: isolated; requires Codex)
   --model <name>      model for the selected agent (overrides RALPH_<AGENT>_MODEL and RALPH_MODEL)
-  --effort <level>    reasoning effort for the selected agent (Claude: low|medium|high|xhigh|max; Codex adds none|minimal)
+  --effort <level>    reasoning effort for the selected agent (Claude: low|medium|high|xhigh|max;
+                      Codex adds none|minimal|ultra; Ultra support is model-dependent)
 
 Environment variables:
   RALPH_WORKSPACE       host dir bind-mounted at /home/agent/workspace (default: cwd)

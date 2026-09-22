@@ -50,6 +50,12 @@ describe("parseFlags agent options", () => {
     });
   });
 
+  it("preserves an Ultra effort token for agent-aware validation", () => {
+    expect(
+      parseFlags(["--agent", "codex", "--effort", "ultra", "2"])
+    ).toMatchObject({ agent: "codex", effort: "ultra", rest: ["2"] });
+  });
+
   it("rejects a missing --model value", () => {
     expect(() => parseFlags(["--model"])).toThrow("--model requires a value");
     expect(() => parseFlags(["--model", "--notify"])).toThrow(
@@ -244,6 +250,30 @@ describe("describeAgentConfig", () => {
       resolved: { effort: "none", effortSource: "RALPH_CODEX_EFFORT" },
     });
   });
+
+  it("describes valid Codex Ultra without claiming compatibility", () => {
+    expect(
+      describeAgentConfig("codex", false, {
+        effort: { value: "ultra", source: "--effort" },
+      })
+    ).toMatchObject({
+      reasoning: "ultra (--effort)",
+      resolved: { effort: "ultra", effortSource: "--effort" },
+    });
+  });
+
+  it("marks Ultra invalid for Claude and the generic Codex variable", () => {
+    expect(
+      describeAgentConfig("claude", false, {
+        effort: { value: "ultra", source: "--effort" },
+      }).reasoning
+    ).toBe("ultra (--effort; invalid: allowed low|medium|high|xhigh|max)");
+    expect(
+      describeAgentConfig("codex", false, {
+        effort: { value: "ultra", source: "RALPH_EFFORT" },
+      }).reasoning
+    ).toBe("ultra (RALPH_EFFORT; invalid: allowed low|medium|high|xhigh|max)");
+  });
 });
 
 it("documents both new flags and RALPH_AGENT", () => {
@@ -258,6 +288,8 @@ it("documents both new flags and RALPH_AGENT", () => {
   expect(output).toContain("gpt-5.6-sol");
   expect(output).toContain("--model <name>");
   expect(output).toContain("--effort <level>");
+  expect(output).toContain("Codex adds none|minimal|ultra");
+  expect(output).toContain("model-dependent");
   expect(output).toContain("RALPH_CLAUDE_MODEL");
   expect(output).toContain("RALPH_CODEX_EFFORT");
   expect(output).toContain("RALPH_EFFORT");
@@ -419,7 +451,7 @@ describe("printConfig node_modules isolation", () => {
 });
 
 describe("printConfig model and effort", () => {
-  const KNOBS = ["RALPH_EFFORT", "RALPH_MODEL"] as const;
+  const KNOBS = ["RALPH_EFFORT", "RALPH_MODEL", "RALPH_CODEX_EFFORT"] as const;
   const original = KNOBS.map((knob) => [knob, process.env[knob]] as const);
 
   function capture(opts = {}): string {
@@ -439,9 +471,20 @@ describe("printConfig model and effort", () => {
 
   it("names --effort as the Codex reasoning source", () => {
     for (const knob of KNOBS) delete process.env[knob];
-    expect(capture({ agent: "codex", effort: "max" })).toContain(
-      "  reasoning             max (--effort)\n"
+    expect(capture({ agent: "codex", effort: "ultra" })).toContain(
+      "  reasoning             ultra (--effort)\n"
     );
+  });
+
+  it("shows Ultra from its Codex-specific variable as valid", () => {
+    delete process.env.RALPH_EFFORT;
+    delete process.env.RALPH_MODEL;
+    process.env.RALPH_CODEX_EFFORT = "ultra";
+    const output = capture({ agent: "codex" });
+    expect(output).toContain(
+      "  reasoning             ultra (RALPH_CODEX_EFFORT)\n"
+    );
+    expect(output).not.toContain("invalid:");
   });
 
   it("prints a reasoning line for Claude too", () => {

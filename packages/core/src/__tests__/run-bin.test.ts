@@ -75,6 +75,16 @@ describe("runBin agent forwarding", () => {
     );
   });
 
+  it.each([
+    [true, ["--agent", "codex", "--effort", "ultra", "plan.md", "2"]],
+    [false, ["--agent", "codex", "--effort", "ultra", "2"]],
+  ])("forwards Ultra through either bin", async (takesInputArg, argv) => {
+    await runBin(argv, config(takesInputArg));
+    expect(runLoopMock).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: "codex", effort: "ultra" })
+    );
+  });
+
   it("keeps Claude as the default", async () => {
     await runBin(["plan.md", "1"], config(true));
     expect(runLoopMock).toHaveBeenCalledWith(
