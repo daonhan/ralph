@@ -49,7 +49,7 @@ RUN git config --global --add safe.directory '*'
 # The pin is the floor the volume is seeded from, not the version that runs.
 ENV NPM_CONFIG_PREFIX="/home/agent/.npm-global" \
     PATH="/home/agent/.npm-global/bin:$PATH"
-ARG CODEX_VERSION=0.154.0
+ARG CODEX_VERSION=0.156.1
 RUN npm install --global "@openai/codex@${CODEX_VERSION}" \
   && test "$(codex --version)" = "codex-cli ${CODEX_VERSION}"
 

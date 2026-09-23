@@ -340,7 +340,7 @@ describe("Claude host model resolution", () => {
   // The constant is the whole safety net; referencing it everywhere else means
   // only this assertion would catch an accidental edit.
   it("pins the Ralph default model value", () => {
-    expect(DEFAULT_CLAUDE_MODEL).toBe("claude-opus-5[1m]");
+    expect(DEFAULT_CLAUDE_MODEL).toBe("claude-opus-5-5[1m]");
   });
 
   it("passes the host-selected model to the sandbox argv", () => {
@@ -737,7 +737,7 @@ describe("Codex adapter", () => {
       "--dangerously-bypass-approvals-and-sandbox",
       "--ignore-user-config",
       "--model",
-      "gpt-5.6-sol",
+      "gpt-6-sol",
       "-c",
       'model_reasoning_effort="high"',
       promptInstruction,

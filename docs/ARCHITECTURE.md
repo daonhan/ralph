@@ -304,7 +304,7 @@ bash -c 'claude update 1>&2 || true; exec "$0" "$@"' \
   claude --add-dir /home/agent/ralph-skills \
   --verbose --print --output-format stream-json \
   --permission-mode bypassPermissions \
-  [--model "<tuned model, else host ~/.claude/settings.json model, else claude-opus-5[1m]>"] \
+  [--model "<tuned model, else host ~/.claude/settings.json model, else claude-opus-5-5[1m]>"] \
   [--effort "<tuned effort, else none — the container CLI applies the host effortLevel>"] \
   "Read the full instructions from the file ./.ralph-tmp/<run-file> in the current workspace and execute them."
 
@@ -314,7 +314,7 @@ bash -c 'mkdir -p "$CODEX_HOME"; codex update 1>&2 || true; <copy creds into $CO
   codex exec --json --ephemeral \
   --dangerously-bypass-approvals-and-sandbox \
   --ignore-user-config \
-  --model "<tuned model, else gpt-5.6-sol>" \
+  --model "<tuned model, else gpt-6-sol>" \
   -c 'model_reasoning_effort="<tuned effort, else high>"' \
   "Read the full instructions from the file ./.ralph-tmp/<run-file> in the current workspace and execute them."
 ```
@@ -358,7 +358,7 @@ adapter's current defaults or host configuration. It immediately writes one
 plain stderr line:
 
 ```text
-attempt 1 · codex · configured model=gpt-5.6-sol (Ralph default) · effort=high (Ralph default)
+attempt 1 · codex · configured model=gpt-6-sol (Ralph default) · effort=high (Ralph default)
 ```
 
 The same `AgentConfigSnapshot` is passed through `RunStageOptions` and
@@ -411,7 +411,7 @@ string. `--print-config` never throws: it shows a rejected level with an
 For Claude, the `--model` value resolves as the tuned model → the model pinned by the
 host's `~/.claude/settings.json` (`env.ANTHROPIC_MODEL`, else the `model` key `/model`
 stored; its "(default)" entry stores no model) → `DEFAULT_CLAUDE_MODEL`
-(`claude-opus-5[1m]`). Ralph sends the flag rather than deferring to the container: the
+(`claude-opus-5-5[1m]`). Ralph sends the flag rather than deferring to the container: the
 sandbox CLI's own built-in default is frozen at image build time (the per-stage
 `claude update` refreshes it, but not under `RALPH_CLAUDE_UPDATE=0` or offline) and can lag the host
 CLI's across model transitions, so an omitted `--model` silently downgrades the run.
@@ -429,7 +429,7 @@ than a model ID. Ralph has no effort default for Claude, so with none tuned no `
 is sent and the container CLI applies whatever the host settings' `effortLevel` says —
 reported as `Claude CLI default`.
 
-For isolated Codex, `--model` defaults to `DEFAULT_CODEX_MODEL` (`gpt-5.6-sol`) and
+For isolated Codex, `--model` defaults to `DEFAULT_CODEX_MODEL` (`gpt-6-sol`) and
 `-c 'model_reasoning_effort="<level>"'` to `DEFAULT_CODEX_REASONING_EFFORT` (`high`),
 independently of one another: a tuned model no longer drops the effort to the Codex CLI's
 own default, as it did before this behavior change. With an explicit model, Codex owns
@@ -561,7 +561,7 @@ Every line is `{"v":1,"seq":<n>,"at":"<ISO time>","type":"<type>", …fields}`. 
 An abridged log:
 
 ```jsonl
-{"v":1,"seq":1,"at":"2026-09-17T10:15:00.120Z","type":"run.started","runId":"2026-09-17-101500-ghafk-feat-x","pid":18244,"hostname":"DESKTOP-1","platform":"win32","bin":"ghafk","agent":"claude","iterations":5,"inputs":"","branch":"feat-x","version":"0.16.0","model":"claude-opus-5[1m]","modelSource":"Ralph default","effortSource":"Claude CLI default"}
+{"v":1,"seq":1,"at":"2026-09-17T10:15:00.120Z","type":"run.started","runId":"2026-09-17-101500-ghafk-feat-x","pid":18244,"hostname":"DESKTOP-1","platform":"win32","bin":"ghafk","agent":"claude","iterations":5,"inputs":"","branch":"feat-x","version":"0.16.0","model":"claude-opus-5-5[1m]","modelSource":"Ralph default","effortSource":"Claude CLI default"}
 {"v":1,"seq":2,"at":"2026-09-17T10:15:30.121Z","type":"heartbeat","lastOutputAt":null}
 {"v":1,"seq":3,"at":"2026-09-17T10:15:41.803Z","type":"stage.started","iteration":1,"stageIndex":0,"stage":"ghafk-implementer","logPath":".ralph-tmp/logs/2026-09-17T10-15-41-800Z-iter1-ghafk-implementer.ndjson","container":"ralph-2026-09-17-101500-ghafk-feat-x-i1-s0-a1"}
 {"v":1,"seq":4,"at":"2026-09-17T10:16:11.804Z","type":"heartbeat","lastOutputAt":"2026-09-17T10:16:09.310Z"}
@@ -885,7 +885,7 @@ Release/publishing (release-please → tag-driven npm + image workflows) is the 
 | `RALPH_DOCKER_CONTEXT`       | bundled core dir                                         | `docker build` fallback context (must contain a Dockerfile).                                                                                                                                                                                                               |
 | `RALPH_IMAGE`                | `docker.io/daonhan/ralph-sandbox:latest`                 | Sandbox image ref.                                                                                                                                                                                                                                                         |
 | `RALPH_IMAGE_TAG`            | —                                                        | Legacy alias for `RALPH_IMAGE`.                                                                                                                                                                                                                                            |
-| `RALPH_MODEL`                | Claude `claude-opus-5[1m]`; isolated Codex `gpt-5.6-sol` | Model for the selected provider, outranked by `--model` and `RALPH_<AGENT>_MODEL`. Claude falls back to the model pinned in host `~/.claude/settings.json`, then Ralph's default; under `CLAUDE_CODE_USE_BEDROCK`/`_VERTEX`/`_FOUNDRY` the container CLI resolves instead. |
+| `RALPH_MODEL`                | Claude `claude-opus-5-5[1m]`; isolated Codex `gpt-6-sol` | Model for the selected provider, outranked by `--model` and `RALPH_<AGENT>_MODEL`. Claude falls back to the model pinned in host `~/.claude/settings.json`, then Ralph's default; under `CLAUDE_CODE_USE_BEDROCK`/`_VERTEX`/`_FOUNDRY` the container CLI resolves instead. |
 | `RALPH_EFFORT`               | Claude: the container CLI's own; isolated Codex `high`   | Reasoning effort for the selected provider, outranked by `--effort` and `RALPH_<AGENT>_EFFORT`. Agent-agnostic, so only a level in `SHARED_EFFORT_LEVELS` is accepted; an unknown level ends the run with `run.ended` `reason: "error"` before any container starts.       |
 | `RALPH_CLAUDE_MODEL`         | _(unset)_                                                | Model for Claude runs; outranks `RALPH_MODEL`. Names are derived from the agent, so a new adapter gets its pair for free.                                                                                                                                                  |
 | `RALPH_CODEX_MODEL`          | _(unset)_                                                | Model for Codex runs; outranks `RALPH_MODEL`. Explicit invalid models fail without fallback.                                                                                                                                                                               |
