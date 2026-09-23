@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.8.1...ralph-sandbox-v0.9.0) (2026-09-23)
+
+
+### Features
+
+* **core:** default to Opus 5.5 and GPT-6 Sol; pin Codex 0.156.1 ([4849b25](https://github.com/daonhan/ralph/commit/4849b25cabeec8773d1440dad6d70eb4428ee830))
+* **core:** default to Opus 5.5 and GPT-6 Sol; pin Codex 0.156.1 ([4ffd108](https://github.com/daonhan/ralph/commit/4ffd10828166818f3ce9b2095d25a6bc9a4177c2))
+
 ## [0.8.1](https://github.com/daonhan/ralph/compare/ralph-sandbox-v0.8.0...ralph-sandbox-v0.8.1) (2026-09-22)
 
 
