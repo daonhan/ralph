@@ -184,11 +184,11 @@ The per-agent variable names are derived from the agent's name, so both agents
 can be configured at once and switching agents never sends one the other's
 model.
 
-| Agent                        | Model default                                                                | Effort default                                                                             |
-| ---------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Claude                       | the model pinned by host `~/.claude/settings.json`, then `claude-opus-5[1m]` | none: no `--effort` is sent, so the container CLI applies the host settings' `effortLevel` |
-| Codex, isolated              | `gpt-5.6-sol`                                                                | `high`, whatever the model                                                                 |
-| Codex, `--codex-user-config` | `~/.codex/config.toml`                                                       | `~/.codex/config.toml`                                                                     |
+| Agent                        | Model default                                                                  | Effort default                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| Claude                       | the model pinned by host `~/.claude/settings.json`, then `claude-opus-5-5[1m]` | none: no `--effort` is sent, so the container CLI applies the host settings' `effortLevel` |
+| Codex, isolated              | `gpt-6-sol`                                                                    | `high`, whatever the model                                                                 |
+| Codex, `--codex-user-config` | `~/.codex/config.toml`                                                         | `~/.codex/config.toml`                                                                     |
 
 Before every implementer or reviewer attempt, Ralph writes the configuration
 for that attempt to stderr. The first line appears immediately after the stage
@@ -196,7 +196,7 @@ banner:
 
 ```text
 == iteration 2/5 · reviewer (stage 2/2) ==
-attempt 1 · codex · configured model=gpt-5.6-sol (Ralph default) · effort=high (Ralph default)
+attempt 1 · codex · configured model=gpt-6-sol (Ralph default) · effort=high (Ralph default)
 ```
 
 Retries print another line (`attempt 2`, and so on), with numbering restarting
@@ -246,12 +246,14 @@ with an `invalid: allowed …` suffix.
 
 Ultra is model-, client-, and account-dependent. Ralph selects the mode but does
 not treat allowlist acceptance or `--print-config` output as proof that a chosen
-model is entitled to run it. The Codex 0.154.0 bundled catalog reported this
-snapshot on 2026-09-22:
+model is entitled to run it. The Codex 0.156.1 bundled catalog reported this
+snapshot on 2026-09-23:
 
 | Model ID        | Advertised effort values                         |
 | --------------- | ------------------------------------------------ |
 | `gpt-6-astra`   | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
+| `gpt-6-sol`     | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
+| `gpt-6-luna`    | `low`, `medium`, `high`, `xhigh`, `max`          |
 | `gpt-5.6-sol`   | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
 | `gpt-5.6-terra` | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
 | `gpt-5.6-luna`  | `low`, `medium`, `high`, `xhigh`, `max`          |
@@ -274,8 +276,10 @@ agents; its outer implementer/reviewer stages stay unchanged.
 PowerShell examples for a one-run selection and a Codex-only environment pin:
 
 ```powershell
-ralph-afk --agent codex --model gpt-5.6-sol --effort ultra --print-config
-ralph-afk --agent codex --model gpt-5.6-sol --effort ultra "docs/plan.md" 3
+ralph-afk --agent codex --model gpt-6-sol --effort ultra --print-config
+ralph-afk --agent codex --model gpt-6-sol --effort ultra "docs/plan.md" 3
+ralph-afk --agent codex --model gpt-6-luna --effort max "docs/plan.md" 3
+ralph-afk --model claude-opus-5-5 --effort xhigh "docs/plan.md" 3
 $env:RALPH_CODEX_EFFORT = "ultra"
 ralph-ghafk --agent codex --print-config
 Remove-Item Env:RALPH_CODEX_EFFORT
@@ -402,7 +406,7 @@ pinned in Ralph's sandbox from the same shell environment that will launch
 Ralph:
 
 ```bash
-npm install --global @openai/codex@0.154.0
+npm install --global @openai/codex@0.156.1
 codex --version
 ```
 
@@ -689,7 +693,7 @@ npx -y @daonhan/ralph ralph-afk "<plan-and-prd>" 5
 | `RALPH_ISOLATE_NODE_MODULES` | _(on except Linux)_                                      | `0` shares the bind-mounted host `node_modules/` with the sandbox; `1` isolates on Linux too. Otherwise the sandbox gets container-local `node_modules` volumes at every package directory plus a shared package-manager store volume, so an install inside the container never rewrites the host tree.    |
 | `RALPH_CLAUDE_UPDATE`        | _(on)_                                                   | `0` skips the `claude update` every Claude stage runs before its own command **and** the `ralph-claude-home` volume mount that caches the updated CLI across containers, so the stage runs the image's baked CLI. Any other value keeps both. Ignored for `--agent codex`.                                 |
 | `RALPH_CODEX_UPDATE`         | _(on)_                                                   | `0` skips the `codex update` every Codex stage runs before its own command **and** the `ralph-codex-cli` volume mount that caches the updated CLI across containers, so the stage runs the image's pinned CLI. Any other value keeps both. Ignored for `--agent claude`.                                   |
-| `RALPH_MODEL`                | Claude `claude-opus-5[1m]`; isolated Codex `gpt-5.6-sol` | Model for whichever agent runs; outranked by `--model` and `RALPH_<AGENT>_MODEL`. Claude falls back to the model pinned in host `~/.claude/settings.json`, then Ralph's own default — except under third-party routing (`CLAUDE_CODE_USE_BEDROCK`/`_VERTEX`/`_FOUNDRY`), where the container CLI resolves. |
+| `RALPH_MODEL`                | Claude `claude-opus-5-5[1m]`; isolated Codex `gpt-6-sol` | Model for whichever agent runs; outranked by `--model` and `RALPH_<AGENT>_MODEL`. Claude falls back to the model pinned in host `~/.claude/settings.json`, then Ralph's own default — except under third-party routing (`CLAUDE_CODE_USE_BEDROCK`/`_VERTEX`/`_FOUNDRY`), where the container CLI resolves. |
 | `RALPH_EFFORT`               | Claude: the CLI's own; isolated Codex `high`             | Reasoning effort for whichever agent runs; outranked by `--effort` and `RALPH_<AGENT>_EFFORT`. Only a level every agent accepts (`low\|medium\|high\|xhigh\|max`) is allowed — a provider-only level goes in that provider's variable. An unknown level ends the run before any container starts.          |
 | `RALPH_CLAUDE_MODEL`         | _(unset)_                                                | Model for Claude runs. Outranks `RALPH_MODEL`, so both agents can be pinned at once and switching agents never sends one the other's model.                                                                                                                                                                |
 | `RALPH_CODEX_MODEL`          | _(unset)_                                                | Model for Codex runs. Outranks `RALPH_MODEL`.                                                                                                                                                                                                                                                              |
@@ -853,7 +857,12 @@ To add another, drop a directory with a `SKILL.md` beside `ralph-tdd/`, name it 
 - **Codex reports that login is missing** — ensure `cli_auth_credentials_store = "file"`, run `codex login` from the same shell environment as Ralph (per the same-shell rule), and confirm `codex login status` succeeds and `~/.codex/auth.json` exists in that environment's home.
 - **Codex fails with `Operation not permitted (os error 1)` / `EPERM` at startup** — the container's `CODEX_HOME` is sitting on a Windows bind mount, which cannot host the unix socket and symlinks Codex creates at startup. Current Ralph avoids this by copying credentials into a container-local `CODEX_HOME`; upgrade `@daonhan/ralph` if you see this.
 - **Codex config, MCP servers, or hooks are missing** — isolated Codex intentionally ignores `~/.codex/config.toml`; opt in with `--codex-user-config` and ensure configured commands and paths work inside Linux Docker.
-- **An explicit Codex model or effort fails** — fix or remove the model/effort you set (`--model`, `--effort`, or their Codex/generic environment variables). Ralph does not silently fall back to `gpt-5.6-sol`, another model, or a lower effort after Codex rejects a model/effort combination. Ultra can require a newer client in a stale/custom image even when Ralph accepts the token.
+- **An explicit Codex model or effort fails** — fix or remove the model/effort you set (`--model`, `--effort`, or their Codex/generic environment variables). Ralph does not silently fall back to `gpt-6-sol`, another model, or a lower effort after Codex rejects a model/effort combination. Ultra can require a newer client in a stale/custom image even when Ralph accepts the token.
+- **`API Error: 400 Claude Code <version> does not support this model; version 2.1.280 or newer is required`, or Codex `The '<model>' model requires a newer version of Codex`** — the CLI that ran predates the model: Claude Code older than 2.1.280 cannot run `claude-opus-5-5` (Ralph's Claude default), and a Codex client older than the image's pinned 0.156.1 may not know `gpt-6-sol` (Ralph's isolated Codex default) or `gpt-6-luna`. The per-stage update normally prevents this; the fix depends on why it did not run:
+  - the update failed (offline, registry down), so the stage ran the copy cached in the `ralph-claude-home` / `ralph-codex-cli` volume → retry once the registry answers, or remove the volume (`docker volume rm ralph-claude-home` / `docker volume rm ralph-codex-cli`; refused while a run is using it) so the next run re-seeds it from the local image — the only cost is one download;
+  - `RALPH_CLAUDE_UPDATE=0` / `RALPH_CODEX_UPDATE=0` runs the image's baked CLI → `docker pull docker.io/daonhan/ralph-sandbox:latest`;
+  - a locally tagged image (for example `ralph-sandbox:pg17`) is never re-pulled → rebuild it with `docker build --pull`, then remove the volume as above;
+  - or name an older model explicitly: `--model "claude-opus-5[1m]"`, or `--agent codex --model gpt-5.6-sol`.
 - **A pinned Codex model now runs at `high` reasoning** — behavior change. Isolated Codex used to drop to the Codex CLI's own reasoning effort as soon as a model was named; it now keeps Ralph's `high` default, because model and effort resolve independently. That can make a run more expensive than the same command used to be. Pick the level explicitly with `--effort <level>` or `RALPH_CODEX_EFFORT=<level>`.
 - **The Claude stage fails on the model itself** (unknown model, or one your plan cannot use) — Ralph sent its own default because no model was set (`--model`, `RALPH_CLAUDE_MODEL`, `RALPH_MODEL`) and your host `~/.claude/settings.json` pinned none. Run `ralph-afk --print-config` to see the model and where it came from, then set `--model <model you have access to>` or pick an explicit (non-"(default)") entry in `/model`.
 - **`RALPH_EFFORT=… is not an effort level every agent accepts`** — the run ended before any container started, with `run.ended` `reason: "error"` in the event log and exit `1`. `RALPH_EFFORT` is agent-agnostic, so it takes only a level every agent accepts (`low|medium|high|xhigh|max`); a provider-only level such as Codex's `none`, `minimal`, or `ultra` goes in `RALPH_CODEX_EFFORT`. `ralph-afk --print-config` shows a rejected level with an `invalid: allowed …` suffix instead of failing.

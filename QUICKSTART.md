@@ -91,7 +91,7 @@ pinned in Ralph's sandbox from the same shell environment that will launch
 Ralph:
 
 ```bash
-npm install --global @openai/codex@0.154.0
+npm install --global @openai/codex@0.156.1
 codex --version
 ```
 
@@ -122,7 +122,7 @@ Codex ignores the rest of `~/.codex/config.toml` by default. Use
 servers, and hooks inside the Linux sandbox. `--model <name>` and
 `--effort <level>` set both for the selected agent (`RALPH_CODEX_MODEL` /
 `RALPH_CODEX_EFFORT` for Codex alone, `RALPH_MODEL` / `RALPH_EFFORT` for
-whichever agent runs); without them, isolated Codex uses `gpt-5.6-sol` with
+whichever agent runs); without them, isolated Codex uses `gpt-6-sol` with
 `high` reasoning, and keeps that `high` even when you name a model. An explicit
 invalid model fails the stage rather than falling back. Codex also accepts
 `--effort ultra` or `RALPH_CODEX_EFFORT=ultra`; actual support depends on the
