@@ -245,7 +245,7 @@ export function createCodexDecoder(): AgentStreamDecoder {
   };
 }
 
-export const DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
+export const DEFAULT_CODEX_MODEL = "gpt-6-sol";
 export const DEFAULT_CODEX_REASONING_EFFORT = "high";
 
 export type CodexModelResolution = {

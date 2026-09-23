@@ -597,7 +597,7 @@ describe("runLoop", () => {
     );
     expect(log).toContain("[failure] iteration 1 stage implementer failed");
     expect(readStderr()).toContain(
-      "attempt 1 · codex · configured model=gpt-5.6-sol (Ralph default) · effort=high (Ralph default)"
+      "attempt 1 · codex · configured model=gpt-6-sol (Ralph default) · effort=high (Ralph default)"
     );
   });
 
@@ -1176,7 +1176,7 @@ describe("runLoop", () => {
 
     expect(readRunLog(dirs.workspaceDir).view.started).toMatchObject({
       agent: "codex",
-      model: "gpt-5.6-sol",
+      model: "gpt-6-sol",
       modelSource: "Ralph default",
       effort: "high",
       effortSource: "Ralph default",

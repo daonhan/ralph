@@ -134,7 +134,7 @@ export function resolveModelArgs(raw: string | undefined): string[] {
   return model ? ["--model", model] : [];
 }
 
-export const DEFAULT_CLAUDE_MODEL = "claude-opus-5[1m]";
+export const DEFAULT_CLAUDE_MODEL = "claude-opus-5-5[1m]";
 
 export type ClaudeModelResolution = {
   /** Undefined means: send no `--model` and let the container CLI resolve. */

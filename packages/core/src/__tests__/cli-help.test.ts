@@ -203,10 +203,10 @@ describe("describeAgentConfig", () => {
   it("describes isolated Codex defaults", () => {
     expect(describeAgentConfig("codex", false, {})).toEqual({
       codexConfig: "isolated (--ignore-user-config)",
-      model: "gpt-5.6-sol (Ralph default)",
+      model: "gpt-6-sol (Ralph default)",
       reasoning: "high (Ralph default)",
       resolved: {
-        model: "gpt-5.6-sol",
+        model: "gpt-6-sol",
         modelSource: "Ralph default",
         effort: "high",
         effortSource: "Ralph default",
@@ -327,7 +327,7 @@ it("documents both new flags and RALPH_AGENT", () => {
   expect(output).toContain("--agent <claude|codex>");
   expect(output).toContain("--codex-user-config");
   expect(output).toContain("RALPH_AGENT");
-  expect(output).toContain("gpt-5.6-sol");
+  expect(output).toContain("gpt-6-sol");
   expect(output).toContain("--model <name>");
   expect(output).toContain("--effort <level>");
   expect(output).toContain("Codex adds none|minimal|ultra");

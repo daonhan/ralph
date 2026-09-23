@@ -229,11 +229,11 @@ Environment variables:
                         its model from that tuning, then the model pinned by host
                         ~/.claude/settings.json (env.ANTHROPIC_MODEL, else the
                         model key /model stored; its "(default)" entry stores
-                        none), then claude-opus-5[1m] (Ralph default). Host
+                        none), then claude-opus-5-5[1m] (Ralph default). Host
                         settings that enable CLAUDE_CODE_USE_BEDROCK / _VERTEX
                         / _FOUNDRY keep the container CLI's own resolution,
                         since those providers use their own model IDs. Isolated
-                        Codex defaults to gpt-5.6-sol, and to high reasoning
+                        Codex defaults to gpt-6-sol, and to high reasoning
                         whatever the model.
   RALPH_DOCKER_SOCK_PATH explicit docker.sock host path. When unset, auto-detected via
                         DOCKER_HOST (unix:// only), then a candidate list:
