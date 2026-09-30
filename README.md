@@ -717,7 +717,7 @@ pnpm -r test                          # packages/core runs `vitest run` (apps/cl
 pnpm test                             # root: `node --test` over scripts/*.test.mjs
 ```
 
-A husky pre-commit hook runs `lint-staged` (`prettier --ignore-unknown --write` on staged files) then `pnpm typecheck` on every commit.
+prek runs `lint-staged` (`prettier --ignore-unknown --write` on staged files) then `pnpm typecheck` before commits, and the full validation sequence before pushes that change runtime behavior. See [hook installation and docs-only push handling](./CONTRIBUTING.md#pre-push-hook-with-prek).
 
 ### Build artifacts
 

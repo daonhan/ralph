@@ -81,8 +81,16 @@ A Python runtime or tooling change confined to the sandbox image is a
 > default `GITHUB_TOKEN` does **not** trigger the `push: tags` publish workflows.
 > Required secrets: `RELEASE_PLEASE_TOKEN`, `NPM_TOKEN`, `DOCKERHUB_USERNAME`,
 > `DOCKERHUB_TOKEN`. If only `GITHUB_TOKEN` is available, merge still creates the
-> tag but you must start the publish manually (`workflow_dispatch` on the relevant
-> workflow with the tag name).
+> tag and release-please dispatches `publish-image.yml` for a sandbox release.
+> npm publishing still needs a manual `workflow_dispatch` with the tag name.
+> When the PAT is available, the tag triggers image publishing and the fallback
+> dispatch is skipped, preventing a duplicate build/push for the same release.
+
+Publishing remains single-architecture `linux/amd64` on a native Ubuntu runner;
+QEMU is not required. Release and publish runs are serialized without canceling
+a run midway. The ordinary verification workflow cancels superseded runs and
+offers manual OS/Node compatibility checks; see
+[CI coverage and runner usage](CONTRIBUTING.md#ci-coverage-and-runner-usage).
 
 ## 3. Conventional Commit guide
 

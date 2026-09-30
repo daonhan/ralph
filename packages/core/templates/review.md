@@ -33,12 +33,15 @@ If `<head>` shows `(no commits)`, output `<review>SKIP</review>` and stop withou
 3. Style violations vs `AGENTS.md`, `CLAUDE.md`, or project conventions
 4. Security issues (input validation, secrets, injection, auth bypass)
 5. Half-finished implementations, dead code, leftover TODO from this commit
+6. Documentation matches changed architecture, interfaces, and invariants; the implementer reviewed its delegated docs pass
 
 # ACTION
 
 If defects found:
 
 - Fix them directly in the working tree.
+- When a change affects architecture, interfaces, or invariants, update the relevant docs before finishing. Delegate the docs pass to a sub-agent.
+  Review the documentation diff yourself before declaring the fix complete. The sub-agent edits documentation only; keep this stage's single-pass defect review and refactoring ownership.
 - Run feedback loops:
   - Frontend / Node: `pnpm run test`, `pnpm run typecheck`
   - Backend / Dotnet: `dotnet test`, `dotnet build` (apply MSB3248 workaround from the implementer playbook if it triggers)

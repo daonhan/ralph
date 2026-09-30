@@ -18,7 +18,8 @@ apps/cli/               @daonhan/ralph — hand-written JS bins ralph-afk / ralp
 scripts/                repo-level node --test checks + smoke scripts (image, render, spill)
 images/pg17/            sandbox variant with PostgreSQL 17 + PostGIS (local build only)
 docs/                   ARCHITECTURE.md (runtime reference), prd/ + plans/ per feature, superpowers/ design docs
-.github/workflows/      release-please (npm + image) and image publish
+.github/workflows/      CI verification, release-please, npm and image publish
+prek.toml               pre-commit/pre-push checks; install with pnpm hooks:install
 ```
 
 Two entry points, same loop, different first stage:
@@ -73,20 +74,38 @@ Full list with defaults: [docs/ARCHITECTURE.md § Environment variables](docs/AR
 ## Verify a change
 
 ```bash
-pnpm -r typecheck && pnpm -r test && pnpm test
+git diff --check
+pnpm -r typecheck
+pnpm -r build
+pnpm -r test
+pnpm test
 ```
 
-Pre-commit runs prettier on staged files then typecheck. Image changes: `pnpm smoke:image` (see CONTRIBUTING "Verify sandbox image changes").
+Stop on failure. Build before root tests because they import `dist/`. Pre-commit
+runs prettier on staged files then typecheck; the prek pre-push hook runs the
+sequence above unless only ordinary docs changed. Agent guidance, templates and
+skills always require checks. Agents run Node tests only in the background and
+capture pending/passed/failed/skipped results. See [CONTRIBUTING.md](CONTRIBUTING.md)
+for hook setup, offline smokes and manual compatibility checks. Image changes:
+`pnpm smoke:image` (including its network check before publishing).
+
+## Documentation is part of done
+
+When a change affects architecture, interfaces, or invariants, update the relevant docs before finishing. Delegate the docs pass to a sub-agent.
+
+The primary agent reviews that documentation diff before completion. The docs
+delegate does not take over implementation or the reviewer's refactoring/defect
+review. See [the review checklist](docs/REVIEW_CHECKLIST.md).
 
 ## Gotchas that have cost time
 
 - **Windows shell.** `render.ts` picks `bash.exe` from `PATH` if found, else `cmd.exe`. Use the `!?` try-shell form for anything that might not exist under `cmd.exe`.
 - **Same-shell credentials.** PowerShell and WSL have different `$HOME`. Log in (`claude`, `codex`, `gh`) from the shell you will launch Ralph from.
-- **The sandbox never sees `~/.gitconfig`.** `runStage` passes the host's `user.name`/`user.email` in as `GIT_CONFIG_*` (resolved with `git -C <workspace> config --get`, so a repo-local identity still wins). With no identity set anywhere, nothing is injected, Ralph warns once on stderr, and commits made in the sandbox carry an author the agent makes up.
+- **The sandbox never sees `~/.gitconfig`.** `runStage` passes the host's `user.name`/`user.email` in as `GIT_CONFIG_*` (resolved with `git -C <workspace> config --get`, so a repo-local identity still wins). With no complete identity configured, nothing is injected and Ralph warns once on stderr. Agents must report the missing identity rather than invent or override an author.
 - **Codex `CODEX_HOME` cannot be a bind mount on Windows** (EPERM). Credentials are mounted read-only elsewhere and copied in by a setup script.
 - **Sandbox CLI default model is frozen at image build** (each Claude stage runs `claude update` first and each Codex stage `codex update`, but not under `RALPH_CLAUDE_UPDATE=0` / `RALPH_CODEX_UPDATE=0` or offline). Ralph always passes `--model` explicitly so it tracks the host's setting.
 - **`pnpm link --global` breaks here.** Use `pnpm pack` + `npm i -g` to smoke-test the tarballs.
-- **Node modules built in WSL break native-Windows bins** (husky, prettier). Reinstall from the environment you commit from.
+- **Node modules built in WSL break native-Windows bins** (such as prettier). Reinstall from the environment you commit from.
 - **A sandbox install rewrites the bind-mounted `node_modules`** the same way (Linux store path, Linux symlinks, a stray `.pnpm-store/`). Container-local `node_modules` volumes prevent it by default off Linux (`RALPH_ISOLATE_NODE_MODULES`); as the backstop, Ralph warns on stderr at loop end and the history footer carries `warning: sandbox-install`; reinstall on the host.
 - **Leaked `.ralph-tmp/.run-*.md` after a hard kill** are safe to delete; NDJSON logs under `.ralph-tmp/logs/` are kept on purpose.
 

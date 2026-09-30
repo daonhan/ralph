@@ -34,6 +34,9 @@ Explore the repo.
 
 For backend or library code, use the `ralph-tdd` skill: one failing test, the minimum code to make it pass, repeat per vertical slice. For frontend UI code, implement directly. Complete the task.
 
+When a change affects architecture, interfaces, or invariants, update the relevant docs before finishing. Delegate the docs pass to a sub-agent.
+The primary implementer reviews that sub-agent's diff against the implemented behavior before declaring completion or committing. The sub-agent edits documentation only; implementation stays with the implementer and refactoring stays with the reviewer stage.
+
 # FEEDBACK LOOPS
 
 Before committing, run the feedback loops:

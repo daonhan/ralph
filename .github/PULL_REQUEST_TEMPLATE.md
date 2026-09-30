@@ -1,12 +1,14 @@
 <!--
 Thanks for contributing to Ralph! A few notes:
 - Commits use Conventional Commits (the type + path drive release-please). See RELEASING.md §3.
-- Run the local verify before pushing (see below). CI runs the same on every PR.
+- Use CONTRIBUTING.md and docs/REVIEW_CHECKLIST.md. Ordinary docs-only PRs retain
+  a CI status while skipping compiler/tests; agent guidance/templates/skills run checks.
 -->
 
-## What & why
+## Behavior and reason
 
-<!-- What does this change and why? Link any issue: Closes #NNN -->
+<!-- Describe the concrete trigger and resulting behavior, why it is needed,
+and before/after behavior where useful. Link any issue: Closes #NNN. -->
 
 ## Type of change
 
@@ -18,12 +20,31 @@ Thanks for contributing to Ralph! A few notes:
 
 ## Verification
 
-- [ ] `pnpm -r build`
-- [ ] `pnpm -r typecheck`
-- [ ] `pnpm -r test`
-- [ ] `pnpm test` (root `node --test`)
-- [ ] Smoke scripts where relevant (`node scripts/smoke-templates.mjs`, `smoke-render.mjs`)
+<!-- Replace each status with pending / passed / failed / skipped.
+Include useful results and reasons for skipped checks. Build before root tests.
+Agents run Node tests in the background without visible terminal windows. -->
 
-## Notes for reviewers
+| Check                                         | Status  | Results or reason |
+| --------------------------------------------- | ------- | ----------------- |
+| `git diff --check`                            | pending |                   |
+| `pnpm -r typecheck`                           | pending |                   |
+| `pnpm -r build`                               | pending |                   |
+| `pnpm -r test`                                | pending |                   |
+| `pnpm test`                                   | pending |                   |
+| Relevant offline/Docker/image smokes          | pending |                   |
+| Configuration and changed documentation links | pending |                   |
 
-<!-- Anything that needs extra eyes: behavior changes, template/playbook edits, security-relevant surfaces. -->
+## Documentation
+
+<!-- Name the updated source-of-truth docs or explain why no docs change applies. -->
+
+- [ ] Architecture, interfaces and invariants have matching documentation.
+- [ ] For agent work affecting these contracts, a sub-agent completed the docs
+      pass and the primary agent reviewed the changes before completion.
+- [ ] Implementation and reviewer ownership remained with their original roles.
+
+## Limitations and reviewer focus
+
+<!-- State remaining limitations, unverified environments, compatibility/security
+risks and follow-ups. Highlight areas needing review; do not claim hosted CI or
+live publishing was verified by local checks. -->

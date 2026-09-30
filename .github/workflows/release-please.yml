@@ -31,6 +31,9 @@ concurrency:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    env:
+      # PAT-created tags already raise push events; only GITHUB_TOKEN needs dispatch.
+      RELEASES_USE_PAT: ${{ secrets.RELEASE_PLEASE_TOKEN != '' }}
     steps:
       - id: release
         uses: googleapis/release-please-action@v4
@@ -92,7 +95,7 @@ jobs:
           done
 
       - name: Publish released sandbox image
-        if: steps.release.outputs.releases_created == 'true'
+        if: steps.release.outputs.releases_created == 'true' && env.RELEASES_USE_PAT != 'true'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           RELEASE_OUTPUTS: ${{ toJson(steps.release.outputs) }}
