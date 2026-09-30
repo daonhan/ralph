@@ -19,8 +19,10 @@ If you just want to _run_ Ralph against your own repo, see [`./README.md`](./REA
 ## Workspace setup
 
 Clone, then install once. This links the two workspace packages and hoists the
-shared devDependencies, and runs the root `prepare` script (which installs the
-husky git hooks — see [Pre-commit hook](#pre-commit-hook)).
+shared devDependencies. The root `prepare` script installs prek hooks when prek
+is available and skips hook setup in CI. If prek is missing, install it and run
+`pnpm hooks:install`; see [Pre-push hook with prek](#pre-push-hook-with-prek).
+Both [pre-commit](#pre-commit-hook-with-prek) and pre-push use prek.
 
 ```bash
 pnpm install
@@ -50,10 +52,11 @@ pnpm -r clean
 
 ## Verify
 
-There **is** a test suite and a linter — older docs that said "no test suite, no
-linter" were wrong. The full local verification is:
+Run inexpensive checks first and stop when a command fails. The required local
+verification for runtime, tooling, or agent-behavior changes is:
 
 ```bash
+git diff --check             # whitespace errors before compiler/test work
 pnpm -r typecheck             # tsc --noEmit across the workspace
 pnpm -r build                 # the .mjs scripts import from packages/core/dist
 pnpm -r test                  # per-package tests (vitest in core; cli has none)
@@ -66,6 +69,7 @@ node scripts/ensure-image-integration.mjs   # needs Docker + the real CLI
 ```
 
 ```powershell
+git diff --check
 pnpm -r typecheck
 pnpm -r build
 pnpm -r test
@@ -76,6 +80,17 @@ node scripts/smoke-spill-size.mjs
 node scripts/smoke-spill-large.mjs
 node scripts/ensure-image-integration.mjs
 ```
+
+The first five commands are the pre-push gate. The offline smoke checks also run
+in CI for changes that require validation. Run the Docker integration smoke when
+image-resolution behavior changes; it is not part of the ordinary CI gate.
+Build before root tests and smoke scripts so they cannot test stale `dist/` output.
+
+Agents must run Node tests in the background without opening visible terminal
+windows, capture the results, and distinguish **pending**, **passed**, **failed**
+and **skipped** checks. State the reason for every skipped check and the limits of
+any partial validation. A hook or configuration check does not prove a hosted
+workflow or a live publish succeeded.
 
 Note the layered meaning of "test" in this monorepo:
 
@@ -107,7 +122,7 @@ Vitest unit tests, `packages/core/src/__tests__/` (pure logic, mocked I/O):
 | `detach.test.ts`            | `stripDetachFlags` / `detachAndExit` (`--detach` flag handling).                                               |
 | `keepalive.test.ts`         | `acquire` (host wake-lock spawning).                                                                           |
 | `notify.test.ts`            | `notify` (`--notify` completion hook spawning).                                                                |
-| `template-contract.test.ts` | Shared reviewer conventions for `AGENTS.md` and `CLAUDE.md`.                                                   |
+| `template-contract.test.ts` | Shipped playbook, reviewer, history-injection and skill contracts.                                             |
 
 Root `node --test`, `scripts/*.test.mjs` (contract + pure-render tests):
 
@@ -117,17 +132,18 @@ Root `node --test`, `scripts/*.test.mjs` (contract + pure-render tests):
 | `runner-floating-ref.test.mjs`   | `isFloatingRef` — when `ensureImage` must re-pull vs. short-circuit.                      |
 | `smoke-image.test.mjs`           | Image-smoke argument parsing, Docker command construction, and failures; no Docker calls. |
 | `update-status-table.test.mjs`   | `renderStatusTable` / `replaceBlock` for the RELEASING.md status block.                   |
+| `check-changes.test.mjs`         | Docs-only gating, behavior-controlling prose, mixed changes and deleted/renamed paths.    |
 
 Smoke scripts in `scripts/` (import the built `dist/`, so run after `pnpm -r build`):
 
-| Script                         | Checks                                                                                                            |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `smoke-render.mjs`             | Four of the five `renderTemplate` tag forms (`@include`, `@spill`, `!?`, `{{ INPUTS }}`) on a synthetic template. |
-| `smoke-templates.mjs`          | The real shipped `afk.md` / `ghafk.md` / `review.md` render and stay small.                                       |
-| `smoke-spill-size.mjs`         | Heavy `@spill` output lands in the spill file, not the prompt.                                                    |
-| `smoke-spill-large.mjs`        | A ~200 KB `@spill` payload spills while the prompt keeps only a short ref path.                                   |
-| `ensure-image-integration.mjs` | `ensureImage` against the real `docker` CLI (re-pull / fallback / pinned).                                        |
-| `smoke-image.mjs`              | Builds or accepts a sandbox image, then checks the external Python/user/tooling contract.                         |
+| Script                         | Checks                                                                                    |
+| ------------------------------ | ----------------------------------------------------------------------------------------- |
+| `smoke-render.mjs`             | Include, spill, try-shell and input substitution on a synthetic template.                 |
+| `smoke-templates.mjs`          | The real shipped `afk.md` / `ghafk.md` / `review.md` render and stay small.               |
+| `smoke-spill-size.mjs`         | Heavy `@spill` output lands in the spill file, not the prompt.                            |
+| `smoke-spill-large.mjs`        | A ~200 KB `@spill` payload spills while the prompt keeps only a short ref path.           |
+| `ensure-image-integration.mjs` | `ensureImage` against the real `docker` CLI (re-pull / fallback / pinned).                |
+| `smoke-image.mjs`              | Builds or accepts a sandbox image, then checks the external Python/user/tooling contract. |
 
 ### Verify sandbox image changes
 
@@ -164,11 +180,10 @@ pnpm smoke:image -- --image ralph-sandbox:python-tooling --skip-network
 The final pre-publish verification must run the network check; a skipped run is not
 sufficient to release the image.
 
-## Pre-commit hook
+## Pre-commit hook with prek
 
-`pnpm install` runs the root `"prepare": "husky || git config core.hooksPath .husky"`
-script, which installs the git hooks or falls back to setting `core.hooksPath`.
-On commit, [`.husky/pre-commit`](./.husky/pre-commit) runs:
+The pre-commit hooks in [prek.toml](./prek.toml) run in this order and stop on the
+first failure:
 
 ```bash
 pnpm exec lint-staged    # prettier --ignore-unknown --write on staged files
@@ -178,7 +193,115 @@ pnpm typecheck           # tsc --noEmit across the workspace
 lint-staged config is [`.lintstagedrc`](./.lintstagedrc): `{ "*": "prettier
 --ignore-unknown --write" }`. A type error blocks the commit — fix it, don't
 bypass. If hooks didn't install (e.g. you cloned without `pnpm install`), run
-`pnpm install` again.
+`pnpm hooks:install` after installing prek. The root `prepare` command,
+`node scripts/install-hooks.mjs --if-available`, performs a best-effort install
+when prek is present and skips installation in CI; it does not install prek.
+
+[`.prettierignore`](./.prettierignore) excludes the generated `pnpm-lock.yaml`
+layout so the formatter does not rewrite pnpm's output. Validate lockfile
+consistency with `pnpm install --frozen-lockfile`, as CI does, rather than treating
+the lockfile as a Prettier-managed source file.
+
+## Pre-push hook with prek
+
+[prek](https://prek.j178.dev/) ≥0.5.4 runs the repository's local pre-push validation
+without adding a Node dependency. Install prek using its
+[installation instructions](https://prek.j178.dev/installation/), then run:
+
+```bash
+uv tool install prek       # if prek is not already on PATH and uv is available
+pnpm hooks:install
+```
+
+The installer installs both the pre-commit and pre-push hooks with prek.
+prek must already be on `PATH`; the installer does not install tools or change
+project dependencies. [scripts/install-hooks.mjs](./scripts/install-hooks.mjs)
+removes the former repository-local Husky `core.hooksPath` only when it points to
+`.husky` or `.husky/_`, then lets prek install into the effective Git hooks
+directory. An unrelated custom `core.hooksPath` is honored rather than replaced.
+The configuration is [prek.toml](./prek.toml); its system-local hook runs
+[scripts/pre-push.mjs](./scripts/pre-push.mjs). Checks use the project's existing
+commands, sequentially: `git diff --check`, `pnpm -r typecheck`, `pnpm -r build`,
+`pnpm -r test`, then root `pnpm test`. The first failure blocks the push and stops
+later checks. It neither installs packages nor starts Docker during a push.
+
+The installed Git pre-push shim runs
+[scripts/prek-pre-push.mjs](./scripts/prek-pre-push.mjs), which captures every raw
+Git ref record in `RALPH_PUSH_REFS` and forwards the original input and arguments
+to prek. Validation therefore handles every range in a multi-ref push, including
+a docs-only first ref followed by a code ref; refs do not need separate pushes.
+It runs the inexpensive whitespace check per range, then typecheck, build and
+both test layers once. Direct runs of the pre-push stage through `prek run` use
+prek's supplied single range (`PRE_COMMIT_FROM_REF` / `PRE_COMMIT_TO_REF`), or
+conservatively check `HEAD` when no range is supplied.
+
+The change classifier examines the outgoing Git refs, including added, modified,
+renamed and deleted paths. Only a narrow allowlist of ordinary documentation
+skips the compiler/test sequence; it is not a blanket `*.md` exclusion. Templates
+under `packages/core/templates/`, any `AGENT.md`, `AGENTS.md`, `CLAUDE.md` or `SKILL.md`, and
+content in any `skills/`, `.codex/`, `.claude/` or `.agents/` directory anywhere in
+the path always require validation because prose there controls agent behavior.
+Mixed code-and-doc changes and deleted code still run checks. Unknown paths
+require checks; an unavailable ref comparison
+fails closed and blocks the push rather than silently skipping validation.
+
+## Documentation and review
+
+When a change affects architecture, interfaces, or invariants, update the relevant docs before finishing. Delegate the docs pass to a sub-agent.
+
+The primary agent must review the delegate's documentation diff for accuracy,
+scope and links before declaring completion. This is a docs-only delegation:
+the implementer keeps red → green implementation ownership, and the reviewer
+keeps refactoring and defect-review ownership. Existing workflow authorization
+still governs committing or publishing; a documentation pass grants neither.
+
+Use the existing source of truth: README for user-visible behavior, ARCHITECTURE
+for runtime contracts, SECURITY for trust boundaries and RELEASING for publishing.
+Update CONTRIBUTING for developer setup or validation changes. Keep the two root
+agent guides identical. Ordinary docs changes still need a link and final-diff
+review even when expensive checks are skipped.
+
+In a PR, describe the concrete behavior change and why it is needed, include a
+before/after example when useful, list validation commands and their status,
+identify documentation updates or explain why none apply, and state remaining
+limitations. Use [the practical review checklist](./docs/REVIEW_CHECKLIST.md) and
+[the PR template](./.github/PULL_REQUEST_TEMPLATE.md). Keep unrelated edits out of
+the change; do not commit, push, merge or publish without the user's authorization.
+
+## CI coverage and runner usage
+
+[CI](./.github/workflows/ci.yml) retains an automatic verification status on every
+PR and push to `main`. An inexpensive change classification runs even for
+ordinary docs-only changes so a required status cannot remain pending due to
+workflow path filters. Runtime, tooling and agent-behavior changes retain
+typechecking, build, both test layers and all four offline smoke scripts on
+Ubuntu with Node 20. Superseded verification runs are canceled.
+
+Use the same workflow's `workflow_dispatch` inputs, `runner` and `node-version`,
+to choose Ubuntu, Windows or macOS and Node 20, 22 or 24 for a full verification
+run, including docs-only revisions. These broader checks are
+manual: the automatic gate does not prove every operating-system/Node pairing.
+Docker/image integration and network smoke remain explicit maintainer checks;
+release and publish workflows are not canceled midway.
+
+This public repository's standard GitHub-hosted runners are free under
+[GitHub's Actions billing policy](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
+Larger runners and external services have separate charging rules. These changes
+reduce runner work and duplicate publications, without promising a bill reduction
+or changing account budgets.
+
+Sampled recent CI verification jobs took about 30 seconds; docs-only classification
+avoids most of that work, with checkout/classification overhead remaining. In the
+2026-09-23 sandbox release, a
+[tag-triggered job](https://github.com/daonhan/ralph/actions/runs/35873587756) used
+6m23s and a redundant
+[manual-dispatch job](https://github.com/daonhan/ralph/actions/runs/35873608682)
+used another 3m12s. Keeping tag publishing and dispatching automatically only for
+the `GITHUB_TOKEN` fallback would save that duplicate 3m12s (about one third of
+the combined runner time) for a comparable release. Future runtime savings
+depend on change mix, cache state and superseded runs; no fixed savings are
+guaranteed. QEMU setup is unnecessary for the existing native `linux/amd64` image
+and is removed without reducing image architecture coverage.
 
 ## Repo layout
 
@@ -191,7 +314,8 @@ packages/core/          @daonhan/ralph-core (library; the only built package)
 apps/cli/               @daonhan/ralph (hand-written JS bins; no build)
   bin/                  ralph-afk.js, ralph-ghafk.js
 scripts/                *.test.mjs + smoke-*.mjs + update-status-table.mjs
-.github/workflows/      release-please.yml, publish-npm.yml, publish-image.yml
+.github/workflows/      ci.yml, release-please.yml, publish-npm.yml, publish-image.yml
+prek.toml               system-local pre-commit and pre-push hook configuration
 RELEASING.md            release/publish source of truth
 ```
 
@@ -344,9 +468,9 @@ Releasing is **automated** — you do not bump versions or publish by hand.
 [`./RELEASING.md`](./RELEASING.md) is the single source of truth (it supersedes the
 `docs/PUBLISHING.md` stub); this section is just the shape of the flow.
 
-The repo ships three independently versioned components: `@daonhan/ralph-core`
-(0.6.1), `@daonhan/ralph` (0.6.1), and the synthetic `ralph-sandbox` Docker image
-(0.2.1). Flow:
+The repo ships three independently versioned components: `@daonhan/ralph-core`,
+`@daonhan/ralph`, and the synthetic `ralph-sandbox` Docker image. Current versions
+live in [RELEASING.md](./RELEASING.md#1-current-versions). Flow:
 
 1. Land Conventional-Commit work on `main` (see [Conventions](#conventions-to-preserve)).
 2. `release-please.yml` opens **one combined Release PR** for every component with
@@ -364,6 +488,11 @@ The repo ships three independently versioned components: `@daonhan/ralph-core`
 Required secrets: `RELEASE_PLEASE_TOKEN` (a PAT — a tag made with the default
 `GITHUB_TOKEN` will **not** trigger the downstream publish workflows), `NPM_TOKEN`,
 `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
+
+With the default-token fallback, release-please dispatches sandbox-image
+publishing after creating its release tag; npm publishing still needs a manual
+dispatch. With the PAT, the tag is the only automatic image-publish trigger so
+the same release is not built and pushed twice.
 
 See [`./RELEASING.md`](./RELEASING.md) for the version policy, `Release-As:`
 overrides, the rollback runbook, and the compatibility matrix.

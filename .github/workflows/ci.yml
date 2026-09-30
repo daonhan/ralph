@@ -1,46 +1,92 @@
 name: CI
 
-# Pre-merge verification gate. Runs the full local-verify sequence
-# (build → typecheck → tests → offline smoke checks) on every PR and on
-# pushes to main. The publish-* workflows only fire on release tags, so this
-# is the only thing that catches regressions before they land.
+# Keep a successful `verify` status for docs-only PRs; workflow-level path
+# filters can leave required checks pending. Runtime prose is executable input.
 on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Host compatibility check (automatic runs use Ubuntu)"
+        type: choice
+        options: [ubuntu-latest, windows-latest, macos-latest]
+        default: ubuntu-latest
+      node-version:
+        description: "Node compatibility check (automatic runs use Node 20)"
+        type: choice
+        options: ["20", "22", "24"]
+        default: "20"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.runner || 'ubuntu-latest' }}-${{ inputs.node-version || '20' }}
   cancel-in-progress: true
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      - name: Classify changed paths (including deletions)
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            echo 'checks=true' >> "$GITHUB_OUTPUT"
+          else
+            if [ -n "$BASE_REF" ] && [[ ! "$BASE_REF" =~ ^0+$ ]] && ! git cat-file -e "${BASE_REF}^{commit}" 2>/dev/null; then
+              git fetch --no-tags --depth=1 origin "$BASE_REF"
+            fi
+            node scripts/check-changes.mjs "${BASE_REF:-0}" "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: pnpm/action-setup@v6
+        if: steps.changes.outputs.checks == 'true'
 
       - uses: actions/setup-node@v6
+        if: steps.changes.outputs.checks == 'true'
         with:
-          node-version: 20
+          node-version: ${{ inputs.node-version || '20' }}
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+        if: steps.changes.outputs.checks == 'true'
+
+      - run: pnpm -r typecheck
+        if: steps.changes.outputs.checks == 'true'
 
       # The .mjs smoke scripts import from packages/core/dist, so build first.
       - run: pnpm -r build
-
-      - run: pnpm -r typecheck
+        if: steps.changes.outputs.checks == 'true'
 
       - run: pnpm -r test
+        if: steps.changes.outputs.checks == 'true'
 
       - name: Root contract tests (node --test over scripts/*.test.mjs)
+        if: steps.changes.outputs.checks == 'true'
         run: pnpm test
 
       - name: Offline smoke checks (renderer + templates + spill)
+        if: steps.changes.outputs.checks == 'true'
         run: |
           node scripts/smoke-render.mjs
           node scripts/smoke-templates.mjs
           node scripts/smoke-spill-size.mjs
           node scripts/smoke-spill-large.mjs
+
+      - name: Documentation-only result
+        if: steps.changes.outputs.checks == 'false'
+        run: echo '[skipped] build, typecheck, tests, and smoke checks (ordinary documentation only)'

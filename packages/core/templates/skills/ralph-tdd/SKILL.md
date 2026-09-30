@@ -34,3 +34,9 @@ A **seam** is the public boundary you test at: the interface where you observe b
 - **Red before green.** Write the failing test first, then only enough code to pass it. Don't anticipate future tests or add speculative features.
 - **One slice at a time.** One seam, one test, one minimal implementation per cycle.
 - **Refactoring is not part of the loop.** It belongs to Ralph's reviewer stage, not the red → green implementation cycle.
+
+## Documentation is part of done
+
+When a change affects architecture, interfaces, or invariants, update the relevant docs before finishing. Delegate the docs pass to a sub-agent.
+
+The primary implementer must review the sub-agent's documentation diff against the implemented behavior before declaring completion. The delegate edits docs only: the implementer owns the red → green cycle, and Ralph's reviewer stage retains refactoring and defect-review ownership.

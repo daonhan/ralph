@@ -1,0 +1,39 @@
+#:schema https://www.schemastore.org/prek.json
+minimum_prek_version = "0.5.4"
+default_install_hook_types = ["pre-commit", "pre-push"]
+fail_fast = true
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "format-staged"
+name = "Format staged files"
+language = "system"
+entry = "pnpm exec lint-staged"
+stages = ["pre-commit"]
+priority = 0
+always_run = true
+pass_filenames = false
+
+[[repos.hooks]]
+id = "typecheck-staged"
+name = "Typecheck workspace"
+language = "system"
+entry = "pnpm typecheck"
+stages = ["pre-commit"]
+priority = 1
+always_run = true
+pass_filenames = false
+
+[[repos.hooks]]
+id = "verify-push"
+name = "Verify pushed changes"
+language = "system"
+entry = "node scripts/pre-push.mjs"
+stages = ["pre-push"]
+always_run = true
+pass_filenames = false
+verbose = true
+# Always invoke the range checker: prek's normal file filtering can omit deletions.
+# The script classifies both sides of renames and skips only ordinary documentation.

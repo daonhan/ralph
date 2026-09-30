@@ -1,169 +1,135 @@
-# CLAUDE.md
+# Agent guidance
 
-Guidance for AI agents working in this repo. Read this first, then [`CONTEXT.md`](CONTEXT.md) (one-page map), [`README.md`](README.md), [.claude/CLAUDE.md](.claude/CLAUDE.md) (behavioral rules), and [`docs/`](docs/) for the why. [`AGENTS.md`](AGENTS.md) is the Codex twin of this file — keep the two in sync when editing either.
+Ralph is a Node/TypeScript harness that runs Claude Code (default) or Codex in an
+ephemeral Docker sandbox against a target repository, using an implementer →
+reviewer loop. These instructions apply to work on Ralph itself.
 
-## What this repo is
+Read [CONTEXT.md](CONTEXT.md) for orientation, [README.md](README.md) for usage,
+and the behavioral rules in [.codex/AGENT.md](.codex/AGENT.md) or
+[.claude/CLAUDE.md](.claude/CLAUDE.md) for your agent. `AGENTS.md` and `CLAUDE.md`
+must stay identical. Link to the documents that own details rather than copying
+their runtime tables into this file.
 
-Ralph is a Node/TypeScript harness that drives a coding-agent CLI (Claude Code by default, or Codex) against a target repository in an iterating implementer → reviewer loop, inside an ephemeral Docker container (`ralph-sandbox`). It ships as a pnpm monorepo with two npm packages:
+## Repository map
 
-- `@daonhan/ralph-core` (`packages/core`) — library: loop driver, docker runner, template renderer, stage registry, provider adapters, iteration history. ESM, TS-compiled to `dist/`.
-- `@daonhan/ralph` (`apps/cli`) — CLI exposing `ralph-afk` (plan/PRD loop) and `ralph-ghafk` (GitHub-issue loop) bin entries. Hand-written JS bins, no build step. Depends on `@daonhan/ralph-core` via `workspace:^`.
+| Path                           | Responsibility                                                     |
+| ------------------------------ | ------------------------------------------------------------------ |
+| `packages/core/`               | `@daonhan/ralph-core`: ESM TypeScript library; compiled to `dist/` |
+| `packages/core/src/loop.ts`    | Iteration gate, retries, signals, history and run-log writes       |
+| `packages/core/src/runner.ts`  | Image resolution, Docker mounts, process streaming and cleanup     |
+| `packages/core/src/agents/`    | Provider adapters, commands, credentials and JSONL decoders        |
+| `packages/core/src/render.ts`  | Host-side template expansion                                       |
+| `packages/core/src/__tests__/` | Vitest suite with mocked I/O                                       |
+| `packages/core/templates/`     | Shipped playbooks, iteration templates, skills and Dockerfile      |
+| `apps/cli/`                    | `@daonhan/ralph`: flat hand-written JS bins; no build step         |
+| `scripts/`                     | Root contract tests, smoke checks and contributor tooling          |
+| `images/pg17/`                 | Local PostgreSQL 17 + PostGIS sandbox variant                      |
+| `.github/workflows/`           | Verification, release-please, npm and image publishing             |
+| `docs/`                        | Runtime architecture, PRDs, plans and design decisions             |
 
-## Commands
+Read the loop spine in order: `main.ts` / `gh-main.ts` → `run-bin.ts` → `loop.ts`
+→ `render.ts` → `runner.ts` → `agents/types.ts` and the selected adapter.
+`stages.ts`, `history.ts`, `run-log.ts` and `stream-render.ts` own the remaining
+contracts. See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full runtime model.
 
-All commands run from the repo root unless noted. Node ≥20, pnpm ≥9.
+## Development and verification
 
-```bash
-pnpm install                 # link workspace, hoist devDeps
-pnpm -r build                # compile packages/core/dist (tsc -p tsconfig.json)
-pnpm -r typecheck            # tsc --noEmit across workspace
-pnpm -r test                 # packages/core: vitest run (apps/cli has no tests)
-pnpm test                    # root: node --test over scripts/*.test.mjs
-pnpm -r clean                # rm packages/core/dist
-pnpm publish-all             # pnpm -r publish --access public --no-git-checks
-```
-
-Verification = `pnpm -r typecheck` + `pnpm -r test` + root `pnpm test`. A husky pre-commit hook runs `lint-staged` (`prettier --ignore-unknown --write` on staged files) then `pnpm typecheck`. Full contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md).
-
-Per-package: `pnpm --filter @daonhan/ralph-core build` (only core has a build).
-
-### Smoke-test the published artifacts locally
-
-```bash
-pnpm -r build
-(cd packages/core && pnpm pack --pack-destination /tmp/ralph-packs)
-(cd apps/cli      && pnpm pack --pack-destination /tmp/ralph-packs)
-npm i -g /tmp/ralph-packs/daonhan-ralph-core-*.tgz /tmp/ralph-packs/daonhan-ralph-*.tgz
-ralph-afk          # → prints usage
-```
-
-`pnpm link --global` is brittle inside this workspace (pnpm 9 rewrites the dependent's manifest) — use the pack-then-install path.
-
-### Running the bins against a target workspace
+Run from the repository root with Node ≥20 and the pinned pnpm 9 version.
 
 ```bash
-ralph-afk "<plan-and-prd>" <iterations>          # plan/PRD-driven loop (Claude)
-ralph-afk --agent codex "<plan-and-prd>" <iterations>
-ralph-ghafk <iterations>                          # GitHub-issue-driven loop
-ralph-afk --print-config                          # diagnose: workspace / docker context / image / agent / model
+pnpm install
+pnpm hooks:install           # install prek pre-commit and pre-push hooks
+git diff --check             # cheapest check first
+pnpm -r typecheck
+pnpm -r build                # root tests and smoke scripts import built dist/
+pnpm -r test                 # core Vitest; CLI has no test script
+pnpm test                    # root scripts/*.test.mjs contracts
 ```
 
-Bins also accept `--help` / `-h`, `--version` / `-V`, `--no-keep-alive`, `--max-retries <N>`, `--detach`, `--log <path>`, `--notify`, `--model <name>`, `--effort <level>` (see README "Running AFK").
+Stop on a failed check, fix it, then rerun the relevant verification. For agent
+runs, execute Node tests only in the background, without visible terminal
+windows, capture their output, and report **pending**, **passed**, **failed** or
+**skipped** with reasons. Never describe a pending or skipped check as passing.
 
-**Provider selection:** `--agent <claude|codex>` → `$RALPH_AGENT` → `claude`. `--codex-user-config` opts Codex into the mounted host `~/.codex/config.toml`; it is invalid with Claude (error text lives in `CODEX_USER_CONFIG_REQUIRES_CODEX` in `agents/index.ts`). Isolated Codex (the default) passes `--ignore-user-config`.
+Offline smoke checks are listed in [CONTRIBUTING.md](CONTRIBUTING.md#verify).
+Sandbox-image changes require `pnpm smoke:image`, including the network check,
+before publishing. A `--skip-network` diagnostic does not satisfy that gate.
+Review the final diff, configuration syntax and changed documentation links.
+Use [the review checklist](docs/REVIEW_CHECKLIST.md) and report limitations.
 
-**Env knobs:** `$RALPH_WORKSPACE` overrides cwd as the bind-mounted target; `$RALPH_IMAGE` overrides `docker.io/daonhan/ralph-sandbox:latest` (`$RALPH_IMAGE_TAG` is a legacy alias); `$RALPH_DOCKER_CONTEXT` is the `docker build` fallback context (default: bundled `@daonhan/ralph-core` dir; `resolveDockerfile` looks for `<ctx>/templates/Dockerfile` first, then `<ctx>/Dockerfile`); `$RALPH_RESULT_GRACE_MS` (post-result grace timer, default `30000`, `0` disables); `$RALPH_DOCKER_SOCK=0` (disable the docker-socket mount); `$RALPH_DOCKER_SOCK_PATH` (explicit socket path); `$RALPH_ISOLATE_NODE_MODULES` (`0` shares the host `node_modules/` with the sandbox, `1` isolates on Linux too; default: container-local volumes everywhere but Linux); `$RALPH_CLAUDE_UPDATE=0` (skip the `claude update` every Claude stage runs first **and** the `ralph-claude-home` volume mount that caches it, so the stage runs the image's baked CLI; ignored for Codex); `$RALPH_CODEX_UPDATE=0` (the same for Codex: skip the `codex update` every Codex stage runs first **and** the `ralph-codex-cli` volume mount that caches it, so the stage runs the image's pinned CLI; ignored for Claude); `$NO_COLOR` / `$TERM=dumb` (disable ANSI).
+The pre-push hook skips only ordinary documentation changes. Templates, skills,
+agent guidance and other behavior-controlling prose require checks. Mixed
+changes and deleted code require checks too. See
+[local hooks](CONTRIBUTING.md#pre-push-hook-with-prek) for setup and classification.
 
-**Model and effort resolution:** per field, `--model` / `--effort` → `RALPH_<AGENT>_MODEL` / `_EFFORT` → `RALPH_MODEL` / `RALPH_EFFORT` → the adapter default; blank counts as unset and the per-agent names are derived from the agent name (`resolveAgentTuning` in `agents/index.ts`), so a new provider gets its pair for free. Model and effort resolve independently. Claude model: the tuned value → host `~/.claude/settings.json` (`env.ANTHROPIC_MODEL`, else `model`) → `DEFAULT_CLAUDE_MODEL` in `agents/claude.ts`. `--model` is always sent because the sandbox CLI's own default is frozen at image build — omitted only when host settings enable `CLAUDE_CODE_USE_BEDROCK`/`_VERTEX`/`_FOUNDRY`, where `--effort` is still sent. Claude effort levels are `low|medium|high|xhigh|max` with no Ralph default (unset sends no `--effort`, so the container CLI applies the host `effortLevel`). Codex: the tuned model → user config (with `--codex-user-config`) → `DEFAULT_CODEX_MODEL`, and independently the tuned effort (`none|minimal|ultra` plus Claude's five) → user config → `DEFAULT_CODEX_REASONING_EFFORT` (`high`) whatever the model, sent as `-c model_reasoning_effort="<level>"` in `agents/codex.ts`; `RALPH_CODEX_EFFORT` is the only environment-variable route to a Codex-only level. Ultra support is model-, client-, and account-dependent; Codex owns incompatibility errors, and Ralph never discovers, downgrades, or falls back. `RALPH_EFFORT` is agent-agnostic, so it takes only a level in `SHARED_EFFORT_LEVELS`; `validateAgentTuning` rejects anything else in `runLoop` before the image, ending the run with `run.ended` `reason: "error"` and exit 1. `--print-config` prints both with their source and never throws; `run.started` records `model`/`modelSource`/`effort`/`effortSource` (optional fields). Full table: [docs/ARCHITECTURE.md § Environment variables](docs/ARCHITECTURE.md#environment-variables).
+## Architectural constraints
 
-### Building / publishing the sandbox image
+- **ESM only.** Relative imports in core TypeScript end in `.js` for NodeNext.
+  Keep `apps/cli` in plain JS with no build step.
+- **First stage gates.** `ralph-afk` is implementer → reviewer; `ralph-ghafk` is
+  ghafk-implementer → reviewer. Only index 0 checks the exact sentinel
+  `<promise>NO MORE TASKS</promise>` on its own line. Reviewer never gates;
+  later stages run only when the gate moved HEAD.
+- **Provider-neutral loop.** Provider differences belong in `agents/`, never
+  agent-name branches in `loop.ts` or `render.ts`. New providers implement
+  `AgentAdapter`, register in `agents/index.ts`, install in the Dockerfile and
+  get decoder coverage; see [adding a provider](CONTRIBUTING.md#adding-a-coding-agent-provider).
+- **Templates ship.** A stage change needs the `STAGES` entry, its template and
+  chain wiring. Keep templates in the core tarball. Shipped skills live in
+  `templates/skills/<name>/`; frontmatter name matches the directory and starts
+  with `ralph-`. Reference skills from playbooks, not the loop, and extend the
+  shipped-skills contract coverage.
+- **History is harness-owned.** Only `loop.ts`, through `history.ts` and
+  `run-log.ts`, writes `.ralph/history/`; agents and templates never do.
+- **Run log is durable state.** Records are fsynced before acting. Add no new
+  `await` before the first `runStage` (`ensureImage` is the only existing one;
+  tests count microtask turns). New event types are additive within v1; a new
+  required field on a known event type bumps `v`. Preserve live-run claims,
+  container labels and cleanup; see [run event log](docs/ARCHITECTURE.md#run-event-log).
+- **Template expansion order matters.** `@include` → `@spill` → `!?` → `!` →
+  `{{ INPUTS }}` / `{{ HISTORY }}`. Includes are single-pass. User inputs and
+  prior agent output are substituted last and must never be re-shelled.
 
-```bash
-docker build -t docker.io/daonhan/ralph-sandbox:latest -f packages/core/templates/Dockerfile .
-```
+## Safety and scope
 
-CI in `.github/workflows/publish-image.yml` builds + pushes a single-arch `linux/amd64` image on `workflow_dispatch`, a `ralph-sandbox-v*` tag (release-please primary; also enriches the GitHub Release with the sha256 digest + SBOM + cosign attestation), or a legacy `image-v*` tag (shim). npm + image releases are automated via release-please — see [RELEASING.md](RELEASING.md).
+- Inspect branch and working-tree status first. Preserve unrelated local edits,
+  match existing style, make the smallest correct change and state a brief plan
+  plus success criteria for non-trivial work. Avoid speculative abstractions.
+- Never commit, push, merge, publish or alter account budgets without the user's
+  authorization. Do not bump package versions or the release manifest by hand;
+  release-please owns them. See [RELEASING.md](RELEASING.md).
+- Template shell tags execute on the **host**. Keep their command bodies static;
+  never interpolate inputs, issue/commit text or branch names. Prefer `!?`
+  for commands that may be unavailable on Windows `cmd.exe`.
+- Every sandbox stage bypasses interactive approvals: Claude
+  `bypassPermissions`, Codex `--dangerously-bypass-approvals-and-sandbox`.
+  The Docker socket is mounted by default and grants host-Docker access; disable
+  with `RALPH_DOCKER_SOCK=0`. Read [SECURITY.md](SECURITY.md) before changing mounts.
+- Mount only the selected provider's credentials. PowerShell and WSL homes are
+  distinct; authenticate from the same shell context used to launch Ralph.
+  Codex credentials are copied into a container-local `CODEX_HOME` because a
+  Windows bind mount fails with EPERM. Never expose credential contents in logs.
+- Commit identity belongs to the harness: do not set `git config user.*`, pass
+  `-c user.*=`, or use `--author`. If identity is missing, report it instead of
+  inventing one. Preserve node_modules isolation and sandbox-install warnings.
+- `.ralph-tmp/` prompts and spill files are scratch; kept NDJSON logs and
+  `.ralph/history/` are diagnostic records. Do not remove them indiscriminately.
 
-A project-neutral variant with PostgreSQL 17 + PostGIS lives in `images/pg17/` (not published; build locally and point `RALPH_IMAGE` / `RALPH_DOCKER_CONTEXT` at it — see its README).
+## Documentation and ownership
 
-## Architecture
+When a change affects architecture, interfaces, or invariants, update the relevant docs before finishing. Delegate the docs pass to a sub-agent.
 
-The core library lives in `packages/core/src/` (plus a `__tests__/` vitest suite). Read the loop spine in order to understand the system:
+The primary agent must review the sub-agent's documentation diff for accuracy,
+scope and links before declaring completion. The docs delegate owns only that
+documentation pass; the implementer retains red → green implementation, and the
+reviewer retains refactoring and defect-review ownership. Do not delegate code
+changes or expand a task merely because a docs pass was requested.
 
-1. **`main.ts` / `gh-main.ts`** — thin bin entrypoints. Each just calls `runBin` (`run-bin.ts`) with its stage chain + a `takesInputArg` flag. `runBin` parses flags via `cli-help.ts`, resolves the agent (`--agent` → `$RALPH_AGENT` → Claude) and validates `--codex-user-config`, resolves `workspaceDir` / `ralphDir` / `packageDir` from env vars, then calls `runLoop`.
-2. **`loop.ts`** (`runLoop`) — drives the iteration. For each iteration, walks the stage chain. **First stage is the gate**: its `text` is sentinel-checked (`hasSentinel`) for `<promise>NO MORE TASKS</promise>` on a line of its own and the loop exits early on hit; a prose mention only warns on stderr. Later stages run only when the gate stage moved HEAD; otherwise the loop records a `skipped` history entry for each and starts no container. First it opens the run event log (`openRunLog` in `run-log.ts`, `run.started` fsynced) and runs the claim check: a live run in another log (`findLiveRun`) or a running container labelled with another logged run (`findRunContainer(…, runningRunContainers())`) prints `[refused] …`, appends `run.ended refused` with `blockedBy`, and resolves `refused` — before the wake-lock, the signal handlers or the image. Then it starts the 30 s log heartbeat, calls `ensureImage` once before the loop, then opens the history `.md` (an image failure leaves no `.md`; the log records `run.ended error`). Resolves the end reason (`no-more-tasks` / `cap` / `failed` / `refused`); `run-bin.ts` maps it through `EXIT_CODES` (`failed` → 1, `refused` → 75, else 0).
-3. **`render.ts`** (`renderTemplate`) — expands the six template tags below before each stage runs. Synchronous, uses host `execSync` for shell tags.
-4. **`runner.ts`** (`ensureImage`, `runStage`, `streamDocker`) — docker plumbing.
-   - `ensureImage`: `docker image inspect` → `docker pull` → `docker build` (fallback). Build fallback only runs if pull fails AND `resolveDockerfile($RALPH_DOCKER_CONTEXT)` exists.
-   - `runStage`: writes the rendered prompt to `<workspaceDir>/.ralph-tmp/.run-<pid>-<iter>-<ts>.md`, builds `docker run --rm -i …` with mounts + env, then appends the provider command from the selected adapter (`buildCommand`). Streams provider JSONL from stdout through the adapter's decoder, resolves `{ text, meta }` (completion text + `StageMeta`: cost, turns, tokens, error flags, `graceTimerFired`). Also mounts the container-local `node_modules` volumes `sandbox-volumes.ts` resolves for the workspace, created and root-chowned once per process. Also mounts the shipped skills directory (`templates/skills/`) read-only at the container path the selected adapter's `skillsMount` names — Claude `/home/agent/ralph-skills/.claude/skills` (plus `--add-dir /home/agent/ralph-skills` in the argv), Codex `/home/agent/.agents/skills`. For Claude, also mounts the host-wide named volume `ralph-claude-home` at `/home/agent/.local` (`resolveAgentVolumeArgs`, from the adapter's `volumeMounts()`; docker seeds it from the image, so no chown) and wraps the command as `bash -c 'claude update 1>&2 || true; exec "$0" "$@"' claude …` so every stage refreshes the CLI first — both dropped under `RALPH_CLAUDE_UPDATE=0`. Codex has the same shape: the host-wide volume `ralph-codex-cli` at `/home/agent/.npm-global` (the agent-owned npm prefix the image installs Codex into) plus a `codex update 1>&2 || true;` step at the head of its setup script — both dropped under `RALPH_CODEX_UPDATE=0`. `RunStageOptions.container` names each attempt's container `ralph-<runId>-i<iter>-s<stageIndex>-a<attempt>` and labels it `ralph.run=<runId>` (`resolveContainerArgs`, right after `run --rm -i`); `onOutput` fires per stdout JSON line (the heartbeat's `lastOutputAt`). `streamDocker`'s abort, decoder-failure and grace-timer kills also start a detached `docker rm -f <name>` (`removeContainer`), since killing the client does not stop the container. `runningRunContainers` (one `docker ps --filter label=ralph.run`, 10 s timeout) feeds the claim check. Tempfile cleaned in `finally`.
-5. **`agents/`** — provider adapter registry. `types.ts` defines `AgentAdapter` (`containerEnv`, `credentialMounts`, `skillsMount`, `volumeMounts`, `buildCommand`, `createDecoder`) and `StageMeta`. `claude.ts` builds `claude --verbose --print --output-format stream-json --permission-mode <mode> …` (behind the `claude update` wrapper unless `RALPH_CLAUDE_UPDATE=0`), owns Claude model resolution, and exports `CLAUDE_HOME_VOLUME` / `CLAUDE_HOME_PATH` / `claudeUpdateEnabled()`. `codex.ts` builds `codex exec --json --ephemeral --dangerously-bypass-approvals-and-sandbox …` behind the `bash -c` setup script from `codexSetupScript()` (which leads with `codex update` unless `RALPH_CODEX_UPDATE=0`), exports `CODEX_CLI_VOLUME` / `CODEX_CLI_PATH` / `codexUpdateEnabled()`, and requires a final agent message followed by `turn.completed`. `index.ts` is the registry + `resolveAgentSelection`.
-6. **`stages.ts`** — three named stages (`implementer`, `ghafkImplementer`, `reviewer`), each pairing a template filename with a Claude `permissionMode` (always `bypassPermissions` — AFK requires non-interactive bash/edit approval; Codex gets the equivalent bypass flag from its adapter).
-7. **`history.ts`** — harness-owned per-run Markdown log under `<workspaceDir>/.ralph/history/<ts>-<afk|ghafk>[-<branch>].md` (self-gitignored via a `*` `.gitignore` written once). Header on open, one entry per completed stage (duration, HEAD, `StageMeta`), footer with run totals on exit (`no-more-tasks` / `cap` / `failed`), plus a `warning: sandbox-install` suffix when the host check fired. Pure `fs` + tolerant `git` reads, never docker. Beside each `.md`, `run-log.ts` keeps the run's event log `<same base name>.jsonl`; retention keeps the newest 20 `.jsonl` that aren't refused plus the newest refused one, never the run's own log, and never prunes `.md`. Schema, liveness, claim and supervisor recipe: [docs/ARCHITECTURE.md § Run event log](docs/ARCHITECTURE.md#run-event-log).
-8. **`stream-render.ts`** — TTY-gated ANSI styling + `renderEvent` pretty-printer for decoded `AgentRenderEvent`s (assistant text → stdout, tools/diagnostics → stderr). No docker dependency.
-9. **`host-check.ts`** — `detectSandboxInstall(workspaceDir)` reports the traces a sandbox install leaves in the bind-mounted tree (a `node_modules/.modules.yaml` store path under `/home/agent/`, a stray `.pnpm-store/`); `loop.ts` calls it at each footer write and warns on stderr. Pure `node:fs`, never throws.
-10. **AFK machinery** — `cli-help.ts` (flag parsing), `retry.ts` (`withRetries`, default 3 + exponential backoff), `keepalive.ts` (OS wake-lock acquire/release), `detach.ts` (fork-and-exit background run), `notify.ts` (OS toast + bell). `loop.ts` wires these in and handles `SIGINT`→exit 130 / `SIGTERM`→exit 143 by aborting the active stage via an `AbortController`. Full runtime model: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Use [CONTRIBUTING.md](CONTRIBUTING.md) for practical checks and contribution
+rules, [ARCHITECTURE.md](docs/ARCHITECTURE.md) for interfaces/invariants,
+[README.md](README.md) for user-visible behavior, and [RELEASING.md](RELEASING.md)
+for release changes. Update an existing source of truth instead of duplicating it.
 
-### Loop topology
-
-```
-ralph-afk   → [STAGES.implementer,        STAGES.reviewer]   inputs = "<plan-and-prd>"
-ralph-ghafk → [STAGES.ghafkImplementer,   STAGES.reviewer]   inputs = ""
-```
-
-Gate = first stage. Reviewer never gates.
-
-### Template renderer (the part most likely to bite you)
-
-Templates live in `packages/core/templates/`. Six tag forms, expanded in this order (`@include` → `@spill` → `!?` → `!` → `{{ INPUTS }}` → `{{ HISTORY }}`):
-
-| Tag                             | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `@include:<path>`               | Inline a file via `readFileSync`. Path resolved against the template's dir when relative. **No shell**. Used to inject the agent playbooks (`prompt.md`, `ghprompt.md`) into the iteration templates (`afk.md`, `ghafk.md`).                                                                                                                                                                                                                                                   |
-| `` @spill[?]:<name>=`<cmd>` ``  | Run a command, write its stdout to `<spill-dir>/<name>`, and substitute the container-relative path `./.ralph-tmp/spill-…/<name>` into the prompt (the agent `Read`s it). The `?` form writes a fallback string on non-zero exit; `<name>` must be a plain filename (no path separators / `..`). Keeps large outputs (HEAD patch in `review.md`, full issue bodies in `ghafk.md`) out of the prompt. Requires `spillHostDir`/`spillRefPath` (supplied per-stage by `runLoop`). |
-| `` !?`<cmd>\|\|\|<fallback>` `` | Try-shell. `execSync` with stderr suppressed; non-zero exit returns the literal `<fallback>` string. Match order matters: this regex matches before the plain `!` form. Use for cross-platform safety.                                                                                                                                                                                                                                                                         |
-| `` !`<cmd>` ``                  | Plain shell. `execSync` with `cwd = workspaceDir`. Failures throw and abort the iteration.                                                                                                                                                                                                                                                                                                                                                                                     |
-| `{{ INPUTS }}`                  | Replaced with the `inputs` string passed to `runLoop`.                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `{{ HISTORY }}`                 | Replaced with the last ten `.ralph/history/` stage entries (non-empty only for the implementer stage). Substituted last, alongside `{{ INPUTS }}`; carries prior agent output verbatim, never re-shelled.                                                                                                                                                                                                                                                                      |
-
-Shell resolution lives in `resolveShell()` in `render.ts`: Linux/macOS → `/bin/bash`. Windows → walks `$PATH` looking for `bash.exe` (Git for Windows or WSL passthrough), falls back to `cmd.exe`. **Templates should prefer `!?` over `!` for any command that might be unavailable on `cmd.exe`** (e.g. `git log` redirects, `gh issue list`). Tag command bodies are trusted template content, never user input — see the security invariant comment at the top of `render.ts` and [SECURITY.md § Template authoring](SECURITY.md).
-
-### Per-run files in the target workspace
-
-- `<workspaceDir>/.ralph-tmp/` (gitignored): rendered prompt `.run-<pid>-<iter>-<ts>.md` (cleaned in `finally`, may leak on SIGKILL — safe to delete), per-stage spill dir `spill-<pid>-<iter>-<stageIdx>-<ts>/` (also cleaned), and the kept NDJSON stream log `logs/<ts>-iter<N>-<stageName>.ndjson` (`--detach` adds `logs/detached-<pid>.log`).
-- `<workspaceDir>/.ralph/history/` (self-gitignored): one Markdown file per run, written by `history.ts` (no `.md` when image setup fails), and beside it the run's event log `<same base name>.jsonl`, written by `run-log.ts` (newest 20 not refused kept, plus the newest refused).
-
-### Credential mounts
-
-`runStage` reads `process.env.HOME || USERPROFILE` (`resolveHostHome` in `agents/shared.ts`, shared with `--print-config`) and mounts only the selected provider's credentials when present:
-
-- Claude: `~/.claude` → `/home/agent/.claude`, `~/.claude.json` → `/home/agent/.claude.json`
-- Codex: `~/.codex` → `/mnt/codex-creds:ro` with `CODEX_HOME=/home/agent/.codex`; a setup script copies `auth.json`/`config.toml`/`AGENTS.md` into the container-local `CODEX_HOME` before exec'ing `codex` (a bind-mounted `CODEX_HOME` fails with EPERM on Windows). Codex needs file-backed credentials (`cli_auth_credentials_store = "file"`).
-- Shared: `~/.config/gh` → `/home/agent/.config/gh:ro`
-
-`runStage` also injects git env vars (`resolveGitConfigArgs`): entry 0 is always `safe.directory=*` so git trusts the bind-mounted workspace; `user.name`/`user.email` follow when the host resolves both through `git -C <workspaceDir> config --get` (git's own repo-local-over-global precedence, so a deliberate per-repo identity is never clobbered). The container never sees `~/.gitconfig`, so without that pair a sandbox `git commit` cannot auto-detect an author and the agent invents one; if either side is missing the harness injects neither and warns once on stderr rather than fabricating an identity itself. It also — **by default** — bind-mounts the host Docker socket (`-v <sock>:/var/run/docker.sock` + a `--group-add` fixup, via `resolveDockerSocketMount`) so Testcontainers inside the sandbox can spawn sibling containers. That grants the sandbox root-equivalent host Docker access; disable with `RALPH_DOCKER_SOCK=0`, or set an explicit path with `RALPH_DOCKER_SOCK_PATH`. Threat model: [SECURITY.md](SECURITY.md).
-
-**Same-shell rule:** these paths resolve against the shell that invoked the bin. PowerShell `$HOME` (`C:\Users\<you>`) and WSL `$HOME` (`/home/<you>`) are separate stores — don't mix. `claude /login`, `codex login`, and `gh auth login` must be run from a shell context that matches your eventual invocation context (or copied across — see README "Windows + WSL: credentials").
-
-### Sandbox image
-
-`packages/core/templates/Dockerfile`. `node:22-bookworm` + Python 3.11 (`python`/`python3`, `venv`) + `uv`/`uvx` + .NET SDK 10 + `gh` + `jq` + `git` + Claude Code CLI (a build-time snapshot — each Claude stage runs `claude update` first, see item 4) + pinned `@openai/codex` (`ARG CODEX_VERSION`, installed as `agent` under the npm prefix `/home/agent/.npm-global` so `codex update` can replace it at run time — the pin is the floor the `ralph-codex-cli` volume is seeded from, not the version that runs). `CMD ["claude"]` preserves direct legacy image use; the runner always supplies an explicit provider command. User `agent` (UID 1000, renamed from base image's `node`). `safe.directory='*'` globally configured to tolerate bind-mount UID mismatch on Windows.
-
-## Conventions to preserve
-
-- **ESM only.** Both packages are `"type": "module"`. Relative imports in `packages/core/src/` end in `.js` (compiled output extension, required by `moduleResolution: NodeNext`).
-- **First stage is always the gate.** If you add stages via `STAGES` and wire them into a chain, place gating stages at index 0. The sentinel string `<promise>NO MORE TASKS</promise>` is hardcoded in `loop.ts` and gates only on a line of its own.
-- **No build step for `apps/cli`.** Bins are hand-written JS that `import { runAfk } from "@daonhan/ralph-core"`. Don't add TS to `apps/cli` — keep the bin layer flat.
-- **Templates ship in the npm tarball.** `packages/core/package.json` `files` includes `templates/` and `Dockerfile`. Adding a new stage means: (1) extend `STAGES` in `stages.ts`, (2) drop a new `*.md` in `packages/core/templates/`, (3) reference it from the chain in `main.ts` / `gh-main.ts`.
-- **Shipped skills live in `packages/core/templates/skills/<name>/`.** Each is mounted read-only into every stage for both providers; the `SKILL.md` frontmatter `name` must equal the directory name and carry the `ralph-` prefix (so a playbook reference never resolves to a user's own skill). Reference a skill from a playbook (`prompt.md` / `ghprompt.md`), never from the loop, and extend the `shipped skills` block in `__tests__/template-contract.test.ts`.
-- **Adding a provider** means a new `agents/<name>.ts` implementing `AgentAdapter`, registered in `agents/index.ts` (`ADAPTERS` + `parseAgentName`), plus a Dockerfile install and a decoder test in `__tests__/agent-decoders.test.ts`. See CONTRIBUTING "Adding a coding-agent provider".
-- **AFK providers bypass interactive approvals.** Claude stages use `bypassPermissions`; Codex uses `--dangerously-bypass-approvals-and-sandbox`. Comment in `stages.ts` explains the blast-radius reasoning.
-- **History is harness-owned.** Only `loop.ts` writes `.ralph/history/`; templates and agents never do.
-- **The run log is the run's durable state.** Only `loop.ts` writes `.ralph/history/<runId>.jsonl`, through `openRunLog` and the log's `append`; every record is fsynced before the loop acts on it; add no new `await` before the first `runStage` (`ensureImage` is the only one; the loop tests count microtask turns). New event types are additive within v1; a new required field on a known type bumps `v`.
-- **Commit identity is harness-owned.** `runStage` passes the host `user.name`/`user.email` into the sandbox; the playbooks (`prompt.md` / `ghprompt.md` / `review.md`) forbid the agent from setting or overriding the author (`git config user.*`, `-c user.*=`, `--author`). Keep that rule when editing them.
-- **`CLAUDE.md` and `AGENTS.md` mirror each other.** Edit both when changing repo guidance.
-
-## Files for orientation
-
-- `CONTEXT.md` — one-page orientation map (read path, invariants, gotchas). Start here if new.
-- `README.md` — extensive user-facing docs (install paths per OS, provider choice, first-run setup, troubleshooting). Read for usage/setup questions.
-- `SECURITY.md` — threat model for `bypassPermissions` + docker.sock; template-authoring rules.
-- `RELEASING.md` — single source of truth for releasing all three components (release-please flow, version policy, required secrets, rollback runbook). `docs/PUBLISHING.md` is a stub pointing here.
-- `CONTRIBUTING.md` — maintainer/contributor guide (dev loop, tests, adding a stage or provider, releasing). `docs/ARCHITECTURE.md` — runtime internals reference incl. env-var table and `docker run` argv shape.
-- `docs/prd/` + `docs/plans/` — PRDs and tracer-bullet plans per feature (same basename in both; e.g. `iteration-history.md`). `docs/superpowers/{specs,plans}/` — dated design docs (Codex provider, pg17 sandbox).
-- `packages/core/templates/prompt.md` / `ghprompt.md` — agent playbooks. Edit these to change feedback loops or task priority.
-- `packages/core/templates/{afk,ghafk,review}.md` — iteration templates that `@include` the playbooks above.
-- `packages/core/templates/skills/ralph-tdd/` — the shipped `ralph-tdd` Agent Skill (adapted from [mattpocock/skills](https://github.com/mattpocock/skills), MIT), mounted read-only into every sandbox stage.
-- `images/pg17/` — PostgreSQL 17 sandbox variant (Dockerfile + README).
-
-## Behavioral
-
-- Apply `.claude/CLAUDE.md` (think first, simplicity, surgical changes, goal-driven). Make only changes the user asked for; match existing style; prefer smallest correct change; push back on over-engineering; state a brief plan + success criteria for non-trivial work.
-- When a change affects architecture, interfaces, or invariants, update the relevant docs before finishing. Delegate the docs pass to a sub-agent.
-
-## Commit
-
-Make a single `git commit -am` with a short message:
-
-- Subject line (≤72 chars), conventional `type(scope): subject`: what changed
-- Optional body (≤3 bullets): key decision, blocker for next iteration
-- HARD RULES: NO file lists (git tracks them), NO `Co-Authored-By` or `Co-authored-by`, NO `Generated by` or `Generated with`
+When a commit is authorized, use a short conventional `type(scope): subject`
+(≤72 characters), with at most three body bullets for decisions or blockers.
+No file lists, `Co-Authored-By` / `Co-authored-by`, or generated-by footers.
